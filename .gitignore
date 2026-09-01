@@ -1,0 +1,11 @@
+build/
+build-direct/
+loom-data/
+*.obj
+*.exe
+*.pdb
+*.ilk
+
+# Personal planning doc and local dev-tool config - not for the public repo
+docs/PLAN.md
+.claude/
