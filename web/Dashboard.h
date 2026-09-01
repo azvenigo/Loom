@@ -101,11 +101,11 @@ body{margin:0;background:var(--bg);color:var(--body);font:14px/1.55 var(--sans);
 ::selection{background:var(--accent-wash)}
 
 /* ---------- header ---------- */
-header{display:flex;align-items:center;gap:20px;padding:0 20px;height:50px;
+header{display:flex;align-items:center;gap:20px;padding:0 20px;height:80px;
   border-bottom:1px solid var(--line);background:var(--panel);position:sticky;top:0;z-index:30}
 .brand{font-size:16px;font-weight:600;letter-spacing:-.01em;color:var(--ink);
   display:flex;align-items:center;gap:9px}
-.brand img{width:26px;height:26px;border-radius:6px;display:block}
+.brand img{width:64px;height:64px;border-radius:14px;display:block}
 .brand button{background:none;border:0;padding:0;margin-left:2px;cursor:pointer;
   color:var(--faint);display:flex;align-items:center;border-radius:5px}
 .brand button:hover{color:var(--dim);background:var(--sunk)}
@@ -133,7 +133,7 @@ dialog#about button.btn{width:100%}
 
 /* ---------- nav ---------- */
 nav{display:flex;gap:1px;padding:0 20px;background:var(--panel);
-  border-bottom:1px solid var(--line);position:sticky;top:50px;z-index:29}
+  border-bottom:1px solid var(--line);position:sticky;top:80px;z-index:29}
 nav button{background:none;border:0;padding:0 13px;height:38px;cursor:pointer;
   font:13px var(--sans);color:var(--dim);position:relative}
 nav button:hover{color:var(--ink)}
@@ -342,7 +342,7 @@ label u{text-decoration:none;color:var(--accent-ink);text-transform:none;letter-
 
 <header>
   <div class="brand">
-    <img src="/icon.png" width="26" height="26" alt="">
+    <img src="/icon.png" width="64" height="64" alt="">
     Loom
     <button type="button" id="about-btn" title="About Loom" aria-label="About Loom">
       <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
