@@ -46,6 +46,7 @@ R"HTML(<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Loom</title>
+<link rel="icon" type="image/png" href="/icon.png">
 <style>
 :root{
   --bg:#faf9f6; --panel:#fff; --sunk:#f3f1ec;
@@ -71,6 +72,28 @@ R"HTML(<!doctype html>
   --good:#6cc294; --good-wash:#152720; --good-line:#2c5340;
   --mark:#5c5220;
 }}
+/* Alternate palettes, sampled from the weaver-and-starlight reference art (H:\Alex\Images\Creative\misc\Loom_icons.png).
+   Picked from #palette-select in the header; override the system-driven light/dark above when set. */
+:root[data-palette="midnight"]{
+  --bg:#080b16; --panel:#12111c; --sunk:#191420;
+  --ink:#eee1cc; --body:#d8cdb8; --dim:#94886f; --faint:#6b6153;
+  --line:#2e2636; --line-soft:#221c2a;
+  --accent:#d3a362; --accent-ink:#f0ce72; --accent-wash:#2a2115;
+  --warn:#e0a458; --warn-wash:#2a2114; --warn-line:#5c4520;
+  --bad:#e08279; --bad-wash:#2b1917; --bad-line:#5e2f2a;
+  --good:#6cc294; --good-wash:#152720; --good-line:#2c5340;
+  --mark:#5c4a20;
+}
+:root[data-palette="parchment"]{
+  --bg:#f3e3d0; --panel:#faf3e7; --sunk:#efe1cb;
+  --ink:#3e2a14; --body:#4a3520; --dim:#7c6b54; --faint:#a49174;
+  --line:#dec9aa; --line-soft:#e8d8bc;
+  --accent:#9c6a34; --accent-ink:#7a5228; --accent-wash:#efe0c8;
+  --warn:#a1620c; --warn-wash:#fdf6ec; --warn-line:#e8c99a;
+  --bad:#a32c22; --bad-wash:#fdf1f0; --bad-line:#e7b3ad;
+  --good:#2c6b45; --good-wash:#f0f8f3; --good-line:#a9d4bd;
+  --mark:#fdf0a8;
+}
 *{box-sizing:border-box}
 html,body{height:100%}
 body{margin:0;background:var(--bg);color:var(--body);font:14px/1.55 var(--sans);
@@ -82,6 +105,23 @@ header{display:flex;align-items:center;gap:20px;padding:0 20px;height:50px;
   border-bottom:1px solid var(--line);background:var(--panel);position:sticky;top:0;z-index:30}
 .brand{font-size:16px;font-weight:600;letter-spacing:-.01em;color:var(--ink);
   display:flex;align-items:center;gap:9px}
+.brand img{width:26px;height:26px;border-radius:6px;display:block}
+.brand button{background:none;border:0;padding:0;margin-left:2px;cursor:pointer;
+  color:var(--faint);display:flex;align-items:center;border-radius:5px}
+.brand button:hover{color:var(--dim);background:var(--sunk)}
+.brand button svg{width:15px;height:15px}
+#palette-select{margin-left:auto;font:12px var(--mono);color:var(--dim);background:var(--panel);
+  border:1px solid var(--line);border-radius:5px;padding:4px 6px;cursor:pointer}
+
+/* ---------- about ---------- */
+dialog#about{border:1px solid var(--line);border-radius:var(--r);padding:0;width:min(420px,90vw);
+  background:var(--panel);color:var(--body)}
+dialog#about::backdrop{background:rgba(0,0,0,.45)}
+dialog#about img{width:100%;display:block}
+dialog#about .body{padding:18px 20px 20px}
+dialog#about h2{font:600 16px var(--sans);color:var(--ink);margin:0 0 6px}
+dialog#about p{margin:0 0 14px;color:var(--dim);font-size:13.5px;line-height:1.55}
+dialog#about button.btn{width:100%}
 .brand .mk{width:15px;height:15px;flex:none;opacity:.9}
 .stats{margin-left:auto;display:flex;gap:20px;align-items:center}
 .stat{display:flex;flex-direction:column;line-height:1.15}
@@ -302,13 +342,20 @@ label u{text-decoration:none;color:var(--accent-ink);text-transform:none;letter-
 
 <header>
   <div class="brand">
-    <svg class="mk" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
-      <path d="M1 4h14M1 8h14M1 12h14" opacity=".4"/>
-      <path d="M4 1v14M8 1v14M12 1v14"/>
-    </svg>
+    <img src="/icon.png" width="26" height="26" alt="">
     Loom
+    <button type="button" id="about-btn" title="About Loom" aria-label="About Loom">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
+        <circle cx="8" cy="8" r="6.3"/><path d="M8 7.2v4M8 5.1v.1"/>
+      </svg>
+    </button>
   </div>
   <div class="stats" id="stats"></div>
+  <select id="palette-select" title="Color theme">
+    <option value="">Loom</option>
+    <option value="midnight">Midnight</option>
+    <option value="parchment">Parchment</option>
+  </select>
 </header>
 
 <nav id="nav"></nav>
@@ -319,6 +366,16 @@ label u{text-decoration:none;color:var(--accent-ink);text-transform:none;letter-
 </main>
 
 <div id="toast"></div>
+
+<dialog id="about">
+  <img src="/icon-full.png" alt="">
+  <div class="body">
+    <h2>Loom</h2>
+    <p>The weaver at the loom, working the same threads Loom keeps for you - jots pulled taut
+       into memory, one strand at a time.</p>
+    <button type="button" class="btn" id="about-close">Close</button>
+  </div>
+</dialog>
 
 <script>
 const $=s=>document.querySelector(s);
@@ -949,6 +1006,22 @@ async function render(){
   else await viewHealth();
   renderDetail();
 }
+
+(function(){
+  const KEY='loom-palette';let saved=null;try{saved=localStorage.getItem(KEY);}catch(e){}
+  if(saved)document.documentElement.setAttribute('data-palette',saved);
+  const sel=$('#palette-select');sel.value=saved||'';
+  sel.addEventListener('change',()=>{
+    const v=sel.value;
+    if(v)document.documentElement.setAttribute('data-palette',v);
+    else document.documentElement.removeAttribute('data-palette');
+    try{localStorage.setItem(KEY,v);}catch(e){}
+  });
+})();
+
+$('#about-btn').addEventListener('click',()=>$('#about').showModal());
+$('#about-close').addEventListener('click',()=>$('#about').close());
+$('#about').addEventListener('click',function(e){if(e.target===this)this.close();});
 
 document.addEventListener('keydown',function(e){
   const typing=/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);

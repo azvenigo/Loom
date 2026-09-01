@@ -12,6 +12,7 @@
 #include "codec/JotJson.h"
 #include "mcp/McpHandler.h"
 #include "web/Dashboard.h"
+#include "web/IconAssets.h"
 
 #include "vendor/crow/crow.h"
 
@@ -382,6 +383,27 @@ struct HttpServer::Impl
         {
             crow::response res(200, std::string(LoomDashboardHtml()));
             res.set_header("Content-Type", "text/html; charset=utf-8");
+            return res;
+        });
+
+        // Icon art for the dashboard itself - see web/IconAssets.h for why these are embedded
+        // base64 rather than files on disk. Small is the favicon and header mark; full is used
+        // only by the About panel, so it is fetched on demand rather than on every page load.
+        CROW_ROUTE(mApp, "/icon.png").methods(crow::HTTPMethod::Get)
+        ([]()
+        {
+            const auto& png = LoomIconSmallPng();
+            crow::response res(200, std::string(reinterpret_cast<const char*>(png.data()), png.size()));
+            res.set_header("Content-Type", "image/png");
+            return res;
+        });
+
+        CROW_ROUTE(mApp, "/icon-full.png").methods(crow::HTTPMethod::Get)
+        ([]()
+        {
+            const auto& png = LoomIconFullPng();
+            crow::response res(200, std::string(reinterpret_cast<const char*>(png.data()), png.size()));
+            res.set_header("Content-Type", "image/png");
             return res;
         });
 
