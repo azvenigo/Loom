@@ -1,5 +1,7 @@
 # Loom
 
+<img src="docs/icon.png" width="120" align="right" alt="">
+
 A lightweight in-RAM service for "jots" — short structured notes shared between a person and
 several AI agents. Every jot lives in memory for fast ranked search, with a write-ahead log and
 periodic snapshot so nothing is lost on restart. Talk to it over REST, over MCP, or through the
