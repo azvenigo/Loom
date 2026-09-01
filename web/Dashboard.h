@@ -110,18 +110,32 @@ header{display:flex;align-items:center;gap:20px;padding:0 20px;height:80px;
   color:var(--faint);display:flex;align-items:center;border-radius:5px}
 .brand button:hover{color:var(--dim);background:var(--sunk)}
 .brand button svg{width:15px;height:15px}
-#palette-select{margin-left:auto;font:12px var(--mono);color:var(--dim);background:var(--panel);
-  border:1px solid var(--line);border-radius:5px;padding:4px 6px;cursor:pointer}
+#palette-select{width:78px;font:11px var(--mono);color:var(--dim);background:var(--panel);
+  border:1px solid var(--line);border-radius:5px;padding:4px 3px;cursor:pointer}
 
 /* ---------- about ---------- */
-dialog#about{border:1px solid var(--line);border-radius:var(--r);padding:0;width:min(420px,90vw);
-  background:var(--panel);color:var(--body)}
-dialog#about::backdrop{background:rgba(0,0,0,.45)}
+dialog#about,dialog#agent-dialog{border:1px solid var(--line);border-radius:var(--r);padding:0;
+  width:min(420px,90vw);background:var(--panel);color:var(--body)}
+dialog#about::backdrop,dialog#agent-dialog::backdrop{background:rgba(0,0,0,.45)}
 dialog#about img{width:100%;display:block}
-dialog#about .body{padding:18px 20px 20px}
-dialog#about h2{font:600 16px var(--sans);color:var(--ink);margin:0 0 6px}
-dialog#about p{margin:0 0 14px;color:var(--dim);font-size:13.5px;line-height:1.55}
+dialog#about .body,dialog#agent-dialog .body{padding:18px 20px 20px}
+dialog#about h2,dialog#agent-dialog h2{font:600 16px var(--sans);color:var(--ink);margin:0 0 6px}
+dialog#about p,dialog#agent-dialog p{margin:0 0 14px;color:var(--dim);font-size:13.5px;
+  line-height:1.55}
 dialog#about button.btn{width:100%}
+dialog#agent-dialog{width:min(640px,92vw)}
+dialog#agent-dialog .promptbox{max-height:min(50vh,460px);overflow-y:auto}
+dialog#agent-dialog .row button{flex:1}
+
+dialog#detail-dialog{border:1px solid var(--line);border-radius:var(--r);padding:0;
+  width:min(940px,94vw);max-height:88vh;position:relative}
+dialog#detail-dialog::backdrop{background:rgba(0,0,0,.45)}
+dialog#detail-dialog #detail{max-height:88vh;padding-right:56px}
+dialog#detail-dialog .dclose{position:absolute;top:12px;right:12px;width:28px;height:28px;
+  border-radius:8px;border:1px solid transparent;background:none;color:var(--dim);cursor:pointer;
+  display:flex;align-items:center;justify-content:center;z-index:1}
+dialog#detail-dialog .dclose svg{width:13px;height:13px}
+dialog#detail-dialog .dclose:hover{background:var(--sunk);color:var(--ink)}
 .brand .mk{width:15px;height:15px;flex:none;opacity:.9}
 .stats{margin-left:auto;display:flex;gap:20px;align-items:center}
 .stat{display:flex;flex-direction:column;line-height:1.15}
@@ -156,26 +170,19 @@ nav button.on .pill{background:var(--accent-wash);color:var(--accent-ink)}
   pointer-events:none}
 
 /* ---------- layout ---------- */
-main{display:grid;grid-template-columns:minmax(0,1fr) 400px;height:calc(100vh - 89px);
-  transition:grid-template-columns .15s ease}
-/* Editing is a full-attention task, so the panel stops being a rail and takes most of the
-   window - a memory's body does not fit in 400px. The list keeps a narrow column so you
-   don't lose your place in the results you came from. */
-body.editing main{grid-template-columns:minmax(0,300px) minmax(0,1fr)}
-@media(max-width:1000px){main{grid-template-columns:1fr}#detail{display:none}
-  body.editing main{grid-template-columns:1fr}
-  body.editing #list{display:none}body.editing #detail{display:block}}
+main{height:calc(100vh - 89px)}
 .pane{overflow-y:auto;overscroll-behavior:contain}
 #list{padding:18px 20px 60px}
-#detail{border-left:1px solid var(--line);background:var(--panel);padding:18px 20px 60px}
-body.editing #detail{padding:22px 30px 60px}
-/* the form itself stays readable - a 1200px-wide single-line input is worse, not better */
+/* The editor lives in dialog#detail-dialog now, not a rail that eats screen width whether or
+   not anything is selected, and not a jarring reflow of the list when it opens. It always gets
+   roomy space - there's no narrow-vs-editing distinction to make in a dialog. */
+#detail{padding:22px 30px 40px}
 .dwrap{max-width:900px}
 .fld{min-width:0}
-.frow{display:grid;grid-template-columns:1fr;gap:0 18px}
-body.editing .frow{grid-template-columns:1fr 1fr}
-body.editing #detail textarea[data-k=text]{min-height:min(46vh,520px)}
-body.editing #detail textarea[data-k=summary]{min-height:76px}
+.frow{display:grid;grid-template-columns:1fr 1fr;gap:0 18px}
+@media(max-width:640px){.frow{grid-template-columns:1fr}}
+#detail textarea[data-k=text]{min-height:min(46vh,520px)}
+#detail textarea[data-k=summary]{min-height:76px}
 
 /* ---------- controls ---------- */
 .search{position:relative;margin-bottom:12px}
@@ -265,15 +272,85 @@ mark{background:var(--mark);color:inherit;border-radius:2px;padding:0 1px}
   font:10.5px var(--mono);color:var(--faint)}
 .scbadge{font:10.5px var(--mono);color:var(--accent-ink);font-weight:600}
 
-/* ---------- dashboard: reminders banner + section heads ---------- */
-.note.reminders{display:flex;align-items:center;gap:13px;padding:12px 14px}
-.note.reminders .ic{width:30px;height:30px;border-radius:8px;background:var(--sunk);
+/* view toggle - cards (the default grid above) vs. a dense wide list, same .mcard markup either
+   way. List mode just reflows the card's own children into a row instead of adding new markup. */
+.viewtoggle{display:flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}
+.viewtoggle button{background:var(--panel);border:0;padding:5px 8px;cursor:pointer;color:var(--dim);
+  display:flex}
+.viewtoggle button+button{border-left:1px solid var(--line)}
+.viewtoggle button svg{width:13px;height:13px}
+.viewtoggle button.on{background:var(--accent-wash);color:var(--accent-ink)}
+.viewtoggle button:hover{color:var(--ink)}
+.cardgrid.list{display:flex;flex-direction:column;gap:6px}
+.cardgrid.list .mcard{flex-direction:row;align-items:center;gap:14px;min-height:auto;
+  padding:8px 14px;border-top:1px solid var(--line);border-left:3px solid var(--cat,var(--accent))}
+.cardgrid.list .cathead{flex:0 0 180px}
+.cardgrid.list .slug{flex:0 0 170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cardgrid.list .headline{flex:1 1 auto;-webkit-line-clamp:1;white-space:nowrap;text-overflow:ellipsis}
+.cardgrid.list .preview{display:none}
+.cardgrid.list .mfoot{margin-top:0;flex:0 0 auto;flex-wrap:nowrap}
+
+/* ---------- dashboard: overview ----------
+   Four stat cards, then two rows of two panels - distribution/signals, activity/health. Nothing
+   here needs its own page: it's what you'd want visible before deciding where to dig in, which is
+   also why the periodic refresh (see viewDashboard) keeps it live without a manual reload. */
+.ov-grid{display:grid;grid-template-columns:1.3fr 1fr 1fr 1fr;gap:12px;margin-bottom:20px}
+@media(max-width:900px){.ov-grid{grid-template-columns:repeat(2,1fr)}}
+.ov-card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);
+  padding:16px 18px;display:flex;flex-direction:column;gap:9px;min-height:100px}
+.ov-card .top{display:flex;align-items:center;gap:10px}
+.ov-card .ic{width:28px;height:28px;border-radius:8px;background:var(--sunk);color:var(--dim);
   display:flex;align-items:center;justify-content:center;flex:none}
-.note.reminders .ic svg{width:15px;height:15px;color:var(--faint)}
-.note.reminders b{display:block;font-size:13px}
-.note.reminders .soon{margin-left:auto;font:10px var(--mono);text-transform:uppercase;
-  letter-spacing:.07em;color:var(--accent-ink);background:var(--accent-wash);padding:3px 8px;
-  border-radius:20px;flex:none}
+.ov-card .ic svg{width:14px;height:14px}
+.ov-card .eyebrow{font:10px var(--mono);text-transform:uppercase;letter-spacing:.07em;
+  color:var(--faint)}
+.ov-card .num{font-size:26px;font-weight:600;color:var(--ink);line-height:1}
+.ov-card .cap{font-size:11.5px;color:var(--faint)}
+.ov-card.hi{background:var(--accent);border-color:var(--accent)}
+.ov-card.hi .ic{background:rgba(255,255,255,.2);color:#fff}
+.ov-card.hi .eyebrow,.ov-card.hi .cap{color:rgba(255,255,255,.78)}
+.ov-card.hi .num{color:#fff}
+
+.ov-row{display:grid;grid-template-columns:1.7fr 1fr;gap:12px;margin-bottom:12px}
+@media(max-width:900px){.ov-row{grid-template-columns:1fr}}
+.ov-panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);
+  padding:16px 18px}
+.ov-panel .phead{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:14px}
+.ov-panel .phead h3{margin:2px 0 0;font-size:14px;font-weight:600;color:var(--ink)}
+.ov-panel .phead a{font-size:12px;color:var(--accent-ink);cursor:pointer}
+.ov-todo{margin-bottom:20px}
+
+.ov-bar{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.ov-bar:last-child{margin-bottom:0}
+.ov-bar .lbl{width:112px;flex:none;font-size:12.5px;color:var(--body);white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.ov-bar .track{flex:1;height:8px;border-radius:4px;background:var(--sunk);overflow:hidden}
+.ov-bar .fill{display:block;height:100%;border-radius:4px;background:var(--cat,var(--accent))}
+.ov-bar .n{width:26px;text-align:right;font:11px var(--mono);color:var(--dim)}
+
+.ov-tags{display:flex;flex-wrap:wrap;gap:8px}
+.ov-tagpill{background:var(--sunk);border:1px solid var(--line);border-radius:20px;
+  padding:5px 10px;font-size:12px;color:var(--body);display:flex;align-items:center;gap:5px;
+  cursor:pointer}
+.ov-tagpill:hover{border-color:var(--dim);color:var(--ink)}
+.ov-tagpill b{font:10px var(--mono);color:var(--dim);font-weight:600}
+
+.ov-activity{display:grid;grid-template-columns:1fr 1fr;gap:0 20px}
+@media(max-width:900px){.ov-activity{grid-template-columns:1fr}}
+.ov-arow{display:flex;align-items:center;gap:9px;padding:8px 0;cursor:pointer;
+  border-bottom:1px solid var(--line-soft)}
+.ov-arow:hover .ov-atitle{color:var(--accent-ink)}
+.ov-adot{width:7px;height:7px;border-radius:50%;background:var(--cat,var(--accent));flex:none}
+.ov-amid{min-width:0;flex:1}
+.ov-atitle{font-size:12.5px;color:var(--ink);font-weight:500;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.ov-asub{font-size:11px;color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ov-awhen{margin-left:auto;font:10.5px var(--mono);color:var(--faint);flex:none}
+
+.ov-health .lead{font-size:12.5px;color:var(--good);margin-bottom:12px;line-height:1.5}
+.ov-health .vrow{cursor:default;padding:6px 0}
+.ov-health .vrow:hover{background:transparent}
+
 /* the copy-into-a-fresh-agent-session prompt - a preview you can read, not a wall to scroll */
 .promptbox{border:1px solid var(--line);background:var(--sunk);border-radius:var(--r);
   padding:11px 13px;font:11.5px/1.65 var(--mono);color:var(--body);white-space:pre-wrap;
@@ -351,6 +428,7 @@ label u{text-decoration:none;color:var(--accent-ink);text-transform:none;letter-
     </button>
   </div>
   <div class="stats" id="stats"></div>
+  <button type="button" class="btn tiny" id="agent-btn">Brief a fresh agent</button>
   <select id="palette-select" title="Color theme">
     <option value="">Loom</option>
     <option value="midnight">Midnight</option>
@@ -362,7 +440,6 @@ label u{text-decoration:none;color:var(--accent-ink);text-transform:none;letter-
 
 <main>
   <div class="pane" id="list"></div>
-  <div class="pane" id="detail"></div>
 </main>
 
 <div id="toast"></div>
@@ -375,6 +452,28 @@ label u{text-decoration:none;color:var(--accent-ink);text-transform:none;letter-
        into memory, one strand at a time.</p>
     <button type="button" class="btn" id="about-close">Close</button>
   </div>
+</dialog>
+
+<dialog id="agent-dialog">
+  <div class="body">
+    <h2>Brief a fresh agent</h2>
+    <p>Paste this at the start of a new session so it knows Loom is here before it assumes
+       anything about this project.</p>
+    <div class="promptbox open" id="agent-prompt-text"></div>
+    <div class="row" style="margin-top:12px">
+      <button type="button" class="btn primary" id="agent-copy">Copy prompt</button>
+      <button type="button" class="btn ghost" id="agent-close">Close</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="detail-dialog">
+  <button type="button" class="dclose" id="detail-close-x" aria-label="Close">
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6">
+      <path d="M3 3l10 10M13 3L3 13"/>
+    </svg>
+  </button>
+  <div class="pane" id="detail"></div>
 </dialog>
 
 <script>
@@ -390,6 +489,7 @@ const escHtml=s=>(s??'').toString().replace(/[&<>"]/g,c=>
    instant a jot is clicked. */
 let view='dashboard',sel=null,activeTags=new Set(),allTags=[],lastQ='',stats={},
     sortOrder='',sinceWhen='',memOnly=false;
+let cardMode='cards';try{cardMode=localStorage.getItem('loom-cardmode')||'cards';}catch(e){}
 
 function toast(msg,kind){const t=$('#toast');t.textContent=msg;t.className='show '+(kind||'ok');
   clearTimeout(t._t);t._t=setTimeout(()=>t.className='',3200);}
@@ -550,7 +650,7 @@ function jotCard(j,maxScore,terms){
   f.append(trail);
   c.append(f);
 
-  c.onclick=function(){sel=j;document.body.classList.add('editing');render();};
+  c.onclick=function(){sel=j;render();};
   return c;
 }
 
@@ -594,8 +694,23 @@ async function viewSearch(){
   memToggle.onclick=function(){memOnly=!memOnly;memToggle.classList.toggle('on',memOnly);run();};
   memWrap.append(memToggle);bar.append(memWrap);
 
+  const vt=el('div','viewtoggle');
+  const cardsBtn=el('button');cardsBtn.type='button';cardsBtn.title='Card view';
+  cardsBtn.innerHTML='<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">'+
+    '<rect x="1.5" y="1.5" width="6" height="6" rx="1"/><rect x="8.5" y="1.5" width="6" height="6" rx="1"/>'+
+    '<rect x="1.5" y="8.5" width="6" height="6" rx="1"/><rect x="8.5" y="8.5" width="6" height="6" rx="1"/></svg>';
+  const listBtn=el('button');listBtn.type='button';listBtn.title='List view';
+  listBtn.innerHTML='<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">'+
+    '<path d="M1.5 3h13M1.5 8h13M1.5 13h13"/></svg>';
+  const setMode=function(m){cardMode=m;try{localStorage.setItem('loom-cardmode',m);}catch(e){}
+    cardsBtn.classList.toggle('on',m==='cards');listBtn.classList.toggle('on',m==='list');
+    grid.classList.toggle('list',m==='list');};
+  cardsBtn.onclick=()=>setMode('cards');listBtn.onclick=()=>setMode('list');
+  cardsBtn.classList.toggle('on',cardMode==='cards');listBtn.classList.toggle('on',cardMode==='list');
+  vt.append(cardsBtn,listBtn);bar.append(vt);
+
   const nw=el('button','btn tiny primary','New jot');
-  nw.onclick=function(){sel={__new:true};document.body.classList.add('editing');render();};
+  nw.onclick=function(){sel={__new:true};render();};
   bar.append(nw);
   L.append(bar);
 
@@ -614,7 +729,7 @@ async function viewSearch(){
   }
 
   const meta=el('div','rmeta');L.append(meta);
-  const grid=el('div','cardgrid');L.append(grid);
+  const grid=el('div','cardgrid'+(cardMode==='list'?' list':''));L.append(grid);
 
   async function run(){
     lastQ=q.value;
@@ -668,6 +783,13 @@ function agentPrompt(){
   const m=(stats&&stats.named!==undefined)?stats.named:'?';
   return [
 "INIT ONLY - DO EXACTLY THIS, THEN STOP:",
+"0. If Loom's MCP tools (loom_search, loom_get, ...) are NOT already available in this session,",
+"   register the server, then tell Alex to start a NEW session before going any further - MCP",
+"   servers are only picked up at session start, never mid-session:",
+"     Claude Code:  claude mcp add --transport http loom "+o+"/mcp",
+"     Codex CLI:    codex mcp add loom --url "+o+"/mcp",
+"     Other agents: add a remote/Streamable HTTP MCP server pointing at "+o+"/mcp, or skip this",
+"                   and use the REST calls below instead.",
 "1. One call to skim what's here: loom_search(order=newest, limit=20, brief=true) over MCP if",
 "   connected, else GET "+o+"/jots?order=newest&limit=20&brief=1. brief drops jot bodies so the",
 "   skim stays cheap - only loom_get a hit if a summary alone isn't enough.",
@@ -684,9 +806,6 @@ function agentPrompt(){
 "noticed that should be addressed later instead of doing it now.",
 "",
 "--- reference below, not needed for init ---",
-"",
-"MCP (run once, then start a NEW session - servers are only picked up at session start):",
-"  claude mcp add --transport http loom "+o+"/mcp",
 "",
 "REST, no registration needed:",
 "  GET  "+o+"/jots?q=<terms>          search, best match first",
@@ -726,66 +845,172 @@ function copyText(t,btn){
   ta.remove();
 }
 
+const OV_ICONS={
+  dot:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6">'+
+      '<circle cx="8" cy="8" r="3.2"/></svg>',
+  layers:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round">'+
+      '<path d="M8 2 2 5.3 8 8.6l6-3.3L8 2Z"/><path d="M2 8.7 8 12l6-3.3M2 11.7 8 15l6-3.3"/></svg>',
+  hash:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">'+
+      '<path d="M6.2 2 4.7 14M11.3 2 9.8 14M3 6h11M2 10h11"/></svg>',
+  flag:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round">'+
+      '<path d="M3 14V2"/><path d="M3 3h9l-2.3 3L12 9H3"/></svg>'
+};
+
+/* ---------- dashboard: overview ----------
+   One bulk brief=1 fetch (see loom-todo-summary-only-listing) drives both the distribution bars
+   and the activity list - a topic-level skim has no business pulling every jot body over the
+   wire twice. */
 async function viewDashboard(){
   const L=$('#list');
+  try{
+    const [tags,sim,recent,health]=await Promise.all([
+      api('/tags'), api('/tags/similar'),
+      api('/jots?order=newest&limit=200&brief=1'), api('/stats')
+    ]);
+    const topTags=tags.tags.slice().sort((a,b)=>b.count-a.count);
+    const p=health.persistence||{};
 
-  const rem=el('div','note reminders');
-  const ic=el('div','ic');
-  ic.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">'+
-    '<path d="M12 5v6l4 2"/><circle cx="12" cy="13" r="8"/><path d="M9 2h6"/></svg>';
-  rem.append(ic);
-  const copy=el('div');
-  copy.append(el('b',null,'No reminders yet'));
-  copy.append(el('div',null,'Time-based nudges will surface here once reminder scheduling ships.'));
-  rem.append(copy);
-  rem.append(el('span','soon','Coming soon'));
-  L.append(rem);
+    /* ---- todos & reminders ----
+       Sits above the stat cards on purpose - open work is the thing to act on next, everything
+       else below is context for deciding what to do about it. Pulled from the same brief=1 fetch
+       as activity/distribution, so it inherits the same newest-200 cap rather than a second call. */
+    const todos=recent.jots.filter(j=>(j.tags||[]).some(t=>ACTION_TAGS.has(t)));
+    const todoP=el('div','ov-panel ov-todo');L.append(todoP);
+    const th=el('div','phead');const th1=el('div');
+    th1.append(el('div','eyebrow','TODOS & REMINDERS'));
+    th1.append(el('h3',null,todos.length?todos.length+' open':'Nothing outstanding'));
+    th.append(th1);
+    th.append(el('a',null,'Open in Search'));
+    th.lastChild.onclick=function(){view='search';activeTags=new Set(['todo']);drawNav();render();};
+    todoP.append(th);
+    if(!todos.length){
+      todoP.append(el('div','empty','Nothing tagged todo, warning, or error. Clear.'));
+    }else{
+      const list=el('div','ov-activity');todoP.append(list);
+      todos.slice(0,8).forEach(function(j){
+        const flagged=(j.tags||[]).filter(t=>ACTION_TAGS.has(t));
+        const r=el('div','ov-arow');r.style.setProperty('--cat','var(--bad)');
+        r.append(el('i','ov-adot'));
+        const mid=el('div','ov-amid');
+        mid.append(el('div','ov-atitle',j.name||(j.summary||'').slice(0,80)||'(untitled)'));
+        mid.append(el('div','ov-asub',flagged.map(t=>'#'+t).join(' ')+' · '+(j.editor||'user')));
+        r.append(mid);
+        r.append(el('span','ov-awhen',ago(j.updated||j.id)));
+        r.onclick=async function(){
+          try{sel=await api('/jots/'+j.id);render();}
+          catch(e){toast(e.message,'err');}
+        };
+        list.append(r);
+      });
+      if(todos.length>8)
+        todoP.append(el('div','note','+'+(todos.length-8)+' more — open Search and filter by tag.'));
+    }
 
-  const rHead=el('div','colhead');
-  rHead.append(el('h2',null,'Recent'));
-  rHead.append(el('span',null,'newest first'));
-  L.append(rHead);
-  const grid=el('div','cardgrid');L.append(grid);
-  async function run(){
-    try{
-      const r=await api('/jots?order=newest&limit=30');
-      grid.innerHTML='';
-      if(!r.jots.length){
-        const e=el('div','empty');
-        e.append(el('b',null,'No jots yet'));
-        e.append(el('div',null,'Write one from Search, or import a jots.log.'));
-        grid.append(e);
-      }else{
-        r.jots.forEach(j=>grid.append(jotCard(j,0,[])));
-      }
-    }catch(e){grid.innerHTML='';grid.append(el('div','note bad',e.message));}
-  }
-  await run();
+    /* ---- stat cards ---- */
+    const grid=el('div','ov-grid');L.append(grid);
+    const card=function(cls,icon,eyebrow,num,cap){
+      const c=el('div','ov-card'+(cls?' '+cls:''));
+      const top=el('div','top');
+      const ic=el('div','ic');ic.innerHTML=OV_ICONS[icon];top.append(ic);
+      top.append(el('div','eyebrow',eyebrow));c.append(top);
+      c.append(el('div','num',String(num)));
+      c.append(el('div','cap',cap));
+      grid.append(c);
+    };
+    card('hi','dot','Active memories',health.jots??'—',
+      (health.named||0)+' named · '+Math.max((health.jots||0)-(health.named||0),0)+' passing notes');
+    card('','layers','Topics',topTags.length,'Bare-tag vocabulary');
+    card('','hash','Tags in use',health.tags??'—','Including structural tags');
+    card('','flag','Needs attention',sim.clusters.length,
+      sim.clusters.length?'Tag groups that look like duplicates':'No drift detected');
+
+    /* ---- distribution + signals ---- */
+    const row1=el('div','ov-row');L.append(row1);
+
+    const catCounts={};
+    recent.jots.forEach(function(j){const c=catColorOf(j.tags);catCounts[c.name]=(catCounts[c.name]||0)+1;});
+    const catList=Object.keys(catCounts).map(k=>[k,catCounts[k]]).sort((a,b)=>b[1]-a[1]);
+
+    const distP=el('div','ov-panel');row1.append(distP);
+    const dh=el('div','phead');const dh1=el('div');
+    dh1.append(el('div','eyebrow','DISTRIBUTION'));dh1.append(el('h3',null,'Jots by topic'));
+    dh.append(dh1);distP.append(dh);
+    if(!catList.length){distP.append(el('div','empty','Nothing yet.'));}
+    else{
+      const maxC=catList[0][1];
+      catList.slice(0,10).forEach(function(pair){
+        const cat=hashCat(pair[0]);
+        const b=el('div','ov-bar');b.style.setProperty('--cat','var('+cat.cssVar+')');
+        const l=el('span','lbl',pair[0]);l.title=pair[0];b.append(l);
+        const track=el('div','track');const fill=el('i','fill');
+        fill.style.width=(100*pair[1]/maxC)+'%';track.append(fill);b.append(track);
+        b.append(el('span','n',pair[1]));
+        distP.append(b);
+      });
+    }
+
+    const sigP=el('div','ov-panel');row1.append(sigP);
+    const sh=el('div','phead');
+    sh.append(el('h3',null,'Top Tags'));sigP.append(sh);
+    if(!topTags.length){sigP.append(el('div','empty','No tags yet.'));}
+    else{
+      const wrap=el('div','ov-tags');
+      topTags.slice(0,8).forEach(function(t){
+        const pill=el('div','ov-tagpill');
+        pill.append(document.createTextNode('#'+t.tag));
+        pill.append(el('b',null,t.count));
+        pill.onclick=function(){view='search';activeTags=new Set([t.tag]);drawNav();render();};
+        wrap.append(pill);
+      });
+      sigP.append(wrap);
+    }
+
+    /* ---- activity + store health ---- */
+    const row2=el('div','ov-row');L.append(row2);
+
+    const actP=el('div','ov-panel');row2.append(actP);
+    const ah=el('div','phead');const ah1=el('div');
+    ah1.append(el('div','eyebrow','ACTIVITY'));ah1.append(el('h3',null,'Recently changed'));
+    ah.append(ah1);actP.append(ah);
+    if(!recent.jots.length){
+      actP.append(el('div','empty','No jots yet. Write one from Search.'));
+    }else{
+      const list=el('div','ov-activity');actP.append(list);
+      recent.jots.slice(0,8).forEach(function(j){
+        const cat=catColorOf(j.tags);
+        const r=el('div','ov-arow');r.style.setProperty('--cat','var('+cat.cssVar+')');
+        r.append(el('i','ov-adot'));
+        const mid=el('div','ov-amid');
+        mid.append(el('div','ov-atitle',j.name||(j.summary||'').slice(0,80)||'(untitled)'));
+        mid.append(el('div','ov-asub',cat.name+' · '+(j.editor||'user')));
+        r.append(mid);
+        r.append(el('span','ov-awhen',ago(j.updated||j.id)));
+        r.onclick=async function(){
+          try{sel=await api('/jots/'+j.id);render();}
+          catch(e){toast(e.message,'err');}
+        };
+        list.append(r);
+      });
+    }
+
+    const healthP=el('div','ov-panel ov-health');row2.append(healthP);
+    const hh=el('div','phead');const hh1=el('div');
+    hh1.append(el('div','eyebrow','STORE HEALTH'));
+    hh1.append(el('h3',null,p.enabled?'Persisted to disk':'RAM only'));
+    hh.append(hh1);healthP.append(hh);
+    healthP.append(el('div','lead',p.enabled?
+      'WAL plus periodic snapshots - every write here survives a restart.':
+      'Everything is lost on restart. Start Loom without --no-persist.'));
+    const vr=function(k,v){const r=el('div','vrow');r.append(el('span',null,k));
+      r.append(el('span','n',v));healthP.append(r);};
+    vr('Jots',health.jots);
+    vr('Tag vocabulary',health.tags);
+    if(p.enabled){vr('WAL bytes',(p.wal_bytes/1024).toFixed(1)+' KB');vr('Snapshots',p.snapshots);}
+    vr('Mutations this run',health.mutations);
+  }catch(e){L.append(el('div','note bad',e.message));}
+
   clearInterval(window.__rt);
-  window.__rt=setInterval(function(){if(view==='dashboard'&&!sel)run();},5000);
-
-  const uHead=el('div','colhead');
-  uHead.append(el('h2',null,'Upcoming'));
-  uHead.append(el('span',null,'due soon'));
-  L.append(uHead);
-  const uEmpty=el('div','empty');
-  uEmpty.append(el('b',null,'Nothing scheduled'));
-  uEmpty.append(el('div',null,"Due-date tracking isn't a feature yet - this is reserving its place."));
-  L.append(uEmpty);
-
-  const pHead=el('div','colhead');
-  pHead.append(el('h2',null,'Brief a fresh agent'));
-  pHead.append(el('span',null,'copy into a new session'));
-  L.append(pHead);
-  const pText=agentPrompt();
-  const pb=el('div','promptbox',pText);L.append(pb);
-  const prow=el('div','row');prow.style.marginTop='10px';
-  const cp=el('button','btn primary','Copy prompt');
-  cp.onclick=function(){copyText(pText,cp);};
-  const ex=el('button','btn tiny ghost','Show all');
-  ex.onclick=function(){pb.classList.toggle('open');
-    ex.textContent=pb.classList.contains('open')?'Collapse':'Show all';};
-  prow.append(cp,ex);L.append(prow);
+  window.__rt=setInterval(function(){if(view==='dashboard'&&!sel)render();},15000);
 }
 
 /* ---------- tags ---------- */
@@ -888,13 +1113,13 @@ async function viewHealth(){
 
 /* ---------- detail / editor ---------- */
 function renderDetail(){
-  const P=$('#detail');P.innerHTML='';
+  const dlg=$('#detail-dialog');
   if(!sel){
-    const e=el('div','empty');
-    e.append(el('b',null,'Nothing selected'));
-    e.append(el('div',null,'Pick a jot to read or edit it.'));
-    P.append(e);return;
+    if(dlg.open)dlg.close();
+    return;
   }
+  if(!dlg.open)dlg.showModal();
+  const P=$('#detail');P.innerHTML='';
   const isNew=!!sel.__new;
   const W=el('div','dwrap');P.append(W);
 
@@ -991,14 +1216,14 @@ function renderDetail(){
     del.onclick=async function(){
       if(!confirm('Delete this jot permanently? There is no undo.'))return;
       try{await api('/jots/'+sel.id,{method:'DELETE'});toast('Deleted');
-        sel=null;document.body.classList.remove('editing');
+        sel=null;
         await refreshStats();render();}
       catch(e){toast(e.message,'err');}
     };
     act.append(rel,del);
   }
   const close=el('button','btn tiny ghost','Close');
-  close.onclick=function(){sel=null;document.body.classList.remove('editing');render();};
+  close.onclick=function(){sel=null;render();};
   act.append(close);
   W.append(act);
 
@@ -1033,11 +1258,26 @@ $('#about-btn').addEventListener('click',()=>$('#about').showModal());
 $('#about-close').addEventListener('click',()=>$('#about').close());
 $('#about').addEventListener('click',function(e){if(e.target===this)this.close();});
 
+$('#agent-btn').addEventListener('click',function(){
+  $('#agent-prompt-text').textContent=agentPrompt();
+  $('#agent-dialog').showModal();
+});
+$('#agent-close').addEventListener('click',()=>$('#agent-dialog').close());
+$('#agent-dialog').addEventListener('click',function(e){if(e.target===this)this.close();});
+
+/* Esc and the backdrop both fire the dialog's native close - sel has to fall back in step so a
+   later render() doesn't reopen it. The X button and in-panel Close button just call render()
+   after clearing sel; this covers the two paths that don't. */
+$('#detail-close-x').addEventListener('click',()=>$('#detail-dialog').close());
+$('#detail-dialog').addEventListener('click',function(e){if(e.target===this)this.close();});
+$('#detail-dialog').addEventListener('close',function(){if(sel){sel=null;render();}});
+$('#agent-copy').addEventListener('click',function(){copyText(agentPrompt(),$('#agent-copy'));});
+
 document.addEventListener('keydown',function(e){
   const typing=/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
   if(e.key==='/'&&!typing){e.preventDefault();$('#navsearch-input').focus();}
   if(e.key==='Escape'){
-    if(sel){sel=null;document.body.classList.remove('editing');render();}
+    if(sel){sel=null;render();}
     else if(typing)document.activeElement.blur();
   }
 });
