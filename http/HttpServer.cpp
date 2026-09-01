@@ -194,7 +194,8 @@ struct HttpServer::Impl
             if (std::error_code ec = mOps.Search(query, results))
                 return Fail(ec);
 
-            return Ok(JOTJSON::SearchToJson(results, Names(), ParamFlag(req, "verbose")));
+            return Ok(JOTJSON::SearchToJson(results, Names(), ParamFlag(req, "verbose"),
+                                             ParamFlag(req, "brief")));
         });
 
         CROW_ROUTE(mApp, "/jots/<int>").methods(crow::HTTPMethod::Get)

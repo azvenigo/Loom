@@ -101,8 +101,12 @@ namespace
         tools.push_back(Tool("loom_search",
             "Search the shared memory. Ranked by relevance when 'query' is given, newest-first "
             "otherwise. A match in a jot's summary counts far more than the same words in its body, "
-            "so short specific queries work better than long ones. Returns whole records, so a "
-            "search is usually all you need - do not follow up with loom_get on every hit.",
+            "so short specific queries work better than long ones. Returns whole records by "
+            "default, so a search is usually all you need - do not follow up with loom_get on "
+            "every hit. Set 'brief' for a startup skim or any browse where you only need topics: "
+            "it drops the body from every hit so N jots cost a fraction of the tokens, and marks "
+            "has_text on any hit whose body got dropped - loom_get that one if it turns out to "
+            "matter.",
             json{
                 {"query",    Str("Free text. Leave empty to browse by filter alone.")},
                 {"tags",     StrArray("Every tag listed must be present.")},
@@ -112,7 +116,10 @@ namespace
                 {"until",    Str("Upper time bound, same forms as 'since'.")},
                 {"order",    Str("relevance | newest | oldest. Defaults to relevance when there is "
                                  "a query, newest otherwise.")},
-                {"limit",    json{{"type","integer"},{"description","Max results (default 20)."}}}
+                {"limit",    json{{"type","integer"},{"description","Max results (default 20)."}}},
+                {"brief",    json{{"type","boolean"},
+                             {"description","Drop each hit's body (default false). Use for a cheap "
+                                            "topic skim - id/name/summary/tags only."}}}
             }, json::array()));
 
         tools.push_back(Tool("loom_get",
@@ -261,6 +268,11 @@ namespace
         return nDefault;
     }
 
+    bool ReadBool(const json& args, const char* pKey, bool bDefault)
+    {
+        return (args.contains(pKey) && args[pKey].is_boolean()) ? args[pKey].get<bool>() : bDefault;
+    }
+
     // Builds a JotInput, engaging ONLY the fields actually present. That is what makes
     // loom_update a genuine patch instead of a full replace that silently blanks what you omitted.
     JotInput ReadJotInput(const json& args)
@@ -305,6 +317,7 @@ namespace
             spec.msUntil  = ReadStr(args, "until");
             spec.msOrder  = ReadStr(args, "order");
             spec.mnLimit  = static_cast<size_t>(ReadInt(args, "limit", 20));
+            const bool bBrief = ReadBool(args, "brief", false);
 
             Query query;
             if (std::error_code ec = ops.BuildQuery(spec, query))
@@ -317,7 +330,7 @@ namespace
             if (results.mJots.empty())
                 return ToolText("No matches.");
 
-            return ToolText(JOTJSON::SearchToJson(results, names, false));
+            return ToolText(JOTJSON::SearchToJson(results, names, false, bBrief));
         }
 
         if (sName == "loom_get")

@@ -54,7 +54,11 @@ namespace JOTJSON
     // Responses
     //--------------------------------------------------------------------------------------------
 
-    std::string SearchToJson(const SearchResultSet& results, const NameTables& names, bool bVerbose);
+    // bBrief drops `text` from every entry (replaced with `has_text:true` when there was some),
+    // for a cheap topic skim - loom_get/GET-by-id fetches the body once something looks relevant.
+    // Independent of bVerbose, which is about materializing defaults, not trimming content.
+    std::string SearchToJson(const SearchResultSet& results, const NameTables& names, bool bVerbose,
+                              bool bBrief = false);
     std::string JotListToJson(const std::vector<Jot>& vJots, const NameTables& names, bool bVerbose);
     std::string TagsToJson(const std::vector<TagStat>& vTags);
     std::string ClustersToJson(const std::vector<TagCluster>& vClusters);
