@@ -116,12 +116,26 @@ nav button.on .pill{background:var(--accent-wash);color:var(--accent-ink)}
   pointer-events:none}
 
 /* ---------- layout ---------- */
-main{display:grid;grid-template-columns:minmax(0,1fr) 400px;height:calc(100vh - 89px)}
+main{display:grid;grid-template-columns:minmax(0,1fr) 400px;height:calc(100vh - 89px);
+  transition:grid-template-columns .15s ease}
+/* Editing is a full-attention task, so the panel stops being a rail and takes most of the
+   window - a memory's body does not fit in 400px. The list keeps a narrow column so you
+   don't lose your place in the results you came from. */
+body.editing main{grid-template-columns:minmax(0,300px) minmax(0,1fr)}
 @media(max-width:1000px){main{grid-template-columns:1fr}#detail{display:none}
+  body.editing main{grid-template-columns:1fr}
   body.editing #list{display:none}body.editing #detail{display:block}}
 .pane{overflow-y:auto;overscroll-behavior:contain}
 #list{padding:18px 20px 60px}
 #detail{border-left:1px solid var(--line);background:var(--panel);padding:18px 20px 60px}
+body.editing #detail{padding:22px 30px 60px}
+/* the form itself stays readable - a 1200px-wide single-line input is worse, not better */
+.dwrap{max-width:900px}
+.fld{min-width:0}
+.frow{display:grid;grid-template-columns:1fr;gap:0 18px}
+body.editing .frow{grid-template-columns:1fr 1fr}
+body.editing #detail textarea[data-k=text]{min-height:min(46vh,520px)}
+body.editing #detail textarea[data-k=summary]{min-height:76px}
 
 /* ---------- controls ---------- */
 .search{position:relative;margin-bottom:12px}
@@ -215,6 +229,13 @@ mark{background:var(--mark);color:inherit;border-radius:2px;padding:0 1px}
 .note.reminders .soon{margin-left:auto;font:10px var(--mono);text-transform:uppercase;
   letter-spacing:.07em;color:var(--accent-ink);background:var(--accent-wash);padding:3px 8px;
   border-radius:20px;flex:none}
+/* the copy-into-a-fresh-agent-session prompt - a preview you can read, not a wall to scroll */
+.promptbox{border:1px solid var(--line);background:var(--sunk);border-radius:var(--r);
+  padding:11px 13px;font:11.5px/1.65 var(--mono);color:var(--body);white-space:pre-wrap;
+  max-height:150px;overflow:hidden;position:relative;transition:max-height .15s ease}
+.promptbox.open{max-height:none}
+.promptbox:not(.open)::after{content:"";position:absolute;left:0;right:0;bottom:0;height:44px;
+  background:linear-gradient(transparent,var(--sunk))}
 .colhead{display:flex;align-items:baseline;gap:8px;margin:22px 0 11px}
 .colhead:first-child{margin-top:0}
 .colhead h2{margin:0;font-size:13px;font-weight:600;color:var(--ink)}
@@ -416,11 +437,18 @@ function highlight(text,terms){
    onto a small fixed set of colors already in the palette so the same tag always reads the same
    way, without inventing a new one-color-per-tag system. */
 const CAT_VARS=['--accent','--warn','--good','--dim'];
+function hashCat(name){
+  let h=0;for(let i=0;i<name.length;i++)h=(h*31+name.charCodeAt(i))>>>0;
+  return{cssVar:CAT_VARS[h%CAT_VARS.length],name:name};
+}
 function catColorOf(tags){
   const t=(tags||[]).find(x=>x.indexOf(':')<0);
-  if(!t)return{cssVar:'--dim',name:'untagged'};
-  let h=0;for(let i=0;i<t.length;i++)h=(h*31+t.charCodeAt(i))>>>0;
-  return{cssVar:CAT_VARS[h%CAT_VARS.length],name:t};
+  if(t)return hashCat(t);
+  // No free-form tag - fall back to type:<x> rather than claiming "untagged" when
+  // structural tags actually exist (a jot can be all-reserved-tags and still be tagged).
+  const typeTag=(tags||[]).find(x=>x.indexOf('type:')===0);
+  if(typeTag)return hashCat(typeTag.slice(5));
+  return{cssVar:'--dim',name:(tags||[]).length?'untyped':'untagged'};
 }
 
 function jotCard(j,maxScore,terms){
@@ -564,6 +592,58 @@ async function viewSearch(){
 }
 
 /* ---------- dashboard: at-a-glance home view ---------- */
+/* The brief a fresh agent starts from. Built live so the origin and the corpus size in it are
+   the real ones - a prompt with a stale port or an invented jot count is worse than none. */
+function agentPrompt(){
+  const o=location.origin;
+  const n=(stats&&stats.jots!==undefined)?stats.jots:'?';
+  const m=(stats&&stats.named!==undefined)?stats.named:'?';
+  return [
+"This project keeps its shared memory in Loom, a running memory service at "+o+".",
+"It currently holds "+n+" jots, "+m+" of them named memories. Read from it before you assume",
+"anything about this project, my preferences, or decisions already made.",
+"",
+"Connect over MCP (run once, then start a NEW session - MCP servers are only picked up at",
+"session start, never mid-session):",
+"  claude mcp add --transport http loom "+o+"/mcp",
+"",
+"Or use the REST API directly, no registration needed:",
+"  GET  "+o+"/jots?q=<terms>          search, best match first",
+"  GET  "+o+"/jots?order=newest&limit=20   what changed lately",
+"  GET  "+o+"/jots/by-name/<slug>     one named memory",
+"  POST "+o+"/jots                    {name,summary,text,tags,links,editor}",
+"",
+"How memory here works:",
+"- A jot WITH a `name` (slug) is a durable memory: one fact, one jot. Without a name it is a",
+"  passing note. Prefer updating the existing memory over writing a second one about the same",
+"  thing - POST with an existing name upserts it.",
+"- `summary` is the one-line fact and is weighted 3x in ranking; `text` is the supporting",
+"  detail and is optional. A terse jot can be summary-only.",
+"- Tags with a colon are structural (type:project, asserted:2026-08-31, status:superseded).",
+"  Bare tags are topical. Both are searchable.",
+"- Writes answer with a `warnings` array when a tag nearly duplicates an existing one. The",
+"  write still succeeded - fix the tag and write again rather than ignoring it.",
+"- Link related memories by slug in `links`. A slug that does not exist yet is kept pending",
+"  and connects itself the moment something takes that name.",
+"",
+"When you learn something durable in this session, write it back before the session ends."
+  ].join("\n");
+}
+
+function copyText(t,btn){
+  const done=function(){const was=btn.textContent;btn.textContent='Copied';
+    setTimeout(function(){btn.textContent=was;},1400);};
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(t).then(done,function(){toast('Copy blocked by the browser','err');});
+    return;
+  }
+  /* file:// and non-secure origins have no async clipboard - the old path still works there */
+  const ta=el('textarea');ta.value=t;ta.style.cssText='position:fixed;opacity:0';
+  document.body.append(ta);ta.select();
+  try{document.execCommand('copy');done();}catch(e){toast('Copy blocked by the browser','err');}
+  ta.remove();
+}
+
 async function viewDashboard(){
   const L=$('#list');
 
@@ -610,6 +690,20 @@ async function viewDashboard(){
   uEmpty.append(el('b',null,'Nothing scheduled'));
   uEmpty.append(el('div',null,"Due-date tracking isn't a feature yet - this is reserving its place."));
   L.append(uEmpty);
+
+  const pHead=el('div','colhead');
+  pHead.append(el('h2',null,'Brief a fresh agent'));
+  pHead.append(el('span',null,'copy into a new session'));
+  L.append(pHead);
+  const pText=agentPrompt();
+  const pb=el('div','promptbox',pText);L.append(pb);
+  const prow=el('div','row');prow.style.marginTop='10px';
+  const cp=el('button','btn primary','Copy prompt');
+  cp.onclick=function(){copyText(pText,cp);};
+  const ex=el('button','btn tiny ghost','Show all');
+  ex.onclick=function(){pb.classList.toggle('open');
+    ex.textContent=pb.classList.contains('open')?'Collapse':'Show all';};
+  prow.append(cp,ex);L.append(prow);
 }
 
 /* ---------- tags ---------- */
@@ -720,10 +814,11 @@ function renderDetail(){
     P.append(e);return;
   }
   const isNew=!!sel.__new;
+  const W=el('div','dwrap');P.append(W);
 
   const h=el('div','dhead');
   h.append(el('h3',null,isNew?'New jot':(sel.name||'Edit jot')));
-  P.append(h);
+  W.append(h);
 
   if(!isNew){
     const m=el('div','dmeta');
@@ -733,29 +828,37 @@ function renderDetail(){
     line('created',stamp(sel.id));
     if(sel.updated)line('edited',stamp(sel.updated));
     line('editor',sel.editor||'user');
-    P.append(m);
+    W.append(m);
   }
 
   const f={};
-  const field=function(key,label,tag,hint){
+  /* every field is its own .fld block so short fields can be paired two-up in a .frow when
+     the panel is wide - a label and its input have to travel together through the grid. */
+  const field=function(key,label,tag,hint,host){
+    const box=el('div','fld');(host||W).append(box);
     const l=el('label');l.append(document.createTextNode(label));
     if(hint)l.append(el('u',null,hint));
-    P.append(l);
+    box.append(l);
     const e=el(tag||'input');e.value=(sel[key]===undefined||sel[key]===null)?'':sel[key];
+    e.setAttribute('data-k',key);
     if(tag==='textarea')e.rows=(key==='text')?9:2;
-    P.append(e);f[key]=e;return e;
+    box.append(e);f[key]=e;return e;
   };
-  field('name','slug',null,'durable memories only');
+  const frow=function(){const d=el('div','frow');W.append(d);return d;};
+
+  const idRow=frow();
+  field('name','slug',null,'durable memories only',idRow);
+  field('editor','editor',null,null,idRow);
   field('summary','summary','textarea','weighted highest in search');
   field('text','text','textarea');
-  const tg=field('tags','tags',null,'comma separated');
+  const metaRow=frow();
+  const tg=field('tags','tags',null,'comma separated',metaRow);
   tg.value=(sel.tags||[]).join(', ');
-  const lk=field('links','links',null,'ids or slugs');
+  const lk=field('links','links',null,'ids or slugs',metaRow);
   lk.value=(sel.links||[]).concat(sel.pending||[]).join(', ');
-  field('editor','editor');
 
   if(!isNew&&(sel.pending||[]).length)
-    P.append(el('div','note','Unresolved: '+sel.pending.join(', ')+
+    W.append(el('div','note','Unresolved: '+sel.pending.join(', ')+
       ' — these connect themselves when a jot takes that slug.'));
 
   const act=el('div','actions');
@@ -795,9 +898,11 @@ function renderDetail(){
     rel.onclick=async function(){
       try{
         const r=await api('/jots/'+sel.id+'/links?depth=2');
-        P.append(el('div','sect','Linked — 2 hops, both directions'));
-        if(!r.jots.length)P.append(el('div','empty','Nothing links here.'));
-        r.jots.forEach(j=>P.append(jotCard(j,0,[])));
+        W.append(el('div','sect','Linked — 2 hops, both directions'));
+        if(!r.jots.length)W.append(el('div','empty','Nothing links here.'));
+        const g=el('div','cardgrid');
+        r.jots.forEach(j=>g.append(jotCard(j,0,[])));
+        W.append(g);
       }catch(e){toast(e.message,'err');}
     };
     const del=el('button','btn tiny danger','Delete');
@@ -813,7 +918,7 @@ function renderDetail(){
   const close=el('button','btn tiny ghost','Close');
   close.onclick=function(){sel=null;document.body.classList.remove('editing');render();};
   act.append(close);
-  P.append(act);
+  W.append(act);
 
   P.onkeydown=function(e){
     if((e.metaKey||e.ctrlKey)&&e.key==='Enter'){e.preventDefault();save.click();}
