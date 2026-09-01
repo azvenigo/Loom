@@ -98,7 +98,7 @@ set_source_files_properties(
 add_executable(loom main.cpp http/HttpServer.cpp http/HttpServer.h web/Dashboard.h)
 target_link_libraries(loom PRIVATE loomcore)
 
-target_include_directories(loom PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/vendor/asio)
+target_include_directories(loom PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/vendor/asio ${CMAKE_CURRENT_SOURCE_DIR}/vendor/crow)
 target_compile_definitions(loom PRIVATE ASIO_STANDALONE CROW_DISABLE_STATIC_DIR)
 
 if(WIN32)
