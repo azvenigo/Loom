@@ -1,4 +1,5 @@
 #pragma once
+// Copyright (c) 2026 Alexander Zvenigorodsky. MIT License. See LICENSE.
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // Dashboard - the operator UI, embedded in the binary and served at "/".

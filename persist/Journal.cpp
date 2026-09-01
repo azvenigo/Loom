@@ -1,3 +1,4 @@
+// Copyright (c) 2026 Alexander Zvenigorodsky. MIT License. See LICENSE.
 #include "persist/Journal.h"
 
 #include "codec/JotJson.h"

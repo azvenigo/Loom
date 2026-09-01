@@ -1,4 +1,5 @@
 #pragma once
+// Copyright (c) 2026 Alexander Zvenigorodsky. MIT License. See LICENSE.
 
 #include "core/FlatJot.h"
 #include "core/JotStore.h"

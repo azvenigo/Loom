@@ -1,3 +1,4 @@
+// Copyright (c) 2026 Alexander Zvenigorodsky. MIT License. See LICENSE.
 #include "LoomTime.h"
 
 #include <cstdio>

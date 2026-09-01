@@ -1,4 +1,5 @@
 #pragma once
+// Copyright (c) 2026 Alexander Zvenigorodsky. MIT License. See LICENSE.
 
 #include <string>
 #include <system_error>

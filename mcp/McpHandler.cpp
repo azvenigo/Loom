@@ -1,3 +1,4 @@
+// Copyright (c) 2026 Alexander Zvenigorodsky. MIT License. See LICENSE.
 #include "mcp/McpHandler.h"
 
 #include "codec/JotJson.h"

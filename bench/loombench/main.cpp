@@ -1,3 +1,4 @@
+// Copyright (c) 2026 Alexander Zvenigorodsky. MIT License. See LICENSE.
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // loombench - what the store can actually do, with no socket in the way.
 //

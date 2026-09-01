@@ -1,3 +1,4 @@
+// Copyright (c) 2026 Alexander Zvenigorodsky. MIT License. See LICENSE.
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // The only translation unit in Loom that includes crow. See HttpServer.h for why that matters.
 //
