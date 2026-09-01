@@ -9,7 +9,7 @@ REM
 REM Output goes to build-direct\ next to this script. Adjust VSDIR if Visual Studio moves.
 REM ---------------------------------------------------------------------------------------------
 setlocal
-set VSDIR=C:\Program Files\Microsoft Visual Studio\18\Professional
+set VSDIR=D:\dev\Visual Studio 2026
 call "%VSDIR%\VC\Auxiliary\Build\vcvars64.bat" >nul 2>&1
 if errorlevel 1 (echo Could not find vcvars64.bat under "%VSDIR%" & exit /b 1)
 

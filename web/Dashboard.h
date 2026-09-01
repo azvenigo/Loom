@@ -200,6 +200,11 @@ button.tiny{font-size:12px;padding:4px 9px}
 mark{background:var(--mark);color:inherit;border-radius:2px;padding:0 1px}
 .tag{background:var(--sunk);color:var(--dim);border-radius:4px;padding:1px 6px;font-size:11px}
 .tag.res{background:transparent;border:1px dashed var(--line);color:var(--faint)}
+/* Action tags (todo/warning/error) get a fixed, non-hashed color - unlike catColorOf()'s
+   category dot, these mean "you may need to act on this" regardless of topic, so they always
+   read the same way. Reuses --bad, which CAT_VARS deliberately never hashes onto, so this can
+   never collide with a category color. */
+.tag.action{background:var(--bad-wash);color:var(--bad);border:1px solid var(--bad-line)}
 
 .cardgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:11px}
 .mcard{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);
@@ -437,6 +442,9 @@ function highlight(text,terms){
    onto a small fixed set of colors already in the palette so the same tag always reads the same
    way, without inventing a new one-color-per-tag system. */
 const CAT_VARS=['--accent','--warn','--good','--dim'];
+/* Tags meaning "you may need to act on this", independent of topic - see the .tag.action rule. */
+const ACTION_TAGS=new Set(['todo','warning','warn','error','bug']);
+const tagClass=t=>'tag'+(t.indexOf(':')>=0?' res':'')+(ACTION_TAGS.has(t)?' action':'');
 function hashCat(name){
   let h=0;for(let i=0;i<name.length;i++)h=(h*31+name.charCodeAt(i))>>>0;
   return{cssVar:CAT_VARS[h%CAT_VARS.length],name:name};
@@ -475,7 +483,10 @@ function jotCard(j,maxScore,terms){
   }
 
   const f=el('div','mfoot');
-  (j.tags||[]).slice(0,3).forEach(x=>f.append(el('span','tag'+(x.indexOf(':')>=0?' res':''),x)));
+  /* Action tags sort first so a `todo`/`warning`/`error` tag is never lost to the 3-tag clip -
+     it's the whole point of flagging it. */
+  const shown=(j.tags||[]).slice().sort((a,b)=>(ACTION_TAGS.has(b)?1:0)-(ACTION_TAGS.has(a)?1:0));
+  shown.slice(0,3).forEach(x=>f.append(el('span',tagClass(x),x)));
   const trail=el('span');trail.style.cssText='margin-left:auto;display:flex;gap:6px;align-items:center';
   if(j.editor)trail.append(el('span',null,'@'+j.editor));
   if(j.score!==undefined)trail.append(el('span','scbadge',j.score.toFixed(1)));
@@ -602,6 +613,10 @@ function agentPrompt(){
 "This project keeps its shared memory in Loom, a running memory service at "+o+".",
 "It currently holds "+n+" jots, "+m+" of them named memories. Read from it before you assume",
 "anything about this project, my preferences, or decisions already made.",
+"",
+"Loom is replacing the old shared markdown store on H: as the primary way agents research and",
+"record memory. While Loom is reachable, use it - not the H:\\\\Alex\\\\dev\\\\.claude markdown files -",
+"as the source of truth for this project.",
 "",
 "Connect over MCP (run once, then start a NEW session - MCP servers are only picked up at",
 "session start, never mid-session):",
@@ -753,7 +768,7 @@ async function viewTags(){
       tags.tags.forEach(function(s){
         const row=el('div','vrow');
         const fill=el('i','fill');fill.style.width=(100*s.count/max)+'%';row.append(fill);
-        row.append(el('span','tag'+(s.reserved?' res':''),s.tag));
+        row.append(el('span',tagClass(s.tag),s.tag));
         row.append(el('span','n',s.count));
         const w=el('span','when',ago(s.last));w.title='last used '+stamp(s.last);row.append(w);
         row.onclick=function(){view='search';activeTags=new Set([s.tag]);drawNav();render();};
