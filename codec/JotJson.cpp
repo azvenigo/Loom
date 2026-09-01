@@ -10,11 +10,23 @@ using json = nlohmann::json;
 namespace
 {
     // The omit-empty rule, in one place. Everything else in this file defers to it.
-    json FlatToObject(const FlatJot& jot, bool bVerbose)
+    json FlatToObject(const FlatJot& jot, bool bVerbose, bool bBrief = false)
     {
         json j;
-        j["id"]   = jot.mID;
-        j["text"] = jot.msText;
+        j["id"] = jot.mID;
+
+        if (bBrief)
+        {
+            // Skim mode: the point is to fit many jots in one response, so the body - usually the
+            // largest field by far - is dropped. `has_text` says whether there was more to fetch,
+            // since a name+summary-only jot and a jot with a long body otherwise look identical.
+            if (!jot.msText.empty())
+                j["has_text"] = true;
+        }
+        else
+        {
+            j["text"] = jot.msText;
+        }
 
         if (bVerbose || !jot.msName.empty())
             j["name"] = jot.msName;
@@ -193,7 +205,8 @@ namespace JOTJSON
         return true;
     }
 
-    std::string SearchToJson(const SearchResultSet& results, const NameTables& names, bool bVerbose)
+    std::string SearchToJson(const SearchResultSet& results, const NameTables& names, bool bVerbose,
+                              bool bBrief)
     {
         json out;
         out["matched"]   = results.mnMatched;
@@ -203,7 +216,7 @@ namespace JOTJSON
         json arr = json::array();
         for (size_t i = 0; i < results.mJots.size(); ++i)
         {
-            json entry = FlatToObject(Flatten(results.mJots[i], names), bVerbose);
+            json entry = FlatToObject(Flatten(results.mJots[i], names), bVerbose, bBrief);
             // Only meaningful for a ranked query; a filter-only query scores everything zero and
             // printing that column would imply a relevance that was never computed.
             if (i < results.mScores.size() && results.mScores[i] != 0.0f)
