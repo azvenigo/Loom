@@ -104,6 +104,17 @@ nav .pill{margin-left:6px;font:10px var(--mono);background:var(--sunk);color:var
   padding:1px 5px;border-radius:20px;vertical-align:1px}
 nav button.on .pill{background:var(--accent-wash);color:var(--accent-ink)}
 
+/* search pinned in the nav on every view - it stays put across tab switches */
+.navsearch{position:relative;display:flex;align-items:center;margin-left:auto}
+.navsearch svg{position:absolute;left:9px;width:12px;height:12px;color:var(--faint)}
+.navsearch input{width:190px;font:12.5px var(--sans);color:var(--ink);background:var(--sunk);
+  border:1px solid var(--line);border-radius:20px;height:27px;padding:0 26px}
+.navsearch input::placeholder{color:var(--faint)}
+.navsearch input:focus{outline:0;border-color:var(--accent)}
+.navsearch .kbd{position:absolute;right:8px;font:9.5px var(--mono);color:var(--faint);
+  border:1px solid var(--line);border-radius:4px;padding:0 4px;background:var(--panel);
+  pointer-events:none}
+
 /* ---------- layout ---------- */
 main{display:grid;grid-template-columns:minmax(0,1fr) 400px;height:calc(100vh - 89px)}
 @media(max-width:1000px){main{grid-template-columns:1fr}#detail{display:none}
@@ -121,6 +132,19 @@ main{display:grid;grid-template-columns:minmax(0,1fr) 400px;height:calc(100vh - 
 .search input::placeholder{color:var(--faint)}
 .kbd{position:absolute;right:10px;top:9px;font:10px var(--mono);color:var(--faint);
   border:1px solid var(--line);border-radius:4px;padding:1px 5px;background:var(--sunk)}
+
+/* ---------- filter bar (Search view: sort, time range, memories-only) ---------- */
+.filterbar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:12px}
+.fgroup{display:flex;align-items:center;gap:7px}
+.flabel{font:10px var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--faint)}
+.togglewrap{display:flex;align-items:center;gap:8px;margin-left:auto}
+.togglewrap span{font-size:12.5px;color:var(--dim)}
+.toggle{width:30px;height:17px;border-radius:20px;background:var(--sunk);border:1px solid var(--line);
+  position:relative;flex:none;cursor:pointer}
+.toggle i{position:absolute;top:1px;left:1px;width:13px;height:13px;border-radius:50%;
+  background:var(--faint);transition:left .12s}
+.toggle.on{background:var(--accent-wash);border-color:var(--accent)}
+.toggle.on i{left:14px;background:var(--accent)}
 
 input,select,textarea{font:14px var(--sans);color:var(--ink);background:var(--panel);
   border:1px solid var(--line);border-radius:6px;padding:7px 9px;width:100%}
@@ -155,25 +179,46 @@ button.tiny{font-size:12px;padding:4px 9px}
   font:11px var(--mono);color:var(--faint);text-transform:uppercase;letter-spacing:.08em;
   border-bottom:1px solid var(--line-soft);margin-bottom:8px}
 
-/* ---------- the jot card ---------- */
-.jot{position:relative;background:var(--panel);border:1px solid var(--line);
-  border-radius:var(--r);padding:11px 13px 10px 15px;margin-bottom:7px;cursor:pointer}
-.jot:hover{border-color:var(--dim)}
-.jot.sel{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-wash)}
-/* score rail - opacity carries relative rank, which is the entire reason it exists */
-.jot .rail{position:absolute;left:0;top:8px;bottom:8px;width:3px;border-radius:3px;
-  background:var(--accent)}
-.jot.mem{background:linear-gradient(90deg,var(--accent-wash) 0 3px,var(--panel) 3px)}
-.slug{font:12px var(--mono);color:var(--accent-ink);font-weight:600;letter-spacing:-.01em}
-.sum{color:var(--ink);font-size:13.5px;font-weight:500;margin-top:1px}
-.txt{color:var(--body);margin-top:3px;white-space:pre-wrap;overflow-wrap:anywhere}
-.jot.mem .txt{color:var(--dim);font-size:13px}
+/* ---------- memory / jot cards ----------
+   Cards, not rows: ranking is still visible (the accent top-edge + score badge carry what the
+   rail used to), but a jot no longer gets to sprawl into a wall of text - headline and preview
+   both clamp to two lines. The top-edge color is the tag-derived "category" - see catColorOf(). */
 mark{background:var(--mark);color:inherit;border-radius:2px;padding:0 1px}
-.foot{display:flex;align-items:center;gap:9px;margin-top:8px;flex-wrap:wrap;
-  font:11px var(--mono);color:var(--faint)}
 .tag{background:var(--sunk);color:var(--dim);border-radius:4px;padding:1px 6px;font-size:11px}
 .tag.res{background:transparent;border:1px dashed var(--line);color:var(--faint)}
-.sc{margin-left:auto;font:11px var(--mono);color:var(--accent-ink);font-weight:600}
+
+.cardgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:11px}
+.mcard{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);
+  border-top:3px solid var(--cat,var(--accent));padding:11px 12px 10px;cursor:pointer;
+  display:flex;flex-direction:column;gap:6px;min-height:128px}
+.mcard:hover{border-color:var(--dim)}
+.mcard.sel{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-wash)}
+.cathead{display:flex;align-items:center;gap:7px}
+.catdot{width:6px;height:6px;border-radius:50%;background:var(--cat,var(--accent));flex:none}
+.catlabel{font:10px var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--dim)}
+.cathead .when{margin-left:auto;font:10.5px var(--mono);color:var(--faint)}
+.slug{font:12px var(--mono);color:var(--accent-ink);font-weight:600;letter-spacing:-.01em}
+.headline{color:var(--ink);font-size:13.5px;font-weight:500;line-height:1.4;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.preview{color:var(--dim);font-size:12.5px;line-height:1.5;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.mfoot{margin-top:auto;display:flex;align-items:center;gap:6px;flex-wrap:wrap;
+  font:10.5px var(--mono);color:var(--faint)}
+.scbadge{font:10.5px var(--mono);color:var(--accent-ink);font-weight:600}
+
+/* ---------- dashboard: reminders banner + section heads ---------- */
+.note.reminders{display:flex;align-items:center;gap:13px;padding:12px 14px}
+.note.reminders .ic{width:30px;height:30px;border-radius:8px;background:var(--sunk);
+  display:flex;align-items:center;justify-content:center;flex:none}
+.note.reminders .ic svg{width:15px;height:15px;color:var(--faint)}
+.note.reminders b{display:block;font-size:13px}
+.note.reminders .soon{margin-left:auto;font:10px var(--mono);text-transform:uppercase;
+  letter-spacing:.07em;color:var(--accent-ink);background:var(--accent-wash);padding:3px 8px;
+  border-radius:20px;flex:none}
+.colhead{display:flex;align-items:baseline;gap:8px;margin:22px 0 11px}
+.colhead:first-child{margin-top:0}
+.colhead h2{margin:0;font-size:13px;font-weight:600;color:var(--ink)}
+.colhead span{font-size:11.5px;color:var(--faint)}
 
 /* ---------- notes / empty ---------- */
 .empty{text-align:center;padding:44px 20px;color:var(--faint)}
@@ -256,7 +301,12 @@ const el=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;
 const escHtml=s=>(s??'').toString().replace(/[&<>"]/g,c=>
   ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
-let view='search',sel=null,activeTags=new Set(),allTags=[],lastQ='',stats={};
+/* sortOrder/sinceWhen/memOnly live here, not inside viewSearch(), for the same reason activeTags
+   and lastQ do: viewSearch() is torn down and rebuilt on every render() - including the render()
+   that just opening a result triggers - so filter state kept local to it would silently reset the
+   instant a jot is clicked. */
+let view='dashboard',sel=null,activeTags=new Set(),allTags=[],lastQ='',stats={},
+    sortOrder='',sinceWhen='',memOnly=false;
 
 function toast(msg,kind){const t=$('#toast');t.textContent=msg;t.className='show '+(kind||'ok');
   clearTimeout(t._t);t._t=setTimeout(()=>t.className='',3200);}
@@ -316,17 +366,41 @@ async function refreshStats(){
   }
 }
 
-const VIEWS=[['search','Search'],['recent','Recent'],['tags','Tags'],['health','Health']];
+const VIEWS=[['dashboard','Dashboard'],['search','Search'],['tags','Tags'],['health','Health']];
+let navTabEls=[];
 function drawNav(){
   const N=$('#nav');N.innerHTML='';
+  navTabEls=[];
   VIEWS.forEach(function(v){
     const b=el('button',v[0]===view?'on':'');
     b.append(document.createTextNode(v[1]));
     if(v[0]==='tags'&&stats.tags!==undefined)b.append(el('span','pill',stats.tags));
-    if(v[0]==='recent'&&stats.jots!==undefined)b.append(el('span','pill',stats.jots));
+    if(v[0]==='dashboard'&&stats.jots!==undefined)b.append(el('span','pill',stats.jots));
     b.onclick=function(){view=v[0];drawNav();render();};
+    b.dataset.view=v[0];
+    navTabEls.push(b);
     N.append(b);
   });
+
+  /* search is pinned here, not just inside the Search tab, so it is reachable from anywhere -
+     typing here switches to Search and runs the query; drawNav() itself is never called from its
+     own oninput, or the input (and the user's cursor position in it) would be destroyed mid-type */
+  const ns=el('div','navsearch');
+  ns.innerHTML='<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6">'+
+    '<circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>';
+  const ni=el('input');ni.id='navsearch-input';ni.placeholder='Search everything…';ni.value=lastQ;
+  ns.append(ni);ns.append(el('span','kbd','/'));
+  let nt;
+  ni.oninput=function(){
+    clearTimeout(nt);
+    nt=setTimeout(function(){
+      lastQ=ni.value;
+      view='search';
+      navTabEls.forEach(b=>b.classList.toggle('on',b.dataset.view==='search'));
+      render();
+    },160);
+  };
+  N.append(ns);
 }
 
 /* ---------- cards ---------- */
@@ -337,27 +411,42 @@ function highlight(text,terms){
   return safe.replace(new RegExp('('+esc.join('|')+')','gi'),'<mark>$1</mark>');
 }
 
+/* Category = the first non-structural tag (":"-tags are structure, not vocabulary - same rule
+   the server's drift/vocabulary logic uses). No dedicated field for it; deterministically hashed
+   onto a small fixed set of colors already in the palette so the same tag always reads the same
+   way, without inventing a new one-color-per-tag system. */
+const CAT_VARS=['--accent','--warn','--good','--dim'];
+function catColorOf(tags){
+  const t=(tags||[]).find(x=>x.indexOf(':')<0);
+  if(!t)return{cssVar:'--dim',name:'untagged'};
+  let h=0;for(let i=0;i<t.length;i++)h=(h*31+t.charCodeAt(i))>>>0;
+  return{cssVar:CAT_VARS[h%CAT_VARS.length],name:t};
+}
+
 function jotCard(j,maxScore,terms){
   const isMem=!!j.name;
-  const c=el('div','jot'+(isMem?' mem':'')+(sel&&sel.id===j.id?' sel':''));
+  const cat=catColorOf(j.tags);
+  const c=el('div','mcard'+(sel&&sel.id===j.id?' sel':''));
+  c.style.setProperty('--cat','var('+cat.cssVar+')');
 
-  if(j.score!==undefined&&maxScore>0){
-    const r=el('i','rail');
-    r.style.opacity=(0.22+0.78*(j.score/maxScore)).toFixed(2);
-    c.append(r);
-  }
+  const head=el('div','cathead');
+  head.append(el('i','catdot'));
+  head.append(el('span','catlabel',cat.name));
+  const when=el('span','when',ago(j.id));when.title=stamp(j.id);head.append(when);
+  c.append(head);
+
   if(isMem)c.append(el('div','slug',j.name));
-  if(j.summary){const s=el('div','sum');s.innerHTML=highlight(j.summary,terms);c.append(s);}
-  const t=el('div','txt');t.innerHTML=highlight(j.text||'',terms);c.append(t);
+  if(j.summary){const s=el('div','headline');s.innerHTML=highlight(j.summary,terms);c.append(s);}
+  const body=el('div',isMem?'preview':'headline');
+  body.innerHTML=highlight(j.text||'',terms);
+  c.append(body);
 
-  const f=el('div','foot');
-  (j.tags||[]).forEach(x=>f.append(el('span','tag'+(x.indexOf(':')>=0?' res':''),x)));
-  if(j.editor)f.append(el('span',null,'@'+j.editor));
-  const when=el('span',null,ago(j.id));when.title=stamp(j.id);f.append(when);
-  if(j.updated)f.append(el('span',null,'edited'));
-  if((j.links||[]).length)f.append(el('span',null,'→ '+j.links.length));
-  if((j.pending||[]).length)f.append(el('span',null,'⚬ '+j.pending.length));
-  if(j.score!==undefined)f.append(el('span','sc',j.score.toFixed(1)));
+  const f=el('div','mfoot');
+  (j.tags||[]).slice(0,3).forEach(x=>f.append(el('span','tag'+(x.indexOf(':')>=0?' res':''),x)));
+  const trail=el('span');trail.style.cssText='margin-left:auto;display:flex;gap:6px;align-items:center';
+  if(j.editor)trail.append(el('span',null,'@'+j.editor));
+  if(j.score!==undefined)trail.append(el('span','scbadge',j.score.toFixed(1)));
+  f.append(trail);
   c.append(f);
 
   c.onclick=function(){sel=j;document.body.classList.add('editing');render();};
@@ -366,7 +455,12 @@ function jotCard(j,maxScore,terms){
 
 const queryTerms=q=>(q||'').toLowerCase().split(/[^a-z0-9']+/i).filter(t=>t.length>1);
 
-/* ---------- search ---------- */
+/* ---------- search ----------
+   Filters (sort, time range, tags, memories-only) all live above the results, and combine - this
+   is the "search is a first-class citizen" pass: previously it was a text box plus a tag-chip row
+   with no time filter and no way to narrow to memories. Sort/tag/time all map straight onto
+   Query.h's existing order/tag/since params; only "memories only" has no server-side filter (no
+   boolean for "has a name"), so it's applied client-side after the fetch. */
 async function viewSearch(){
   const L=$('#list');
 
@@ -377,13 +471,32 @@ async function viewSearch(){
   box.append(q);box.append(el('span','kbd','/'));
   L.append(box);
 
-  const bar=el('div','row');bar.style.margin='0 0 12px';
+  const bar=el('div','filterbar');
+
+  const sortG=el('div','fgroup');sortG.append(el('span','flabel','Sort'));
   const order=el('select');order.style.width='auto';
   [['','Best match'],['newest','Newest first'],['oldest','Oldest first']]
     .forEach(function(o){const x=el('option',null,o[1]);x.value=o[0];order.append(x);});
+  order.value=sortOrder;
+  sortG.append(order);bar.append(sortG);
+
+  const whenG=el('div','fgroup');whenG.append(el('span','flabel','When'));
+  const when=el('select');when.style.width='auto';
+  [['','All time'],['1d','Today'],['7d','This week'],['30d','This month']]
+    .forEach(function(o){const x=el('option',null,o[1]);x.value=o[0];when.append(x);});
+  when.value=sinceWhen;
+  whenG.append(when);bar.append(whenG);
+
+  const memWrap=el('div','togglewrap');
+  memWrap.append(el('span',null,'Memories only'));
+  const memToggle=el('div','toggle'+(memOnly?' on':''));memToggle.append(el('i'));
+  memToggle.onclick=function(){memOnly=!memOnly;memToggle.classList.toggle('on',memOnly);run();};
+  memWrap.append(memToggle);bar.append(memWrap);
+
   const nw=el('button','btn tiny primary','New jot');
   nw.onclick=function(){sel={__new:true};document.body.classList.add('editing');render();};
-  bar.append(order,nw);L.append(bar);
+  bar.append(nw);
+  L.append(bar);
 
   if(allTags.length){
     const chips=el('div','chips');
@@ -392,14 +505,15 @@ async function viewSearch(){
       c.append(document.createTextNode(t.tag));c.append(el('b',null,t.count));
       c.onclick=function(){
         activeTags.has(t.tag)?activeTags.delete(t.tag):activeTags.add(t.tag);
-        render();
+        run();
       };
       chips.append(c);
     });
     L.append(chips);
   }
 
-  const out=el('div');L.append(out);
+  const meta=el('div','rmeta');L.append(meta);
+  const grid=el('div','cardgrid');L.append(grid);
 
   async function run(){
     lastQ=q.value;
@@ -407,59 +521,90 @@ async function viewSearch(){
     if(q.value){p.set('q',q.value);p.set('prefix','1');}
     activeTags.forEach(t=>p.append('tag',t));
     if(order.value)p.set('order',order.value);
+    if(when.value)p.set('since',when.value);
     p.set('limit','60');
     try{
       const r=await api('/jots?'+p);
-      out.innerHTML='';
-      const m=el('div','rmeta');
-      m.append(el('em',null,r.matched+(r.matched===1?' match':' matches')));
-      if(r.truncated)m.append(el('span',null,'showing '+r.returned));
-      if(activeTags.size)m.append(el('span',null,'filtered'));
-      out.append(m);
+      const jots=memOnly?r.jots.filter(j=>j.name):r.jots;
 
-      if(!r.jots.length){
+      meta.innerHTML='';
+      meta.append(el('em',null,jots.length+(jots.length===1?' match':' matches')));
+      if(r.truncated)meta.append(el('span',null,'showing '+r.returned));
+      if(activeTags.size)meta.append(el('span',null,'tag-filtered'));
+      if(memOnly)meta.append(el('span',null,'memories only'));
+
+      grid.innerHTML='';
+      if(!jots.length){
         const e=el('div','empty');
         e.append(el('b',null,'Nothing matched'));
         e.append(el('div',null,q.value?'Try fewer words — summaries are weighted highest.'
-                                      :'Clear the tag filters, or write something.'));
-        out.append(e);return;
+                                      :'Clear the filters, or write something.'));
+        grid.append(e);return;
       }
-      let max=0;r.jots.forEach(j=>{if((j.score||0)>max)max=j.score||0;});
+      let max=0;jots.forEach(j=>{if((j.score||0)>max)max=j.score||0;});
       const terms=queryTerms(q.value);
-      r.jots.forEach(j=>out.append(jotCard(j,max,terms)));
-    }catch(e){out.innerHTML='';out.append(el('div','note bad',e.message));}
+      jots.forEach(j=>grid.append(jotCard(j,max,terms)));
+    }catch(e){grid.innerHTML='';grid.append(el('div','note bad',e.message));}
   }
 
   let t;q.oninput=function(){clearTimeout(t);t=setTimeout(run,130);};
-  order.onchange=run;
+  order.onchange=function(){sortOrder=order.value;run();};
+  when.onchange=function(){sinceWhen=when.value;run();};
   await run();
-  if(!sel){q.focus();q.setSelectionRange(q.value.length,q.value.length);}
+  /* don't steal focus from the nav search box mid-keystroke - it's what re-renders this view
+     on every debounced input when a search started there rather than in this panel */
+  if(!sel&&document.activeElement!==$('#navsearch-input')){
+    q.focus();q.setSelectionRange(q.value.length,q.value.length);
+  }
 }
 
-/* ---------- recent, grouped by day ---------- */
-async function viewRecent(){
+/* ---------- dashboard: at-a-glance home view ---------- */
+async function viewDashboard(){
   const L=$('#list');
-  const out=el('div');L.append(out);
+
+  const rem=el('div','note reminders');
+  const ic=el('div','ic');
+  ic.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">'+
+    '<path d="M12 5v6l4 2"/><circle cx="12" cy="13" r="8"/><path d="M9 2h6"/></svg>';
+  rem.append(ic);
+  const copy=el('div');
+  copy.append(el('b',null,'No reminders yet'));
+  copy.append(el('div',null,'Time-based nudges will surface here once reminder scheduling ships.'));
+  rem.append(copy);
+  rem.append(el('span','soon','Coming soon'));
+  L.append(rem);
+
+  const rHead=el('div','colhead');
+  rHead.append(el('h2',null,'Recent'));
+  rHead.append(el('span',null,'newest first'));
+  L.append(rHead);
+  const grid=el('div','cardgrid');L.append(grid);
   async function run(){
     try{
-      const r=await api('/jots?order=newest&limit=200');
-      out.innerHTML='';
+      const r=await api('/jots?order=newest&limit=30');
+      grid.innerHTML='';
       if(!r.jots.length){
-        const e=el('div','empty');e.append(el('b',null,'No jots yet'));
+        const e=el('div','empty');
+        e.append(el('b',null,'No jots yet'));
         e.append(el('div',null,'Write one from Search, or import a jots.log.'));
-        out.append(e);return;
+        grid.append(e);
+      }else{
+        r.jots.forEach(j=>grid.append(jotCard(j,0,[])));
       }
-      let day=null;
-      r.jots.forEach(function(j){
-        const k=dayKey(j.id);
-        if(k!==day){day=k;out.append(el('div','daybar',dayLabel(j.id)));}
-        out.append(jotCard(j,0,[]));
-      });
-    }catch(e){out.innerHTML='';out.append(el('div','note bad',e.message));}
+    }catch(e){grid.innerHTML='';grid.append(el('div','note bad',e.message));}
   }
   await run();
   clearInterval(window.__rt);
-  window.__rt=setInterval(function(){if(view==='recent'&&!sel)run();},5000);
+  window.__rt=setInterval(function(){if(view==='dashboard'&&!sel)run();},5000);
+
+  const uHead=el('div','colhead');
+  uHead.append(el('h2',null,'Upcoming'));
+  uHead.append(el('span',null,'due soon'));
+  L.append(uHead);
+  const uEmpty=el('div','empty');
+  uEmpty.append(el('b',null,'Nothing scheduled'));
+  uEmpty.append(el('div',null,"Due-date tracking isn't a feature yet - this is reserving its place."));
+  L.append(uEmpty);
 }
 
 /* ---------- tags ---------- */
@@ -673,8 +818,8 @@ function renderDetail(){
 /* ---------- shell ---------- */
 async function render(){
   $('#list').innerHTML='';
-  if(view==='search')await viewSearch();
-  else if(view==='recent')await viewRecent();
+  if(view==='dashboard')await viewDashboard();
+  else if(view==='search')await viewSearch();
   else if(view==='tags')await viewTags();
   else await viewHealth();
   renderDetail();
@@ -682,7 +827,7 @@ async function render(){
 
 document.addEventListener('keydown',function(e){
   const typing=/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
-  if(e.key==='/'&&!typing){e.preventDefault();view='search';drawNav();render();}
+  if(e.key==='/'&&!typing){e.preventDefault();$('#navsearch-input').focus();}
   if(e.key==='Escape'){
     if(sel){sel=null;document.body.classList.remove('editing');render();}
     else if(typing)document.activeElement.blur();
