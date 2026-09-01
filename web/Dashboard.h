@@ -436,10 +436,15 @@ function jotCard(j,maxScore,terms){
   c.append(head);
 
   if(isMem)c.append(el('div','slug',j.name));
-  if(j.summary){const s=el('div','headline');s.innerHTML=highlight(j.summary,terms);c.append(s);}
-  const body=el('div',isMem?'preview':'headline');
-  body.innerHTML=highlight(j.text||'',terms);
-  c.append(body);
+  /* headline vs. preview is keyed on "does a summary exist", not on isMem: a terse jot may be
+     summary-only (weighted highest in search on purpose - see Jot.h), with nothing in text at
+     all, named or not. Rendering that as headline+empty-second-line was the bug this replaced. */
+  if(j.summary){
+    const s=el('div','headline');s.innerHTML=highlight(j.summary,terms);c.append(s);
+    if(j.text){const t=el('div','preview');t.innerHTML=highlight(j.text,terms);c.append(t);}
+  }else{
+    const t=el('div','headline');t.innerHTML=highlight(j.text||'',terms);c.append(t);
+  }
 
   const f=el('div','mfoot');
   (j.tags||[]).slice(0,3).forEach(x=>f.append(el('span','tag'+(x.indexOf(':')>=0?' res':''),x)));
