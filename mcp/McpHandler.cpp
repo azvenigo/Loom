@@ -206,7 +206,7 @@ namespace
             "Groups of tags that look like variants of each other - typos, plurals, and "
             "abbreviations like infra/infrastructure. This is what surfaces a vocabulary quietly "
             "splitting in two. Report what you find rather than merging unprompted.",
-            json{}, json::array()));
+            json::object(), json::array()));
 
         tools.push_back(Tool("loom_merge_tags",
             "Rewrite every jot carrying any tag in 'from' to carry 'to' instead. DESTRUCTIVE and "
@@ -220,7 +220,7 @@ namespace
         tools.push_back(Tool("loom_stats",
             "Store size, tag and term counts, and durability state. Useful for a health check or "
             "to see whether persistence is actually on.",
-            json{}, json::array()));
+            json::object(), json::array()));
 
         return tools;
     }
