@@ -80,6 +80,21 @@ R"HTML(<!doctype html>
      eight quiet palettes have always had. */
   --todo-top:var(--warn-wash); --todo-bot:var(--warn-wash);
   --todo-edge:var(--warn-line); --todo-bar:var(--warn); --todo-glow:var(--warn);
+  /* HIGHLIGHT CARD ground - see .ov-card.hi. Same trick as --todo-*: two identical stops is a
+     flat fill, so every palette that doesn't override these renders exactly the plain
+     background:var(--accent) the card had before. */
+  --hi-a:var(--accent); --hi-b:var(--accent); --hi-ang:110deg;
+  /* THE ONE CALL TO ACTION - see button.warnfill. Split out of --warn2/--warn because the button
+     and the semantic warning color don't have to be the same thing. --warn still has to work as
+     the TODO panel's bar, its badge and Normal-priority ink, and a two-hue ramp picked to make a
+     button pop reads as mud in all three. Defaults reproduce the old --warn2 -> --warn ramp. */
+  --cta-a:var(--warn2); --cta-b:var(--warn); --cta-edge:var(--warn); --cta-ang:170deg;
+  /* Tag pills, defaulting to the sunk/dim pair they used to name directly. Separate because a
+     pill wants MORE saturation than --dim (which is running body text) once the ground is a tint
+     rather than a neutral. */
+  --tag-bg:var(--sunk); --tag-ink:var(--dim);
+  /* Section kickers - DISTRIBUTION, ACTIVITY, TAGS IN USE. See the .eyebrow rule. */
+  --eyebrow-ink:var(--faint);
   --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
   --sans:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
   --r:7px;
@@ -145,18 +160,44 @@ R"HTML(<!doctype html>
   --info:#7fa8c8; --info-wash:#16252e; --info-line:#2e4553;
   --field-bg:#ebe0cd; --field-ink:#241c13; --field-dim:#7a6a4e;
 }
+/* Twilight is no longer "the purple one" - it's the specific soft-indigo look Alex picked out of
+   a reference screenshot, and it's the only palette that spends all five of the new token groups
+   at once. Four things carry that look, and none of them are the base --accent:
+     1. a near-white lavender ground (--bg) under white panels, with borders so light they read as
+        separations rather than as lines;
+     2. ONE two-hue call to action - burnt orange into plum, left to right (--cta-*). It is the
+        only left-to-right ramp in the file, which is exactly why it reads as the button;
+     3. the highlight card as indigo into teal (--hi-*) rather than a flat fill, so the one card
+        that isn't white isn't just a colored rectangle either;
+     4. saturated ink on the quiet things - kickers at --eyebrow-ink and tag pills at --tag-ink,
+        both real indigo instead of a gray. Small type is where a pastel palette usually goes
+        limp; these are the two places it doesn't get to.
+   Every color that prints --panel on top was checked against it: the CTA's orange stop is the
+   tight one at 4.5:1, which is why it's a burnt orange and not the reference's brighter one -
+   at #f97316 white on it lands near 2.5:1 and the label stops being readable over the left third
+   of the button. The teal end of the highlight card is 3.4:1 and carries no body text by
+   layout - the number and the caption both sit over the indigo half. */
 :root[data-palette="twilight"]{
-  --bg:#f2eefb; --panel:#ffffff; --sunk:#e7e0f6;
-  --ink:#241f38; --body:#4e4270; --dim:#7a6ea0; --faint:#a89cc0;
-  --line:#d8cdec; --line-soft:#e7dff5;
-  --accent:#7a5fc4; --accent-ink:#5c449e; --accent-wash:#ebe4fa;
-  --warn:#a1720c; --warn-wash:#f7ecd5; --warn-line:#e0c78f;
-  --bad:#c23a5a; --bad-wash:#fae0e6; --bad-line:#e6adb9;
-  --good:#3f8a5c; --good-wash:#e0f0e6; --good-line:#a3d2b5;
-  --mark:#f0d9f0;
-  --accent2:#9a52c0; --good2:#3f8a7c; --warn2:#a85c1a;
-  --info:#4f6fd0; --info-wash:#e6ebfa; --info-line:#b3c2ee;
-  --field-bg:#ffffff; --field-ink:#241f38; --field-dim:#7a6ea0;
+  --bg:#f6f5fe; --panel:#ffffff; --sunk:#efedfd;
+  --ink:#1c1839; --body:#3d3866; --dim:#6a6394; --faint:#867eab;
+  --line:#e7e4f8; --line-soft:#f1effc;
+  --accent:#5b4ce6; --accent-ink:#4438cc; --accent-wash:#edecfe;
+  --warn:#b3730c; --warn-wash:#fdf4e4; --warn-line:#f0d7a8;
+  --bad:#d4344f; --bad-wash:#fdecef; --bad-line:#f5bcc6;
+  --good:#0f8f74; --good-wash:#e7f8f3; --good-line:#a9e2d3;
+  --mark:#ffe9a3;
+  --accent2:#7d4ae8; --good2:#1b8f56; --warn2:#c98a1a;
+  --info:#3f6fe0; --info-wash:#eaf0fe; --info-line:#c2cef6;
+  --field-bg:#ffffff; --field-ink:#1c1839; --field-dim:#6a6394;
+  --hi-a:#5b53ea; --hi-b:#0f9d8e; --hi-ang:105deg;
+  --cta-a:#cf4a15; --cta-b:#6a2c74; --cta-edge:#6a2c74; --cta-ang:100deg;
+  --tag-bg:#eeecfd; --tag-ink:#5348ba;
+  --eyebrow-ink:#5b4ce6;
+  /* Warm, but a wash rather than the slab it was: cream at the top of the panel fading to the
+     same white as every other card by the bottom. The old flat --warn-wash over a panel this
+     tall was the one thing on the page reading as tan. */
+  --todo-top:#fdf5e9; --todo-bot:#ffffff;
+  --todo-edge:#f3e6d2; --todo-bar:#e89a2c; --todo-glow:#e8a54a;
 }
 :root[data-palette="twilight-dark"]{
   --bg:#13111f; --panel:#1c1930; --sunk:#171429;
@@ -582,14 +623,14 @@ button.primary{font-weight:600}
 button.primary:hover{filter:brightness(1.05) saturate(1.08);border-color:var(--accent)}
 /* Same recipe tinted --warn instead of --accent - reuses the color the TODO panel already uses for
    "this needs action" rather than inventing a second accent. */
-button.warnfill{background:linear-gradient(170deg,var(--warn2),var(--warn));
-  border-color:var(--warn);font-weight:600}
-button.warnfill:hover{filter:brightness(1.05) saturate(1.08);border-color:var(--warn)}
+button.warnfill{background:linear-gradient(var(--cta-ang),var(--cta-a),var(--cta-b));
+  border-color:var(--cta-edge);font-weight:600}
+button.warnfill:hover{filter:brightness(1.05) saturate(1.08);border-color:var(--cta-edge)}
 
 @supports (color:color-mix(in srgb,red,blue)){
   button.primary:hover{box-shadow:0 3px 14px color-mix(in srgb,var(--accent) 45%,transparent),
     inset 0 1px 0 rgba(255,255,255,.3)}
-  button.warnfill:hover{box-shadow:0 3px 14px color-mix(in srgb,var(--warn) 45%,transparent),
+  button.warnfill:hover{box-shadow:0 3px 14px color-mix(in srgb,var(--cta-b) 45%,transparent),
     inset 0 1px 0 rgba(255,255,255,.3)}
   .completebtn:not(.on):hover{box-shadow:0 3px 14px color-mix(in srgb,var(--good) 45%,transparent),
     inset 0 1px 0 rgba(255,255,255,.3)}
@@ -632,7 +673,7 @@ button.tiny{font-size:12px;padding:4px 9px}
    rail used to), but a jot no longer gets to sprawl into a wall of text - headline and preview
    both clamp to two lines. The top-edge color is the tag-derived "category" - see catColorOf(). */
 mark{background:var(--mark);color:inherit;border-radius:2px;padding:0 1px}
-.tag{background:var(--sunk);color:var(--dim);border-radius:4px;padding:1px 6px;font-size:11px}
+.tag{background:var(--tag-bg);color:var(--tag-ink);border-radius:4px;padding:1px 6px;font-size:11px}
 .tag.res{background:transparent;border:1px dashed var(--line);color:var(--faint)}
 /* Action tags (todo/warning/error) get a fixed, non-hashed color - unlike catColorOf()'s
    category dot, these mean "you may need to act on this" regardless of topic, so they always
@@ -696,11 +737,15 @@ mark{background:var(--mark);color:inherit;border-radius:2px;padding:0 1px}
 .ov-card .ic{width:28px;height:28px;border-radius:8px;background:var(--sunk);color:var(--dim);
   display:flex;align-items:center;justify-content:center;flex:none}
 .ov-card .ic svg{width:14px;height:14px}
-.ov-card .eyebrow{font:10px var(--mono);text-transform:uppercase;letter-spacing:.07em;
-  color:var(--faint)}
+/* Not .ov-card .eyebrow - the panel kickers (DISTRIBUTION, ACTIVITY, STORE HEALTH, TODOS &
+   REMINDERS) carry the same class and were matching nothing, so they rendered as plain 14px body
+   text next to the 10px mono ones on the stat cards. One rule, both places. */
+.eyebrow{font:10px var(--mono);text-transform:uppercase;letter-spacing:.07em;
+  color:var(--eyebrow-ink)}
 .ov-card .num{font-size:26px;font-weight:600;color:var(--ink);line-height:1}
 .ov-card .cap{font-size:11.5px;color:var(--faint)}
-.ov-card.hi{background:var(--accent);border-color:var(--accent)}
+.ov-card.hi{background:linear-gradient(var(--hi-ang),var(--hi-a),var(--hi-b));
+  border-color:var(--hi-a)}
 .ov-card.hi .ic{background:rgba(255,255,255,.2);color:#fff}
 .ov-card.hi .eyebrow,.ov-card.hi .cap{color:rgba(255,255,255,.78)}
 .ov-card.hi .num{color:#fff}
@@ -778,11 +823,11 @@ mark{background:var(--mark);color:inherit;border-radius:2px;padding:0 1px}
 /* chip row - the "what kind of thing is this" line the reference leads with */
 .ov-tchips{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
 .ov-tchip{font:9.5px var(--mono);text-transform:uppercase;letter-spacing:.06em;font-weight:600;
-  padding:2px 6px;border-radius:4px;background:var(--sunk);color:var(--dim);flex:none}
+  padding:2px 6px;border-radius:4px;background:var(--tag-bg);color:var(--tag-ink);flex:none}
 .ov-tchip.todo{background:var(--warn-wash);color:var(--warn);border:1px solid var(--warn-line)}
 .ov-tchip.pr-high{background:var(--bad-wash);color:var(--bad);border:1px solid var(--bad-line)}
-.ov-tchip.pr-normal{background:var(--sunk);color:var(--dim)}
-.ov-tchip.pr-low{background:var(--sunk);color:var(--faint)}
+.ov-tchip.pr-normal{background:var(--tag-bg);color:var(--tag-ink)}
+.ov-tchip.pr-low{background:var(--tag-bg);color:var(--faint)}
 /* the scope/topic chip carries the same hashed category color the rest of the UI uses */
 .ov-tchip.scope{background:color-mix(in srgb,var(--cat,var(--accent)) 15%,transparent);
   color:var(--cat,var(--accent));text-transform:none;letter-spacing:.02em}
@@ -836,8 +881,8 @@ mark{background:var(--mark);color:inherit;border-radius:2px;padding:0 1px}
 .ov-bar .n{width:26px;text-align:right;font:11px var(--mono);color:var(--dim)}
 
 .ov-tags{display:flex;flex-wrap:wrap;gap:8px}
-.ov-tagpill{background:var(--sunk);border:1px solid var(--line);border-radius:20px;
-  padding:5px 10px;font-size:12px;color:var(--body);display:flex;align-items:center;gap:5px;
+.ov-tagpill{background:var(--tag-bg);border:1px solid var(--line);border-radius:20px;
+  padding:5px 10px;font-size:12px;color:var(--tag-ink);display:flex;align-items:center;gap:5px;
   cursor:pointer}
 .ov-tagpill:hover{border-color:var(--dim);color:var(--ink)}
 .ov-tagpill b{font:10px var(--mono);color:var(--dim);font-weight:600}
@@ -1833,8 +1878,9 @@ async function viewDashboard(target){
     }
 
     const sigP=el('div','ov-panel');row1.append(sigP);
-    const sh=el('div','phead');
-    sh.append(el('h3',null,'Top Tags'));sigP.append(sh);
+    const sh=el('div','phead');const sh1=el('div');
+    sh1.append(el('div','eyebrow','SIGNALS'));sh1.append(el('h3',null,'Top Tags'));
+    sh.append(sh1);sigP.append(sh);
     if(!topTags.length){sigP.append(el('div','empty','No tags yet.'));}
     else{
       const wrap=el('div','ov-tags');
