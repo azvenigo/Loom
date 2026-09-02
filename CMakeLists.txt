@@ -76,7 +76,7 @@ add_library(loomcore STATIC
     core/LoomError.h core/LoomTime.h core/Ops.h      core/Query.h
     core/TagRegistry.h core/Tokenizer.h
     codec/JotJson.h
-    persist/Journal.h persist/Snapshot.h persist/Importer.h
+    persist/Journal.h persist/Snapshot.h persist/Importer.h persist/DataLock.h
     mcp/McpHandler.h
 )
 

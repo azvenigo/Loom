@@ -12,6 +12,7 @@
 #include "core/LoomTime.h"
 #include "core/Ops.h"
 #include "http/HttpServer.h"
+#include "persist/DataLock.h"
 #include "persist/Importer.h"
 #include "persist/Journal.h"
 #include "persist/Snapshot.h"
@@ -147,11 +148,23 @@ int main(int argc, char** argv)
     const bool bPersist = !ArgFlag(argc, argv, "--no-persist");
 
     SnapshotConfig snapConfig;
+    DataLock       dataLock;
     if (bPersist)
     {
         const std::string sDir = ArgStr(argc, argv, "--data", "loom-data");
         std::error_code ecDir;
         std::filesystem::create_directories(sDir, ecDir);
+
+        // Claim the directory BEFORE reading it. Loom has no cross-process locking anywhere else,
+        // so a second instance here would interleave writes into loom.wal silently. Taking it
+        // ahead of the load also means the loser exits without having read a thing.
+        if (!dataLock.Acquire(sDir + "/loom.lock"))
+        {
+            std::printf("loom is already running against %s\n", sDir.c_str());
+            std::printf("  one instance per data directory - use --data to point elsewhere, or\n"
+                        "  --no-persist for a throwaway instance.\n");
+            return 1;
+        }
 
         snapConfig.msPath    = sDir + "/loom.snapshot";
         snapConfig.msWalPath = sDir + "/loom.wal";
