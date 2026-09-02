@@ -85,6 +85,55 @@ namespace
         return v;
     }
 
+    // Same, but gathers several spellings of one filter. REST grew the singular `tag=` and MCP the
+    // plural `tags`; agents reach for whichever they saw last, so accept both rather than making
+    // the two interfaces disagree over an "s".
+    std::vector<std::string> ParamListAny(const crow::request& req,
+                                          std::initializer_list<const char*> names)
+    {
+        std::vector<std::string> v;
+        for (const char* pName : names)
+        {
+            // Both spellings of a repeated parameter: ?tag=a&tag=b and ?tag[]=a&tag[]=b. crow reads
+            // them through separate paths, and accepting a name in validation while reading only
+            // one path would drop the filter and return everything - the bug this all exists to fix.
+            for (bool bBrackets : { false, true })
+            {
+                for (const std::string& s : req.url_params.get_list(pName, bBrackets))
+                {
+                    if (!s.empty())
+                        v.push_back(s);
+                }
+            }
+        }
+        return v;
+    }
+
+    // Returns the first query parameter the caller does not recognize, or empty if all are known.
+    //
+    // WHY THIS EXISTS: crow silently drops a parameter nobody asks for, so `?tags=todo` used to
+    // return the ENTIRE store - the filter vanished and the request degraded into an unfiltered
+    // browse that looks exactly like success. A filter that matches nothing must not answer with
+    // everything. Failing loudly on an unknown name is the only way the caller finds out.
+    std::string UnknownParam(const crow::request& req, std::initializer_list<const char*> allowed)
+    {
+        for (std::string sKey : req.url_params.keys())
+        {
+            // ?tag[]=a is the bracketed spelling of a repeated parameter; validate the base name.
+            if (sKey.size() > 2 && sKey.compare(sKey.size() - 2, 2, "[]") == 0)
+                sKey.resize(sKey.size() - 2);
+
+            bool bKnown = false;
+            for (const char* pName : allowed)
+            {
+                if (sKey == pName) { bKnown = true; break; }
+            }
+            if (!bKnown)
+                return sKey;
+        }
+        return std::string();
+    }
+
     size_t ParamSize(const crow::request& req, const char* pName, size_t nDefault)
     {
         const char* p = req.url_params.get(pName);
@@ -159,8 +208,8 @@ struct HttpServer::Impl
     void BuildQuerySpec(const crow::request& req, Ops::QuerySpec& spec) const
     {
         spec.msText   = ParamOr(req, "q");
-        spec.mTags    = ParamList(req, "tag");
-        spec.mNotTags = ParamList(req, "notag");
+        spec.mTags    = ParamListAny(req, { "tag", "tags" });
+        spec.mNotTags = ParamListAny(req, { "notag", "notags", "not_tag", "not_tags" });
         spec.msEditor = ParamOr(req, "editor");
         spec.msName   = ParamOr(req, "name");
         spec.msSince  = ParamOr(req, "since");
@@ -182,6 +231,15 @@ struct HttpServer::Impl
         ([this](const crow::request& req)
         {
             if (!Authorized(req)) return Fail(401, "missing or invalid bearer token");
+
+            // Every parameter this route understands. A misspelling here used to silently widen
+            // the result set to the whole store instead of narrowing it.
+            const std::string sBad = UnknownParam(req, {
+                "q", "tag", "tags", "notag", "notags", "not_tag", "not_tags",
+                "editor", "name", "since", "until", "link", "order",
+                "limit", "offset", "prefix", "verbose", "brief" });
+            if (!sBad.empty())
+                return Fail(400, "unknown query parameter '" + sBad + "'");
 
             Ops::QuerySpec spec;
             BuildQuerySpec(req, spec);
