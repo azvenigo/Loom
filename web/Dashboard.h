@@ -1822,18 +1822,40 @@ function agentPrompt(){
   ].join("\n");
 }
 
+/* THE ASYNC CLIPBOARD IS NOT AVAILABLE HERE and this is the normal case, not the exotic one.
+   navigator.clipboard exists only in a SECURE CONTEXT - https, or localhost. Loom's own dashboard
+   is served over plain http on a LAN address, so on the machine anyone actually uses it from,
+   `navigator.clipboard` is undefined. Reaching for .writeText on it throws a TypeError
+   SYNCHRONOUSLY, which no .catch() on the returned promise will ever see, because there is no
+   returned promise. Hence the existence check rather than a try/catch around the call.
+
+   The execCommand path is the one that runs in practice, and it has its own trap: a modal <dialog>
+   makes the rest of the document inert, so a textarea parked on <body> cannot be focused, cannot be
+   selected, and copies nothing while reporting success. It has to be mounted INSIDE the dialog
+   that is on screen. Both of these were live bugs - measured, not guessed. */
 function copyText(t,btn){
   const done=function(){const was=btn.textContent;btn.textContent='Copied';
     setTimeout(function(){btn.textContent=was;},1400);};
+  const fallback=function(){
+    const host=Array.prototype.slice.call(document.querySelectorAll('dialog[open]')).pop()
+               ||document.body;
+    const ta=el('textarea');ta.value=t;
+    ta.style.cssText='position:fixed;left:-9999px;top:0;opacity:0';
+    host.append(ta);
+    ta.focus();ta.select();ta.setSelectionRange(0,t.length);
+    let ok=false;
+    try{ok=document.execCommand('copy');}catch(e){ok=false;}
+    ta.remove();
+    /* Says what to do instead rather than just reporting failure - the text is on screen and
+       selectable, so a blocked copy is an inconvenience, not a dead end. */
+    if(ok)done();
+    else toast('Copy blocked by the browser - select the text and copy it by hand','err');
+  };
   if(navigator.clipboard&&navigator.clipboard.writeText){
-    navigator.clipboard.writeText(t).then(done,function(){toast('Copy blocked by the browser','err');});
+    navigator.clipboard.writeText(t).then(done,fallback);
     return;
   }
-  /* file:// and non-secure origins have no async clipboard - the old path still works there */
-  const ta=el('textarea');ta.value=t;ta.style.cssText='position:fixed;opacity:0';
-  document.body.append(ta);ta.select();
-  try{document.execCommand('copy');done();}catch(e){toast('Copy blocked by the browser','err');}
-  ta.remove();
+  fallback();
 }
 
 const OV_ICONS={
@@ -2387,10 +2409,11 @@ function openPurge(){
 
 $('#purge-cancel').addEventListener('click',()=>$('#purge-dialog').close());
 $('#purge-close').addEventListener('click',function(){$('#purge-dialog').close();render();});
+/* copyText, not a second hand-rolled clipboard call - that is exactly how this button shipped
+   broken: navigator.clipboard is undefined on a non-secure origin and the reimplementation had
+   neither the existence check nor the modal-aware fallback. */
 $('#purge-copy').addEventListener('click',function(){
-  navigator.clipboard.writeText($('#purge-step').textContent)
-    .then(()=>toast('instructions copied - paste them to an agent'))
-    .catch(()=>toast('could not copy','bad'));
+  copyText($('#purge-step').textContent,this);
 });
 $('#purge-submit').addEventListener('click',async function(){
   const reason=$('#purge-reason').value.trim();
