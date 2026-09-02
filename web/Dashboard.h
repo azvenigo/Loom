@@ -69,6 +69,13 @@ R"HTML(<!doctype html>
      highlight, not the ramp, do the lit-from-above work. Measured: every stop here clears 3.2:1
      against its own --panel. */
   --accent2:#7b4fd6; --good2:#2f7d5c; --warn2:#b0561a;
+  /* The blue that means "normal" - a priority level, not a state. Every other semantic colour
+     here already existed; there was no neutral-informational hue to code Normal with. */
+  --info:#3b6fd4; --info-wash:#e8eefb; --info-line:#b9cdf0;
+  /* The editor's text boxes. On a light palette this is just white; on a dark one it's a LIGHT
+     TINT OF THE PALETTE'S OWN HUE rather than pure white, which at ~72% of white's luminance
+     stops the field being a floodlight in a dark room while keeping ink contrast above 10:1. */
+  --field-bg:#ffffff; --field-ink:#1c1a17; --field-dim:#6f6a61;
   /* TODO panel ground - see .ov-todo. Two identical stops means a flat fill, which is what the
      eight quiet palettes have always had. */
   --todo-top:var(--warn-wash); --todo-bot:var(--warn-wash);
@@ -96,6 +103,8 @@ R"HTML(<!doctype html>
   --good:#4c7a3d; --good-wash:#e6f0e0; --good-line:#b5d1a5;
   --mark:#f2dfa0;
   --accent2:#6b73b8; --good2:#3f7a56; --warn2:#a8651e;
+  --info:#4a7ba8; --info-wash:#e1e9f2; --info-line:#b7c9dd;
+  --field-bg:#ffffff; --field-ink:#2e3440; --field-dim:#5e6779;
 }
 :root[data-palette="nord-dark"]{
   --bg:#2e3440; --panel:#3b4252; --sunk:#333a48;
@@ -103,10 +112,12 @@ R"HTML(<!doctype html>
   --line:#4c566a; --line-soft:#434c5e;
   --accent:#88c0d0; --accent-ink:#a9d4e0; --accent-wash:#2a3a41;
   --warn:#ebcb8b; --warn-wash:#3d3624; --warn-line:#5c5334;
-  --bad:#bf616a; --bad-wash:#3a2429; --bad-line:#5c3840;
+  --bad:#e0949b; --bad-wash:#3a2429; --bad-line:#5c3840;
   --good:#a3be8c; --good-wash:#2c3826; --good-line:#455339;
   --mark:#4a4020;
   --accent2:#a8d6e2; --good2:#c0d4ab; --warn2:#f2dcaa;
+  --info:#81a1c1; --info-wash:#26303d; --info-line:#3f5062;
+  --field-bg:#d8e0ec; --field-ink:#232a36; --field-dim:#5b6577;
 }
 :root[data-palette="earth"]{
   --bg:#f3e8d5; --panel:#faf3e6; --sunk:#ecdfc4;
@@ -118,6 +129,8 @@ R"HTML(<!doctype html>
   --good:#5c7a3d; --good-wash:#e2ecd8; --good-line:#a9c78f;
   --mark:#f0d98a;
   --accent2:#ad4a2a; --good2:#4f7d52; --warn2:#a8541a;
+  --info:#3d6f9e; --info-wash:#e2ecf4; --info-line:#a8c4da;
+  --field-bg:#fffcf3; --field-ink:#2c2015; --field-dim:#7c6b4e;
 }
 :root[data-palette="earth-dark"]{
   --bg:#1a140d; --panel:#241c13; --sunk:#181209;
@@ -125,10 +138,12 @@ R"HTML(<!doctype html>
   --line:#4a3820; --line-soft:#3a2c1a;
   --accent:#dcb478; --accent-ink:#eecb92; --accent-wash:#3a2e18;
   --warn:#c87832; --warn-wash:#3a2612; --warn-line:#5c4020;
-  --bad:#b43c3c; --bad-wash:#3a1c1a; --bad-line:#5c302e;
+  --bad:#e07a6a; --bad-wash:#3a1c1a; --bad-line:#5c302e;
   --good:#88aa55; --good-wash:#26301a; --good-line:#3e4c2c;
   --mark:#4a3818;
   --accent2:#efd3a2; --good2:#a8c876; --warn2:#e09a58;
+  --info:#7fa8c8; --info-wash:#16252e; --info-line:#2e4553;
+  --field-bg:#ebe0cd; --field-ink:#241c13; --field-dim:#7a6a4e;
 }
 :root[data-palette="twilight"]{
   --bg:#f2eefb; --panel:#ffffff; --sunk:#e7e0f6;
@@ -140,6 +155,8 @@ R"HTML(<!doctype html>
   --good:#3f8a5c; --good-wash:#e0f0e6; --good-line:#a3d2b5;
   --mark:#f0d9f0;
   --accent2:#9a52c0; --good2:#3f8a7c; --warn2:#a85c1a;
+  --info:#4f6fd0; --info-wash:#e6ebfa; --info-line:#b3c2ee;
+  --field-bg:#ffffff; --field-ink:#241f38; --field-dim:#7a6ea0;
 }
 :root[data-palette="twilight-dark"]{
   --bg:#13111f; --panel:#1c1930; --sunk:#171429;
@@ -151,6 +168,8 @@ R"HTML(<!doctype html>
   --good:#8fd9a8; --good-wash:#1e3428; --good-line:#325240;
   --mark:#4a3c1c;
   --accent2:#d2bdf0; --good2:#b0ecc4; --warn2:#f5d492;
+  --info:#8fa8e8; --info-wash:#1e2440; --info-line:#34406b;
+  --field-bg:#e0d9f0; --field-ink:#1b1730; --field-dim:#6d6490;
 }
 :root[data-palette="midnight"]{
   --bg:#141317; --panel:#1b1a20; --sunk:#232128;
@@ -162,6 +181,8 @@ R"HTML(<!doctype html>
   --good:#6cc294; --good-wash:#152720; --good-line:#2c5340;
   --mark:#5c5220;
   --accent2:#c3b3ff; --good2:#8fd9ae; --warn2:#f0c288;
+  --info:#7fa2f0; --info-wash:#182339; --info-line:#2c3c5e;
+  --field-bg:#e2dfe9; --field-ink:#17161c; --field-dim:#6b6878;
 }
 /* ---- the vivid set ----------------------------------------------------------------------------
    The eight above are quiet schemes where the second gradient stop is just a lighter shade of the
@@ -188,6 +209,8 @@ R"HTML(<!doctype html>
   --accent2:#e879c7; --good2:#5fe0b0; --warn2:#f7d774;
   --todo-top:#241a45; --todo-bot:#140f26;
   --todo-edge:#33265c; --todo-bar:#8b5cf6; --todo-glow:#8b5cf6;
+  --info:#6c8cff; --info-wash:#1a2145; --info-line:#2e3a6b;
+  --field-bg:#ded6f0; --field-ink:#171230; --field-dim:#6b5f8c;
 }
 /* Aurora replaces an earlier warm "Ember" - a brown-grounded dark theme, which turns out to be the
    one thing a large tinted surface cannot survive: every wash on it reads as mud rather than as a
@@ -205,6 +228,8 @@ R"HTML(<!doctype html>
   --accent2:#4fd9c4; --good2:#74e39a; --warn2:#f2c661;
   --todo-top:#123c48; --todo-bot:#0b1e26;
   --todo-edge:#1b3f4a; --todo-bar:#0e9fb8; --todo-glow:#0e9fb8;
+  --info:#3fa9d9; --info-wash:#0e2c3d; --info-line:#1c4358;
+  --field-bg:#d3e6ea; --field-ink:#08222b; --field-dim:#4a6a72;
 }
 :root[data-palette="synth"]{
   --bg:#0d0f1f; --panel:#161a33; --sunk:#111428;
@@ -218,6 +243,8 @@ R"HTML(<!doctype html>
   --accent2:#f062c8; --good2:#4de0c0; --warn2:#f5cf5c;
   --todo-top:#1b2149; --todo-bot:#111428;
   --todo-edge:#2c3363; --todo-bar:#5b63e0; --todo-glow:#5b63e0;
+  --info:#4fb6f0; --info-wash:#12253d; --info-line:#23415c;
+  --field-bg:#d8def2; --field-ink:#121628; --field-dim:#5a6280;
 }
 :root[data-palette="sorbet"]{
   --bg:#fff5f7; --panel:#ffffff; --sunk:#ffe9ef;
@@ -231,6 +258,8 @@ R"HTML(<!doctype html>
   --accent2:#e04f4f; --good2:#0f9080; --warn2:#b8571a;
   --todo-top:#fff0f5; --todo-bot:#ffffff;
   --todo-edge:#f2d0dc; --todo-bar:#d63f83; --todo-glow:#d63f83;
+  --info:#3f7fd0; --info-wash:#e6eefb; --info-line:#b3cbee;
+  --field-bg:#ffffff; --field-ink:#2b1a24; --field-dim:#8a6b7c;
 }
 *{box-sizing:border-box}
 /* THE SHELL IS A SIDEBAR + A COLUMN. #shell owns the viewport as a flex ROW: a fixed-width rail
@@ -315,8 +344,22 @@ dialog#agent-dialog .row button{flex:1}
 /* The dialog element itself defaults to overflow:auto in the UA stylesheet, so with #detail
    ALSO scrolling (.pane, overflow-y:auto) the same overflowing content had two independent
    scrollbars fighting over it. overflow:hidden here leaves #detail as the one scroll container. */
+/* THE DIALOG HAD NO BACKGROUND AT ALL. dialog#about sets one; this one never did, so it fell
+   through to the UA stylesheet's Canvas - stark white in all twelve palettes, including the dark
+   ones where it framed dark cards in a hard white border. It now takes --bg, the same ground the
+   Overview panels sit on, so the dialog reads as a surface of the theme rather than a hole
+   punched through it. Cards (.dsect) sit on --panel above it; the text boxes are white islands
+   with dark ink, which is the one place a light surface belongs in a dark theme - a field you
+   type into should look like paper whatever the app around it is doing. */
 dialog#detail-dialog{border:1px solid var(--line);border-radius:var(--r);padding:0;overflow:hidden;
-  width:min(640px,94vw);max-height:88vh;position:relative}
+  width:min(640px,94vw);max-height:88vh;position:relative;
+  background:var(--bg);color:var(--body);transition:width .18s ease}
+/* Opening "More details" widens the dialog by half. The body of a jot is usually the longest text
+   in it, and 640px was a column sized for a summary and a due date - fine until the details field
+   is on screen, at which point every line wraps early. 96vw rather than 94 so the wide state can
+   actually use a narrow screen instead of being clamped back to the same width. */
+dialog#detail-dialog.wide{width:min(960px,96vw)}
+@media(prefers-reduced-motion:reduce){dialog#detail-dialog{transition:none}}
 dialog#detail-dialog::backdrop{background:rgba(0,0,0,.45)}
 dialog#detail-dialog #detail{max-height:88vh;padding-right:56px}
 dialog#detail-dialog .dclose{position:absolute;top:12px;right:12px;width:28px;height:28px;
@@ -385,41 +428,81 @@ main{flex:1;min-height:0;overflow:hidden}
 #detail{padding:22px 30px 40px}
 .dwrap{max-width:900px}
 .fld{min-width:0}
-/* The toggle sits directly under the summary box, so whoever just finished reading the summary
-   finds the way to the rest of the jot without hunting for it at the bottom of the dialog. */
-.dtoggle{margin:2px 0 16px;display:block}
 /* Priority leads the dialog: it's the field changed most often on a TODO and the one that moves
    a card between columns, so it reads as a row of visible choices rather than a menu to open.
    "Clear" is the fourth choice rather than a separate button - unset is just another state, and
    picking it deselects the other three the same way picking High does. */
-.prio{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 18px}
-.prio label{display:inline-flex;align-items:center;gap:6px;margin:0;cursor:pointer;
-  font:12px var(--sans);text-transform:none;letter-spacing:0;color:var(--dim);
-  border:1px solid var(--line);border-radius:6px;padding:5px 11px;background:var(--panel)}
-.prio label:hover{color:var(--ink);background:var(--sunk)}
+/* PRIORITY IS A ROW OF TAG-SHAPED RADIOS. The native radio is still there and still does all the
+   work - arrow keys walk the group, one-of-N is enforced by the browser - but it's absolutely
+   positioned at zero opacity behind its own chip. That's what removes the big square focus ring
+   the browser draws around a visible radio; the ring is re-attached to the chip through
+   :focus-visible on the input, so keyboard focus is MORE visible than before, not less.
+   Colour appears only on the chip that is set. An unselected row stays neutral grey, which means
+   the single hue on screen is always the current priority - the same red/blue/grey the cards and
+   column headers use, so the control and its consequence match. */
+.prio{display:flex;gap:7px;flex-wrap:wrap}
+.prchip{position:relative;display:inline-flex;margin:0}
+.prchip input{position:absolute;inset:0;width:100%;height:100%;opacity:0;margin:0;cursor:pointer}
+.prchip span{font:10.5px var(--mono);text-transform:uppercase;letter-spacing:.07em;font-weight:600;
+  padding:6px 12px;border-radius:6px;border:1px solid var(--line);background:var(--sunk);
+  color:var(--dim);user-select:none}
+.prchip:hover span{color:var(--ink);border-color:var(--dim)}
+.prchip input:focus-visible+span{outline:2px solid var(--accent);outline-offset:2px}
+.prchip input:checked+span{color:var(--panel);border-color:transparent;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.22)}
+.prchip.p-high input:checked+span{background:var(--bad)}
+.prchip.p-normal input:checked+span{background:var(--info)}
+.prchip.p-low input:checked+span{background:var(--dim)}
+/* "Clear" is the absence of a priority, so it gets no hue - just an outline saying it's the one
+   that's set. A colour here would imply it were a fourth priority level. */
+.prchip.p-none input:checked+span{background:none;color:var(--ink);border-color:var(--dim);
+  box-shadow:none}
+
+/* SECTIONS ARE ENCLOSURES, not just gaps. The dialog grew past the point where whitespace alone
+   said which fields belong together, so each group is a bordered box with a legend and the
+   collapse control sits in the bottom-right of the box it belongs to. */
+/* The card is --panel lifted by a flat 8% white wash. On a light palette --panel is already white
+   so the wash does nothing and the separation comes from the tinted ground underneath; on a dark
+   one, where --bg and --panel are only a shade apart, it's what makes the card actually read as a
+   card. One declaration that does the right thing at both ends. */
+.dsect{border:1px solid var(--line);border-radius:9px;padding:12px 15px 14px;margin-bottom:13px;
+  background:linear-gradient(rgba(255,255,255,.08),rgba(255,255,255,.08)),var(--panel);
+  box-shadow:0 1px 3px rgba(0,0,0,.14)}
+/* Legends name the sections, so they have to survive a dark palette. At 10px in --faint they did
+   not - --faint is the tone for things you are meant to skip past. Bigger, bolder, and in --body,
+   which is the same tone the prose uses. Not scoped to .dsect: priority has no box any more and
+   still needs its heading. */
+.dlegend{font:11.5px var(--mono);text-transform:uppercase;letter-spacing:.09em;font-weight:700;
+  color:var(--body);margin-bottom:11px}
+/* The field labels a level below the legends had the same problem for the same reason: --faint
+   measured 1.55:1 on a Nord Dark card. --dim keeps them clearly subordinate to a legend while
+   staying legible. Scoped to the dialog - elsewhere --faint labels sit on different grounds. */
+#detail label{color:var(--dim)}
+/* Priority is a row of chips that already read as a group - a box around them was one enclosure
+   too many, and the chips are self-labelling in a way a form field is not. */
+.dbare{margin-bottom:15px}
+/* Labels inside a section carry no top margin - the section legend and the row spacing below
+   provide it. Leaving the global 14px on meant the two halves of a .frow started at different
+   heights whenever only one of them was the row's first child. */
+.dsect .fld>label:first-child{margin-top:0}
+.dsect .frow{margin-top:15px}
+.dsect .frow:first-of-type{margin-top:0}
+.dsect textarea,.dsect input{width:100%}
+.dsectfoot{display:flex;justify-content:flex-end;margin-top:10px}
+.dmktodo{margin-bottom:13px}
+/* A class that sets `display` outsmarts the UA rule for the hidden attribute, which is how the
+   collapsed dialog kept showing the toggle it had just hidden. */
+[hidden]{display:none!important}
 /* The selected priority fills with the same accent ramp the primary button uses - a TODO's
    priority is the thing that colors its whole card, so the control that sets it should look
    like a decision, not like a checkbox that happens to be ticked. */
-.prio label.on{font-weight:600}
-.prio input{accent-color:var(--accent);margin:0}
-.prio label.on input{accent-color:var(--panel)}
 /* Due and its snooze buttons are a subsection of their own now that priority has left the row -
    scheduling is a separate decision from how much the thing matters. */
-.duesect{margin-bottom:4px}
-.duesect input{max-width:260px}
-.dextra{border-top:1px solid var(--line-soft);margin-top:2px;padding-top:14px}
-.dextra .dmeta{margin-bottom:14px}
+.dsect input.dueinput{max-width:260px}
 .frow{display:grid;grid-template-columns:1fr 1fr;gap:0 18px}
 @media(max-width:640px){.frow{grid-template-columns:1fr}}
 #detail textarea[data-k=text]{min-height:min(30vh,320px)}
 #detail textarea[data-k=summary]{min-height:92px}
-/* Details starts collapsed - most jots don't have a body worth a second field, and the ones that
-   do get a real textarea the moment the <summary> is opened, not a permanent slab of empty space. */
-.dfld{margin-bottom:16px}
-.dfld summary{cursor:pointer;font-size:12px;color:var(--dim);text-transform:uppercase;
-  letter-spacing:.04em;margin-bottom:8px;user-select:none}
-.dfld summary:hover{color:var(--ink)}
-.dfld textarea{width:100%}
 .snbtns{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0 16px}
 
 /* ---------- controls ---------- */
@@ -448,6 +531,19 @@ input,select,textarea{font:14px var(--sans);color:var(--ink);background:var(--pa
 textarea{resize:vertical;line-height:1.55}
 input:focus,select:focus,textarea:focus{outline:0;border-color:var(--accent);
   box-shadow:0 0 0 3px var(--accent-wash)}
+
+/* Text boxes in the editor are paper in every palette: a light ground with dark ink, because a
+   field you type into should look like something you type into whatever the app around it is
+   doing. On a DARK palette that ground is a light tint of the theme's own hue, not pure white -
+   white won the contrast argument and lost the comfort one, a floodlight in a dark room. The tint
+   sits near 72% of white's luminance and still prints ink above 10:1.
+   color-scheme:light rides along so the native parts a dark palette would otherwise render dark -
+   the datetime picker's calendar button and its dropdown, the caret - come out matching the light
+   field instead of the dark page. The radios are excluded: they're the invisible ones behind the
+   priority chips, and a light fill on them would defeat the chip. */
+#detail input:not([type=radio]),#detail textarea{
+  background:var(--field-bg);color:var(--field-ink);color-scheme:light}
+#detail input:not([type=radio])::placeholder,#detail textarea::placeholder{color:var(--field-dim)}
 
 /* Even the plain button gets a ramp - panel at the top, sunk at the bottom. It's a two-value
    difference in every palette, so it costs nothing and stops a row of outline buttons from
@@ -810,10 +906,13 @@ mark{background:var(--mark);color:inherit;border-radius:2px;padding:0 1px}
 .vrow .when{font:10px var(--mono);color:var(--faint);width:70px;text-align:right}
 
 /* ---------- detail ---------- */
-.dhead{display:flex;align-items:flex-start;gap:10px;margin-bottom:4px}
-.dhead h3{margin:0;font-size:15px;color:var(--ink);font-weight:600}
-.dmeta{font:11px var(--mono);color:var(--faint);line-height:1.7;margin-bottom:16px;
-  padding-bottom:14px;border-bottom:1px solid var(--line-soft)}
+/* Slug left, id right: the id is the thing you occasionally need to quote and never need to read,
+   so it sits at the far end in mono at the size of a footnote. */
+.dhead{display:flex;align-items:baseline;gap:12px;margin-bottom:14px}
+.dhead h3{margin:0;font-size:16px;color:var(--ink);font-weight:600;overflow-wrap:anywhere}
+.dhead .did{margin-left:auto;font:10.5px var(--mono);color:var(--faint);flex:none}
+.dmeta{font:11px var(--mono);color:var(--faint);line-height:1.7;margin-top:12px;
+  padding-top:11px;border-top:1px solid var(--line-soft)}
 .dmeta div{display:flex;gap:8px}
 .dmeta i{font-style:normal;color:var(--dim);width:62px;flex:none}
 label{display:block;font:10px var(--mono);text-transform:uppercase;letter-spacing:.08em;
@@ -1880,24 +1979,36 @@ function renderDetail(){
   const isNew=!!sel.__new;
   const W=el('div','dwrap');P.append(W);
 
-  const h=el('div','dhead');
-  h.append(el('h3',null,isNew?'New jot':(sel.name||'Edit jot')));
-  W.append(h);
-
   /* Expanded/force-todo state remembers across re-renders of the SAME jot (e.g. after Save) but
      resets the moment a different jot is opened - carrying "I had it expanded" or "I turned this
      into a TODO" over to the next unrelated click would defeat the point of both. */
   const key=isNew?'__new':sel.id;
   if(key!==detailOpenedKey){detailExpanded=false;detailForceTodo=false;detailOpenedKey=key;}
 
+  /* ---- header: slug reads as the title on the left, id sits quietly at the right ---- */
+  const h=el('div','dhead');
+  h.append(el('h3',null,isNew?'New jot':(sel.name||'Edit jot')));
+  if(!isNew)h.append(el('span','did','#'+sel.id));
+  W.append(h);
+
   const f={};
+  const sect=function(legend,host){
+    const d=el('div','dsect');
+    if(legend)d.append(el('div','dlegend',legend));
+    (host||W).append(d);return d;
+  };
   /* every field is its own .fld block so short fields can be paired two-up in a .frow when
      the panel is wide - a label and its input have to travel together through the grid. */
+  /* A null label means the enclosing section's legend already names the field - repeating it
+     immediately underneath is noise. The hint still gets a line of its own. */
   const field=function(key,label,tag,hint,host){
     const box=el('div','fld');(host||W).append(box);
-    const l=el('label');l.append(document.createTextNode(label));
-    if(hint)l.append(el('u',null,hint));
-    box.append(l);
+    if(label||hint){
+      const l=el('label');
+      if(label)l.append(document.createTextNode(label));
+      if(hint)l.append(el('u',null,hint));
+      box.append(l);
+    }
     const e=el(tag||'input');e.value=(sel[key]===undefined||sel[key]===null)?'':sel[key];
     e.setAttribute('data-k',key);
     if(tag==='textarea')e.rows=(key==='text')?9:2;
@@ -1918,92 +2029,96 @@ function renderDetail(){
 
   /* ---- priority leads: highest-traffic field on a TODO, and the one that moves a card ---- */
   if(showTask){
-    W.append(el('label',null,'priority'));
-    const prRow=el('div','prio');W.append(prRow);
+    const prBlock=el('div','dbare');W.append(prBlock);
+    prBlock.append(el('div','dlegend','priority'));
+    const prRow=el('div','prio');prBlock.append(prRow);
     const rname='prio-'+key;
-    [['high','High'],['normal','Normal'],['low','Low'],['','Clear']].forEach(function(o){
-      const lab=el('label',pr.value===o[0]?'on':null);
+    [['high','High','p-high'],['normal','Normal','p-normal'],
+     ['low','Low','p-low'],['','Clear','p-none']].forEach(function(o){
+      const lab=el('label','prchip '+o[2]);
       const rb=el('input');rb.type='radio';rb.name=rname;rb.value=o[0];
       rb.checked=(pr.value===o[0]);
       /* Radios do the unsetting for free: "Clear" is just the option whose value is empty, so
-         picking it deselects the other three exactly the way picking High does. */
-      rb.onchange=function(){
-        pr.value=o[0];
-        Array.prototype.forEach.call(prRow.children,function(x){
-          x.classList.toggle('on',x.firstChild.checked);
-        });
-      };
-      lab.append(rb,document.createTextNode(o[1]));
+         picking it deselects the other three exactly the way picking High does. The chip's look
+         follows :checked in CSS, so there's no class to keep in sync here. */
+      rb.onchange=function(){pr.value=o[0];};
+      lab.append(rb,el('span',null,o[1]));
       prRow.append(lab);
     });
-  }
-
-  field('summary','summary','textarea','the main point of this jot');
-
-  if(!showTask){
-    const mk=el('button','btn tiny ghost','Make this a TODO');
+  }else{
+    /* Not a ghost: it's the only control between the header and the first card, so on the
+       dialog's bare ground a borderless button read as a caption rather than something to press. */
+    const mk=el('button','btn tiny dmktodo','Make this a TODO');
     mk.type='button';
     mk.onclick=function(){detailForceTodo=true;renderDetail();};
     W.append(mk);
   }
 
-  const toggle=el('button','btn tiny ghost dtoggle',detailExpanded?'Fewer fields ▲':'More fields ▾');
-  toggle.type='button';
-  W.append(toggle);
+  /* ---- summary, with the way into everything else in its bottom-right corner ---- */
+  const sumSect=sect('summary');
+  field('summary',null,'textarea','the main point of this jot',sumSect);
+  const sumFoot=el('div','dsectfoot');sumSect.append(sumFoot);
 
-  /* ---- everything else: slug, editor, details, tags, links, metadata - hidden until asked for,
-     so opening a quick reminder isn't several fields deep before you've typed anything. */
-  const ex=el('div','dextra');ex.hidden=!detailExpanded;
-  W.append(ex);
-  toggle.onclick=function(){
-    detailExpanded=!detailExpanded;
-    ex.hidden=!detailExpanded;
-    toggle.textContent=detailExpanded?'Fewer fields ▲':'More fields ▾';
-  };
+  /* ---- details, metadata: revealed together ----
+     The toggle exists TWICE - once in the summary box, once in the details box - and only the one
+     belonging to the currently-visible arrangement is shown. That's what lets the control sit in
+     the bottom-right corner of whichever box it closes, without re-rendering the dialog to move
+     it: a re-render would throw away whatever had been typed and not yet saved. */
+  const detSect=sect('details');
+  const dta=el('textarea');dta.setAttribute('data-k','text');dta.value=sel.text||'';dta.rows=9;
+  detSect.append(dta);f.text=dta;
+  const detFoot=el('div','dsectfoot');detSect.append(detFoot);
 
-  if(!isNew){
-    const m=el('div','dmeta');
-    const line=function(k,v){const d=el('div');d.append(el('i',null,k));
-      d.append(el('span',null,v));m.append(d);};
-    line('id',String(sel.id));
-    line('created',stamp(sel.id));
-    if(sel.updated)line('edited',stamp(sel.updated));
-    line('editor',sel.editor||'user');
-    ex.append(m);
-  }
-
-  const idRow=frow(ex);
+  const metaSect=sect('metadata');
+  const idRow=frow(metaSect);
   field('name','slug',null,'optional - makes this jot addressable',idRow);
+  /* Editor used to appear twice - once as an editable field and once as a read-only line in the
+     metadata block. This is the editable one; the duplicate is gone. */
   field('editor','editor',null,null,idRow);
 
   const TASK_TAG=/^(priority|due):/;
-  const detailsBox=el('details','fld dfld');
-  if(sel.text)detailsBox.open=true;
-  const dsum=document.createElement('summary');
-  dsum.textContent='details'+(sel.text?'':' (optional)');
-  detailsBox.append(dsum);
-  const dta=el('textarea');dta.setAttribute('data-k','text');dta.value=sel.text||'';dta.rows=8;
-  detailsBox.append(dta);
-  ex.append(detailsBox);
-  f.text=dta;
-
-  const metaRow=frow(ex);
+  const metaRow=frow(metaSect);
   const tg=field('tags','tags',null,'comma separated',metaRow);
   tg.value=(sel.tags||[]).filter(t=>!TASK_TAG.test(t)).join(', ');
   const lk=field('links','links',null,'ids or slugs',metaRow);
   lk.value=(sel.links||[]).concat(sel.pending||[]).join(', ');
 
   if(!isNew&&(sel.pending||[]).length)
-    ex.append(el('div','note','Unresolved: '+sel.pending.join(', ')+
+    metaSect.append(el('div','note','Unresolved: '+sel.pending.join(', ')+
       ' — these connect themselves when a jot takes that slug.'));
+
+  if(!isNew){
+    const m=el('div','dmeta');
+    const line=function(k,v){const d=el('div');d.append(el('i',null,k));
+      d.append(el('span',null,v));m.append(d);};
+    line('created',stamp(sel.id));
+    if(sel.updated)line('edited',stamp(sel.updated));
+    metaSect.append(m);
+  }
+
+  const mkToggle=function(host,label){
+    const b=el('button','btn tiny ghost',label);b.type='button';
+    b.onclick=function(){detailExpanded=!detailExpanded;applyExpanded();};
+    host.append(b);return b;
+  };
+  mkToggle(sumFoot,'More details ▾');
+  mkToggle(detFoot,'Fewer details ▲');
+  const applyExpanded=function(){
+    detSect.hidden=!detailExpanded;
+    metaSect.hidden=!detailExpanded;
+    sumFoot.hidden=detailExpanded;
+    /* Wider only while the details field is on screen - see dialog#detail-dialog.wide. */
+    dlg.classList.toggle('wide',detailExpanded);
+  };
+  applyExpanded();
 
   /* Due is its own subsection below the fields: WHEN something is due is a separate decision from
      what it says and from how much it matters, and pairing it with priority in one row made the
      two look like halves of a single setting. */
   if(showTask){
-    const dueSect=el('div','duesect');W.append(dueSect);
+    const dueSect=sect('schedule');
     dueSect.append(el('label',null,'due'));
-    dueIn=el('input');dueIn.type='datetime-local';
+    dueIn=el('input','dueinput');dueIn.type='datetime-local';
     const dv=tagValue(sel.tags,'due:');
     dueIn.value=dv?(dv.length>10?dv:dv+'T00:00'):'';
     dueSect.append(dueIn);
