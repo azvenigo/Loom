@@ -613,6 +613,11 @@ button.tiny{font-size:12px;padding:4px 9px}
 .chip:hover{border-color:var(--dim);color:var(--ink)}
 .chip.on{font-weight:500}
 .chip b{font:10px var(--mono);opacity:.65;margin-left:5px;font-weight:400}
+/* The x is only drawn on an active chip, so it reads as "remove this filter" rather than as
+   decoration on every tag in the row. */
+.chip .x{font-style:normal;font-size:13px;line-height:1;margin-left:6px;opacity:.75}
+.chip.clearall{border-style:dashed;color:var(--faint)}
+.chip.clearall:hover{color:var(--bad);border-color:var(--bad-line)}
 
 /* ---------- result meta ---------- */
 .rmeta{display:flex;align-items:baseline;gap:8px;margin:2px 0 12px;
@@ -1354,7 +1359,7 @@ function jotCard(j,maxScore,terms){
   const c=el('div','mcard'+(sel&&sel.id===j.id?' sel':'')+(done?' done':''));
   c.style.setProperty('--cat','var('+cat.cssVar+')');
 
-  /* Reserved tags (type:x, cluster:x) and the editor stay out of the card face entirely - they're
+  /* Reserved tags (type:x, status:x) and the editor stay out of the card face entirely - they're
      already implied by the pill/detail and just added noise repeated on every card. A card is a
      thing to recognize and click, not the full record. */
   const head=el('div','cathead');
@@ -1455,19 +1460,41 @@ async function viewSearch(target){
      a third copy in this one filter bar is just another thing to keep in sync. */
   L.append(bar);
 
-  if(allTags.length){
-    const chips=el('div','chips');
-    allTags.slice(0,18).forEach(function(t){
-      const c=el('span','chip'+(activeTags.has(t.tag)?' on':''));
-      c.append(document.createTextNode(t.tag));c.append(el('b',null,t.count));
-      c.onclick=function(){
-        activeTags.has(t.tag)?activeTags.delete(t.tag):activeTags.add(t.tag);
-        run();
-      };
-      chips.append(c);
-    });
-    L.append(chips);
+  /* The chip row is rebuilt from state on every toggle rather than painted once. Two reasons, both
+     of which stranded a filter with no way off: a chip that flipped the filter but kept its old
+     on/off look gave no feedback at all, and - worse - the row used to be *only* the top slice of
+     the /tags vocabulary, which never returns reserved tags. Every other path that sets activeTags
+     (a Top Tags pill, the TODO card, a tag-drift row) could therefore select a tag with no chip
+     anywhere on screen, and the only escape was a reload. Actives are now rendered from activeTags
+     itself, so whatever is filtering is always visible and always clickable. */
+  const chips=el('div','chips');L.append(chips);
+  function chipFor(tag,count,on){
+    const c=el('span','chip'+(on?' on':''));
+    c.append(document.createTextNode(tag));
+    if(count!==undefined)c.append(el('b',null,count));
+    if(on)c.append(el('i','x','×'));
+    c.title=(on?'Remove filter: ':'Filter by ')+tag;
+    c.onclick=function(){on?activeTags.delete(tag):activeTags.add(tag);drawChips();run();};
+    return c;
   }
+  function drawChips(){
+    chips.innerHTML='';
+    const counts={};allTags.forEach(function(t){counts[t.tag]=t.count;});
+    activeTags.forEach(t=>chips.append(chipFor(t,counts[t],true)));
+    let room=18-activeTags.size;
+    for(let i=0;i<allTags.length&&room>0;i++){
+      if(activeTags.has(allTags[i].tag))continue;
+      chips.append(chipFor(allTags[i].tag,allTags[i].count,false));room--;
+    }
+    if(activeTags.size){
+      const clr=el('span','chip clearall','Clear filters');
+      clr.title='Remove all tag filters';
+      clr.onclick=function(){activeTags=new Set();drawChips();run();};
+      chips.append(clr);
+    }
+    chips.style.display=chips.childElementCount?'':'none';
+  }
+  drawChips();
 
   const meta=el('div','rmeta');L.append(meta);
   const grid=el('div','cardgrid'+(cardMode==='list'?' list':''));L.append(grid);
