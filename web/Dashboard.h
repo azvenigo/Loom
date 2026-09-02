@@ -24,9 +24,8 @@
 //   hand-maintained cluster index files", and that is unanswerable from a list that hides why
 //   things ranked where they did.
 //
-//   MEMORIES AND JOTS LOOK DIFFERENT. A named jot with a summary is a durable memory; a bare one is
-//   a passing thought. Same record type, different kind of thing - and flattening them into
-//   identical rows was the worst failure of the first version.
+//   EVERYTHING IS A JOT. A name (slug) just makes one addressable by [[link]] and mergeable by
+//   upsert - it is not a separate tier of record, and the UI does not call it one out.
 //
 //   TIME IS SHOWN LOCALLY. Ids are UTC microseconds, but the imported entries were written in local
 //   wall-clock time. Formatting happens in the browser from the id, so an entry written at 13:09
@@ -34,7 +33,7 @@
 //   makes two years of imported history legible instead of one flat scroll.
 //
 //   CHROME RECEDES. Metadata is small, monospaced and faint; content is the only thing carrying
-//   full contrast. Everything that is not a memory gets out of the way of the ones that are.
+//   full contrast.
 //////////////////////////////////////////////////////////////////////////////////////////////////
 
 inline const char* LoomDashboardHtml()
@@ -57,12 +56,103 @@ R"HTML(<!doctype html>
   --bad:#a32c22; --bad-wash:#fdf1f0; --bad-line:#e7b3ad;
   --good:#2c6b45; --good-wash:#f0f8f3; --good-line:#a9d4bd;
   --mark:#fdf0a8;
+  /* SECOND GRADIENT STOP for each filled color. Every palette declares these three and the button
+     rules build the ramp from them - see the "filled controls" block. They are plain hex on
+     purpose rather than a color-mix() off the base: a var() that fails to substitute inside
+     `background` does NOT fall back to the previous declaration, it unsets the property, and an
+     unstyled Save button on an old browser is a worse trade than three extra lines per palette.
+     RULE FOR PICKING ONE: filled controls print --panel on top of this ramp, so BOTH stops have to
+     stay far from --panel in luminance. On a dark palette that means the second stop can be much
+     brighter than the base and the contrast only improves. On a LIGHT one it must not be - a
+     lightened stop is exactly where white-on-color falls apart, so light palettes shift HUE at
+     roughly equal lightness instead (violet into magenta, ochre into rust) and let the inset
+     highlight, not the ramp, do the lit-from-above work. Measured: every stop here clears 3.2:1
+     against its own --panel. */
+  --accent2:#7b4fd6; --good2:#2f7d5c; --warn2:#b0561a;
+  /* TODO panel ground - see .ov-todo. Two identical stops means a flat fill, which is what the
+     eight quiet palettes have always had. */
+  --todo-top:var(--warn-wash); --todo-bot:var(--warn-wash);
+  --todo-edge:var(--warn-line); --todo-bar:var(--warn); --todo-glow:var(--warn);
   --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
   --sans:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
   --r:7px;
 }
-@media (prefers-color-scheme:dark){
-:root{
+/* Paper/Midnight are the original pair (purple accent, light/dark) - the old "Loom" auto-dark and
+   "Midnight" sat almost on top of each other once the OS was in dark mode, which was the
+   complaint that started this; Midnight now covers that end on its own, :root above is "Paper".
+   The rest are three more light/dark pairs, adapted from the terminal color tables in
+   ZLibraries/Common/zhelpers/FormatHelpers.cpp (Style::GetSchemes - "nord"/"earth"/"twilight"
+   entries) rather than invented from nothing: real, already-liked schemes, re-tuned for web
+   contrast (those tables are console ANSI colors on a near-black background only - the *-light
+   variants here are new, built to the same palette identity, not copied from anywhere). Alex
+   wants to try a few and narrow down, so this errs toward offering options rather than picking. */
+:root[data-palette="nord"]{
+  --bg:#eceff4; --panel:#ffffff; --sunk:#e5e9f0;
+  --ink:#2e3440; --body:#3b4252; --dim:#5e6779; --faint:#8b93a3;
+  --line:#d3d9e3; --line-soft:#e2e6ee;
+  --accent:#5e81ac; --accent-ink:#456384; --accent-wash:#e1e9f2;
+  --warn:#a6791e; --warn-wash:#f7edd6; --warn-line:#e3cd94;
+  --bad:#bf616a; --bad-wash:#fae4e5; --bad-line:#e6b3b8;
+  --good:#4c7a3d; --good-wash:#e6f0e0; --good-line:#b5d1a5;
+  --mark:#f2dfa0;
+  --accent2:#6b73b8; --good2:#3f7a56; --warn2:#a8651e;
+}
+:root[data-palette="nord-dark"]{
+  --bg:#2e3440; --panel:#3b4252; --sunk:#333a48;
+  --ink:#eceff4; --body:#d8dee9; --dim:#9aa5b8; --faint:#616e88;
+  --line:#4c566a; --line-soft:#434c5e;
+  --accent:#88c0d0; --accent-ink:#a9d4e0; --accent-wash:#2a3a41;
+  --warn:#ebcb8b; --warn-wash:#3d3624; --warn-line:#5c5334;
+  --bad:#bf616a; --bad-wash:#3a2429; --bad-line:#5c3840;
+  --good:#a3be8c; --good-wash:#2c3826; --good-line:#455339;
+  --mark:#4a4020;
+  --accent2:#a8d6e2; --good2:#c0d4ab; --warn2:#f2dcaa;
+}
+:root[data-palette="earth"]{
+  --bg:#f3e8d5; --panel:#faf3e6; --sunk:#ecdfc4;
+  --ink:#2c2015; --body:#4a3820; --dim:#7c6b4e; --faint:#a8987a;
+  --line:#dcc9a0; --line-soft:#e8d8b6;
+  --accent:#a3672f; --accent-ink:#7d4d20; --accent-wash:#ecdcb8;
+  --warn:#a1620c; --warn-wash:#f5e6c8; --warn-line:#d8b981;
+  --bad:#a32c22; --bad-wash:#f5d9d2; --bad-line:#d99a8e;
+  --good:#5c7a3d; --good-wash:#e2ecd8; --good-line:#a9c78f;
+  --mark:#f0d98a;
+  --accent2:#ad4a2a; --good2:#4f7d52; --warn2:#a8541a;
+}
+:root[data-palette="earth-dark"]{
+  --bg:#1a140d; --panel:#241c13; --sunk:#181209;
+  --ink:#f0e6d2; --body:#d2bea0; --dim:#a8987a; --faint:#786a52;
+  --line:#4a3820; --line-soft:#3a2c1a;
+  --accent:#dcb478; --accent-ink:#eecb92; --accent-wash:#3a2e18;
+  --warn:#c87832; --warn-wash:#3a2612; --warn-line:#5c4020;
+  --bad:#b43c3c; --bad-wash:#3a1c1a; --bad-line:#5c302e;
+  --good:#88aa55; --good-wash:#26301a; --good-line:#3e4c2c;
+  --mark:#4a3818;
+  --accent2:#efd3a2; --good2:#a8c876; --warn2:#e09a58;
+}
+:root[data-palette="twilight"]{
+  --bg:#f2eefb; --panel:#ffffff; --sunk:#e7e0f6;
+  --ink:#241f38; --body:#4e4270; --dim:#7a6ea0; --faint:#a89cc0;
+  --line:#d8cdec; --line-soft:#e7dff5;
+  --accent:#7a5fc4; --accent-ink:#5c449e; --accent-wash:#ebe4fa;
+  --warn:#a1720c; --warn-wash:#f7ecd5; --warn-line:#e0c78f;
+  --bad:#c23a5a; --bad-wash:#fae0e6; --bad-line:#e6adb9;
+  --good:#3f8a5c; --good-wash:#e0f0e6; --good-line:#a3d2b5;
+  --mark:#f0d9f0;
+  --accent2:#9a52c0; --good2:#3f8a7c; --warn2:#a85c1a;
+}
+:root[data-palette="twilight-dark"]{
+  --bg:#13111f; --panel:#1c1930; --sunk:#171429;
+  --ink:#ede8f5; --body:#c4beda; --dim:#8f88ac; --faint:#615a80;
+  --line:#3e2f63; --line-soft:#332852;
+  --accent:#b39ddb; --accent-ink:#cbb8e8; --accent-wash:#332852;
+  --warn:#e8b968; --warn-wash:#3d3018; --warn-line:#5c4a28;
+  --bad:#e0697a; --bad-wash:#3a2028; --bad-line:#5c3440;
+  --good:#8fd9a8; --good-wash:#1e3428; --good-line:#325240;
+  --mark:#4a3c1c;
+  --accent2:#d2bdf0; --good2:#b0ecc4; --warn2:#f5d492;
+}
+:root[data-palette="midnight"]{
   --bg:#141317; --panel:#1b1a20; --sunk:#232128;
   --ink:#eceae5; --body:#cfcbc3; --dim:#948e85; --faint:#6b665e;
   --line:#2c2a32; --line-soft:#25232a;
@@ -71,51 +161,130 @@ R"HTML(<!doctype html>
   --bad:#e08279; --bad-wash:#2b1917; --bad-line:#5e2f2a;
   --good:#6cc294; --good-wash:#152720; --good-line:#2c5340;
   --mark:#5c5220;
-}}
-/* Alternate palettes, sampled from the weaver-and-starlight reference art (H:\Alex\Images\Creative\misc\Loom_icons.png).
-   Picked from #palette-select in the header; override the system-driven light/dark above when set. */
-:root[data-palette="midnight"]{
-  --bg:#080b16; --panel:#12111c; --sunk:#191420;
-  --ink:#eee1cc; --body:#d8cdb8; --dim:#94886f; --faint:#6b6153;
-  --line:#2e2636; --line-soft:#221c2a;
-  --accent:#d3a362; --accent-ink:#f0ce72; --accent-wash:#2a2115;
-  --warn:#e0a458; --warn-wash:#2a2114; --warn-line:#5c4520;
-  --bad:#e08279; --bad-wash:#2b1917; --bad-line:#5e2f2a;
-  --good:#6cc294; --good-wash:#152720; --good-line:#2c5340;
-  --mark:#5c4a20;
+  --accent2:#c3b3ff; --good2:#8fd9ae; --warn2:#f0c288;
 }
-:root[data-palette="parchment"]{
-  --bg:#f3e3d0; --panel:#faf3e7; --sunk:#efe1cb;
-  --ink:#3e2a14; --body:#4a3520; --dim:#7c6b54; --faint:#a49174;
-  --line:#dec9aa; --line-soft:#e8d8bc;
-  --accent:#9c6a34; --accent-ink:#7a5228; --accent-wash:#efe0c8;
-  --warn:#a1620c; --warn-wash:#fdf6ec; --warn-line:#e8c99a;
-  --bad:#a32c22; --bad-wash:#fdf1f0; --bad-line:#e7b3ad;
-  --good:#2c6b45; --good-wash:#f0f8f3; --good-line:#a9d4bd;
-  --mark:#fdf0a8;
+/* ---- the vivid set ----------------------------------------------------------------------------
+   The eight above are quiet schemes where the second gradient stop is just a lighter shade of the
+   first, so their buttons gain depth without changing hue. These four spend that second stop on a
+   DIFFERENT HUE instead - violet into magenta, indigo into pink, cyan into mint, magenta into
+   coral - which is what turns a filled button from "a colored rectangle" into something with a
+   ramp across it. Three are dark because that's where a two-hue ramp has room to read; Sorbet is
+   the light one that still wants to shout.
+   They also redefine the --todo-* ground (see .ov-todo): the default "tint the panel with the
+   warning color" rule paints a large olive slab on a saturated dark palette, so these carry their
+   own ground instead - a wash of the palette's OWN accent at the top fading into --sunk, which
+   puts the panel in the same color family as the cards sitting on it.
+   Everything else about them is a normal palette. If one of these is the keeper, the ramp is three
+   tokens - it can be lifted into any of the others by editing --accent2/--good2/--warn2 alone. */
+:root[data-palette="nebula"]{
+  --bg:#0f0b1a; --panel:#191330; --sunk:#140f26;
+  --ink:#f0ecfa; --body:#c9c0e4; --dim:#948ab8; --faint:#6b6090;
+  --line:#33265c; --line-soft:#2a1f4d;
+  --accent:#8b5cf6; --accent-ink:#c4a8ff; --accent-wash:#2a1f4d;
+  --warn:#f0b429; --warn-wash:#3a2c10; --warn-line:#5c4620;
+  --bad:#f2557a; --bad-wash:#38131f; --bad-line:#5c2438;
+  --good:#2fbf8f; --good-wash:#10302a; --good-line:#235c48;
+  --mark:#4a2f6b;
+  --accent2:#e879c7; --good2:#5fe0b0; --warn2:#f7d774;
+  --todo-top:#241a45; --todo-bot:#140f26;
+  --todo-edge:#33265c; --todo-bar:#8b5cf6; --todo-glow:#8b5cf6;
+}
+/* Aurora replaces an earlier warm "Ember" - a brown-grounded dark theme, which turns out to be the
+   one thing a large tinted surface cannot survive: every wash on it reads as mud rather than as a
+   color. Nebula and Synthwave are both purple-family, so the third vivid slot goes somewhere cold
+   instead: deep slate-teal ground, cyan into mint. */
+:root[data-palette="aurora"]{
+  --bg:#071619; --panel:#0f2630; --sunk:#0b1e26;
+  --ink:#e8f6f7; --body:#b6d4d9; --dim:#7fa3ab; --faint:#557880;
+  --line:#1b3f4a; --line-soft:#16333c;
+  --accent:#0e9fb8; --accent-ink:#5fd6e8; --accent-wash:#0f3340;
+  --warn:#e0a02a; --warn-wash:#33280e; --warn-line:#574618;
+  --bad:#f2556a; --bad-wash:#351520; --bad-line:#5c2636;
+  --good:#3fbf6f; --good-wash:#0c2e22; --good-line:#1c5740;
+  --mark:#16404a;
+  --accent2:#4fd9c4; --good2:#74e39a; --warn2:#f2c661;
+  --todo-top:#123c48; --todo-bot:#0b1e26;
+  --todo-edge:#1b3f4a; --todo-bar:#0e9fb8; --todo-glow:#0e9fb8;
+}
+:root[data-palette="synth"]{
+  --bg:#0d0f1f; --panel:#161a33; --sunk:#111428;
+  --ink:#eef1ff; --body:#c3c9ec; --dim:#8f97c4; --faint:#626a9c;
+  --line:#2c3363; --line-soft:#232951;
+  --accent:#5b63e0; --accent-ink:#9aa4ff; --accent-wash:#1e2450;
+  --warn:#d99310; --warn-wash:#33280d; --warn-line:#57451a;
+  --bad:#e0344f; --bad-wash:#35131f; --bad-line:#5c2338;
+  --good:#1fae7c; --good-wash:#0f2e26; --good-line:#1f5745;
+  --mark:#3a2a5c;
+  --accent2:#f062c8; --good2:#4de0c0; --warn2:#f5cf5c;
+  --todo-top:#1b2149; --todo-bot:#111428;
+  --todo-edge:#2c3363; --todo-bar:#5b63e0; --todo-glow:#5b63e0;
+}
+:root[data-palette="sorbet"]{
+  --bg:#fff5f7; --panel:#ffffff; --sunk:#ffe9ef;
+  --ink:#2b1a24; --body:#55374a; --dim:#8a6b7c; --faint:#b799a8;
+  --line:#f2d0dc; --line-soft:#f9e2ea;
+  --accent:#d63f83; --accent-ink:#b02f6b; --accent-wash:#ffe4ee;
+  --warn:#b5730a; --warn-wash:#fdf1dc; --warn-line:#ecc98f;
+  --bad:#cf2b45; --bad-wash:#ffe6ea; --bad-line:#f5b3bf;
+  --good:#0f8f60; --good-wash:#e2f8ee; --good-line:#a3e2c8;
+  --mark:#ffe08a;
+  --accent2:#e04f4f; --good2:#0f9080; --warn2:#b8571a;
+  --todo-top:#fff0f5; --todo-bot:#ffffff;
+  --todo-edge:#f2d0dc; --todo-bar:#d63f83; --todo-glow:#d63f83;
 }
 *{box-sizing:border-box}
-html,body{height:100%}
+/* THE SHELL IS A SIDEBAR + A COLUMN. #shell owns the viewport as a flex ROW: a fixed-width rail
+   on the left, and everything else in a column beside it. Inside that column the topbar is a
+   fixed-size flex item and main is the one flexible item that soaks up whatever's left, which
+   makes #list's height exact and self-adjusting - no magic "100vh minus header" number to keep in
+   sync by hand, and no ambiguity between the document and #list about which one actually scrolls
+   (that ambiguity is what made the wheel randomly do nothing depending on which element the
+   browser picked).
+
+   Why a rail and not the tab strip this had before: the tabs were four items that never grow,
+   parked in a full-width bar that spent the other 80% of its pixels on nothing. Vertically they
+   cost no horizontal room worth having on a wide screen, they can carry an icon and a count
+   without crowding, and the rail gives the persistent chrome (identity at the top, the two create
+   actions, connection state and theme at the very bottom) somewhere to live that isn't competing
+   with the content column for the top edge. */
+html,body{height:100%;overflow:hidden}
 body{margin:0;background:var(--bg);color:var(--body);font:14px/1.55 var(--sans);
   -webkit-font-smoothing:antialiased}
+#shell{display:flex;height:100%}
+#mainwrap{flex:1;min-width:0;display:flex;flex-direction:column}
 ::selection{background:var(--accent-wash)}
 
-/* ---------- header ---------- */
-header{display:flex;align-items:center;gap:20px;padding:0 20px;height:80px;
-  border-bottom:1px solid var(--line);background:var(--panel);position:sticky;top:0;z-index:30}
+/* ---------- sidebar ---------- */
+#side{width:236px;flex:none;background:var(--panel);border-right:1px solid var(--line);
+  display:flex;flex-direction:column;padding:16px 12px 12px;z-index:30}
 .brand{font-size:16px;font-weight:600;letter-spacing:-.01em;color:var(--ink);
-  display:flex;align-items:center;gap:9px}
-.brand img{width:64px;height:64px;border-radius:14px;display:block}
-.brand button{background:none;border:0;padding:0;margin-left:2px;cursor:pointer;
+  display:flex;align-items:center;gap:10px;padding:0 6px;margin-bottom:22px}
+.brand img{width:38px;height:38px;border-radius:10px;display:block;flex:none}
+.brand button{background:none;border:0;padding:0;margin-left:auto;cursor:pointer;
   color:var(--faint);display:flex;align-items:center;border-radius:5px}
 .brand button:hover{color:var(--dim);background:var(--sunk)}
 .brand button svg{width:15px;height:15px}
-#palette-select{width:78px;font:11px var(--mono);color:var(--dim);background:var(--panel);
-  border:1px solid var(--line);border-radius:5px;padding:4px 3px;cursor:pointer}
 
-/* ---------- about ---------- */
+/* The two ways to add something, kept side by side so neither reads as the "real" one - a memory
+   and a TODO are both just a jot, so creating either is one click away from anywhere, not buried
+   a tab down in Search's filter bar. Full-width in the rail: these are the only saturated fills
+   on the page, which is the whole point - the eye should land on them first. */
+.side-cta{display:flex;flex-direction:column;gap:7px;margin:4px 0 0;padding:0 2px}
+/* .btn in the selector on purpose - a bare `.side-cta button` ties with `button.btn{width:auto}`
+   on specificity and loses on source order, which is exactly how these ended up auto-width. */
+.side-cta button.btn{width:100%;justify-content:center;padding:9px 12px;font-size:13px}
+
+/* Connection state and theme, pinned to the floor of the rail. Both are things you check or
+   change rarely and want out of the reading path entirely - the old header put them in the same
+   band as the content headings, where they read as content. */
+.side-foot{margin-top:auto;padding:12px 6px 2px;border-top:1px solid var(--line-soft);
+  display:flex;flex-direction:column;gap:10px}
+#palette-select{width:100%;font:11px var(--mono);color:var(--dim);background:var(--panel);
+  border:1px solid var(--line);border-radius:6px;padding:6px 7px;cursor:pointer}
+
+/* ---------- about / help ---------- */
 dialog#about,dialog#agent-dialog{border:1px solid var(--line);border-radius:var(--r);padding:0;
-  width:min(420px,90vw);background:var(--panel);color:var(--body)}
+  width:min(420px,90vw);background:var(--panel);color:var(--body);overflow:hidden}
 dialog#about::backdrop,dialog#agent-dialog::backdrop{background:rgba(0,0,0,.45)}
 dialog#about img{width:100%;display:block}
 dialog#about .body,dialog#agent-dialog .body{padding:18px 20px 20px}
@@ -123,12 +292,31 @@ dialog#about h2,dialog#agent-dialog h2{font:600 16px var(--sans);color:var(--ink
 dialog#about p,dialog#agent-dialog p{margin:0 0 14px;color:var(--dim);font-size:13.5px;
   line-height:1.55}
 dialog#about button.btn{width:100%}
+/* Expanded from a short blurb into a real help doc - wider, and everything (the full image, not
+   just a cropped strip, plus all the text) scrolls together as one document rather than the image
+   being pinned as a separate banner. The dialog itself is the one scroll container.
+   IMPORTANT: never put `display:` on a bare `dialog#about{...}` rule - an id selector beats the
+   UA stylesheet's own `dialog:not([open]){display:none}` on specificity, which keeps the dialog
+   rendered (and blocking the page) even while closed. That exact bug shipped once already. */
+dialog#about{width:min(560px,92vw);max-height:80vh;overflow-y:auto}
+dialog#about h3{font:600 12px var(--sans);text-transform:uppercase;letter-spacing:.05em;
+  color:var(--dim);margin:18px 0 6px}
+dialog#about h3:first-of-type{margin-top:4px}
+dialog#about b{color:var(--ink);font-weight:600}
+dialog#about code{font:11.5px var(--mono);background:var(--sunk);color:var(--accent-ink);
+  padding:1px 5px;border-radius:4px}
 dialog#agent-dialog{width:min(640px,92vw)}
 dialog#agent-dialog .promptbox{max-height:min(50vh,460px);overflow-y:auto}
 dialog#agent-dialog .row button{flex:1}
 
-dialog#detail-dialog{border:1px solid var(--line);border-radius:var(--r);padding:0;
-  width:min(940px,94vw);max-height:88vh;position:relative}
+/* Sized for the minimal view (summary + priority/due) that's on screen by default - the full
+   editor still fits fine at this width once "More fields" is open, it just isn't the width the
+   dialog is optimized to look tight and clean at. */
+/* The dialog element itself defaults to overflow:auto in the UA stylesheet, so with #detail
+   ALSO scrolling (.pane, overflow-y:auto) the same overflowing content had two independent
+   scrollbars fighting over it. overflow:hidden here leaves #detail as the one scroll container. */
+dialog#detail-dialog{border:1px solid var(--line);border-radius:var(--r);padding:0;overflow:hidden;
+  width:min(640px,94vw);max-height:88vh;position:relative}
 dialog#detail-dialog::backdrop{background:rgba(0,0,0,.45)}
 dialog#detail-dialog #detail{max-height:88vh;padding-right:56px}
 dialog#detail-dialog .dclose{position:absolute;top:12px;right:12px;width:28px;height:28px;
@@ -137,52 +325,102 @@ dialog#detail-dialog .dclose{position:absolute;top:12px;right:12px;width:28px;he
 dialog#detail-dialog .dclose svg{width:13px;height:13px}
 dialog#detail-dialog .dclose:hover{background:var(--sunk);color:var(--ink)}
 .brand .mk{width:15px;height:15px;flex:none;opacity:.9}
-.stats{margin-left:auto;display:flex;gap:20px;align-items:center}
-.stat{display:flex;flex-direction:column;line-height:1.15}
-.stat b{font:12px/1.2 var(--mono);color:var(--ink);font-weight:600}
-.stat span{font-size:9.5px;text-transform:uppercase;letter-spacing:.09em;color:var(--faint)}
-.live{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--dim)}
-.dot{width:6px;height:6px;border-radius:50%;background:var(--good);flex:none}
+.live{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--dim)}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--good);flex:none}
 .dot.off{background:var(--bad)}
 
-/* ---------- nav ---------- */
-nav{display:flex;gap:1px;padding:0 20px;background:var(--panel);
-  border-bottom:1px solid var(--line);position:sticky;top:80px;z-index:29}
-nav button{background:none;border:0;padding:0 13px;height:38px;cursor:pointer;
-  font:13px var(--sans);color:var(--dim);position:relative}
-nav button:hover{color:var(--ink)}
-nav button.on{color:var(--ink);font-weight:600}
-nav button.on::after{content:"";position:absolute;left:9px;right:9px;bottom:-1px;height:2px;
-  background:var(--accent);border-radius:2px 2px 0 0}
-nav .pill{margin-left:6px;font:10px var(--mono);background:var(--sunk);color:var(--dim);
-  padding:1px 5px;border-radius:20px;vertical-align:1px}
-nav button.on .pill{background:var(--accent-wash);color:var(--accent-ink)}
+/* ---------- topbar ----------
+   Deliberately thin and mostly empty. The search field is the only thing here that's used every
+   session, so it gets the left edge and real width; the corpus counters sit right, quiet and
+   monospaced, as a readout rather than a headline. */
+#topbar{display:flex;align-items:center;gap:16px;padding:0 26px;height:60px;flex:none;
+  border-bottom:1px solid var(--line);background:var(--panel);z-index:20}
+.stats{margin-left:auto;display:flex;gap:18px;align-items:center}
+.stat{display:flex;align-items:baseline;gap:5px}
+.stat b{font:12px/1.2 var(--mono);color:var(--ink);font-weight:600}
+.stat span{font-size:9.5px;text-transform:uppercase;letter-spacing:.09em;color:var(--faint)}
 
-/* search pinned in the nav on every view - it stays put across tab switches */
-.navsearch{position:relative;display:flex;align-items:center;margin-left:auto}
-.navsearch svg{position:absolute;left:9px;width:12px;height:12px;color:var(--faint)}
-.navsearch input{width:190px;font:12.5px var(--sans);color:var(--ink);background:var(--sunk);
-  border:1px solid var(--line);border-radius:20px;height:27px;padding:0 26px}
+/* ---------- nav (vertical, in the rail) ---------- */
+nav{display:flex;flex-direction:column;gap:2px;flex:none}
+nav button{background:none;border:0;padding:0 10px;height:36px;cursor:pointer;width:100%;
+  font:13.5px var(--sans);color:var(--dim);display:flex;align-items:center;gap:10px;
+  border-radius:7px;text-align:left}
+nav button .nvi{width:16px;height:16px;flex:none;display:flex;align-items:center;
+  justify-content:center;color:var(--faint)}
+nav button .nvi svg{width:15px;height:15px}
+nav button:hover{color:var(--ink);background:var(--sunk)}
+nav button.on{color:var(--accent-ink);font-weight:600;background:var(--accent-wash)}
+nav button.on .nvi{color:var(--accent)}
+nav .pill{margin-left:auto;font:10px var(--mono);background:var(--sunk);color:var(--dim);
+  padding:1px 6px;border-radius:20px}
+nav button.on .pill{background:color-mix(in srgb,var(--accent) 18%,transparent);
+  color:var(--accent-ink)}
+
+/* search lives in the topbar on every view - it stays put across tab switches */
+.navsearch{position:relative;display:flex;align-items:center;flex:1;max-width:460px}
+.navsearch svg{position:absolute;left:11px;width:13px;height:13px;color:var(--faint)}
+.navsearch input{width:100%;font:13px var(--sans);color:var(--ink);background:var(--sunk);
+  border:1px solid var(--line);border-radius:8px;height:34px;padding:0 30px}
 .navsearch input::placeholder{color:var(--faint)}
-.navsearch input:focus{outline:0;border-color:var(--accent)}
-.navsearch .kbd{position:absolute;right:8px;font:9.5px var(--mono);color:var(--faint);
+.navsearch input:focus{outline:0;border-color:var(--accent);background:var(--panel);
+  box-shadow:0 0 0 3px var(--accent-wash)}
+.navsearch .kbd{position:absolute;right:9px;font:9.5px var(--mono);color:var(--faint);
   border:1px solid var(--line);border-radius:4px;padding:0 4px;background:var(--panel);
   pointer-events:none}
 
 /* ---------- layout ---------- */
-main{height:calc(100vh - 89px)}
+main{flex:1;min-height:0;overflow:hidden}
+#list{height:100%}
 .pane{overflow-y:auto;overscroll-behavior:contain}
-#list{padding:18px 20px 60px}
+#list{padding:22px 26px 64px}
+/* WIDE SCREENS GET A COLUMN, NOT A STRETCH. #list stays full-bleed so the scrollbar sits at the
+   window edge where it belongs, and everything inside it is capped and centered instead. Past
+   ~1500px the panels stop growing: a 12-column dashboard read at 2560px wide is a row of very
+   long lines and a lot of travel between related numbers, not more information. Every view builds
+   into this wrapper (see render()), so no view has to remember to do it. */
+.contentwrap{max-width:1500px;margin:0 auto}
 /* The editor lives in dialog#detail-dialog now, not a rail that eats screen width whether or
    not anything is selected, and not a jarring reflow of the list when it opens. It always gets
    roomy space - there's no narrow-vs-editing distinction to make in a dialog. */
 #detail{padding:22px 30px 40px}
 .dwrap{max-width:900px}
 .fld{min-width:0}
+/* The toggle sits directly under the summary box, so whoever just finished reading the summary
+   finds the way to the rest of the jot without hunting for it at the bottom of the dialog. */
+.dtoggle{margin:2px 0 16px;display:block}
+/* Priority leads the dialog: it's the field changed most often on a TODO and the one that moves
+   a card between columns, so it reads as a row of visible choices rather than a menu to open.
+   "Clear" is the fourth choice rather than a separate button - unset is just another state, and
+   picking it deselects the other three the same way picking High does. */
+.prio{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 18px}
+.prio label{display:inline-flex;align-items:center;gap:6px;margin:0;cursor:pointer;
+  font:12px var(--sans);text-transform:none;letter-spacing:0;color:var(--dim);
+  border:1px solid var(--line);border-radius:6px;padding:5px 11px;background:var(--panel)}
+.prio label:hover{color:var(--ink);background:var(--sunk)}
+/* The selected priority fills with the same accent ramp the primary button uses - a TODO's
+   priority is the thing that colors its whole card, so the control that sets it should look
+   like a decision, not like a checkbox that happens to be ticked. */
+.prio label.on{font-weight:600}
+.prio input{accent-color:var(--accent);margin:0}
+.prio label.on input{accent-color:var(--panel)}
+/* Due and its snooze buttons are a subsection of their own now that priority has left the row -
+   scheduling is a separate decision from how much the thing matters. */
+.duesect{margin-bottom:4px}
+.duesect input{max-width:260px}
+.dextra{border-top:1px solid var(--line-soft);margin-top:2px;padding-top:14px}
+.dextra .dmeta{margin-bottom:14px}
 .frow{display:grid;grid-template-columns:1fr 1fr;gap:0 18px}
 @media(max-width:640px){.frow{grid-template-columns:1fr}}
-#detail textarea[data-k=text]{min-height:min(46vh,520px)}
-#detail textarea[data-k=summary]{min-height:76px}
+#detail textarea[data-k=text]{min-height:min(30vh,320px)}
+#detail textarea[data-k=summary]{min-height:92px}
+/* Details starts collapsed - most jots don't have a body worth a second field, and the ones that
+   do get a real textarea the moment the <summary> is opened, not a permanent slab of empty space. */
+.dfld{margin-bottom:16px}
+.dfld summary{cursor:pointer;font-size:12px;color:var(--dim);text-transform:uppercase;
+  letter-spacing:.04em;margin-bottom:8px;user-select:none}
+.dfld summary:hover{color:var(--ink)}
+.dfld textarea{width:100%}
+.snbtns{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0 16px}
 
 /* ---------- controls ---------- */
 .search{position:relative;margin-bottom:12px}
@@ -194,12 +432,10 @@ main{height:calc(100vh - 89px)}
 .kbd{position:absolute;right:10px;top:9px;font:10px var(--mono);color:var(--faint);
   border:1px solid var(--line);border-radius:4px;padding:1px 5px;background:var(--sunk)}
 
-/* ---------- filter bar (Search view: sort, time range, memories-only) ---------- */
+/* ---------- filter bar (Search view: sort, time range) ---------- */
 .filterbar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:12px}
 .fgroup{display:flex;align-items:center;gap:7px}
 .flabel{font:10px var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--faint)}
-.togglewrap{display:flex;align-items:center;gap:8px;margin-left:auto}
-.togglewrap span{font-size:12.5px;color:var(--dim)}
 .toggle{width:30px;height:17px;border-radius:20px;background:var(--sunk);border:1px solid var(--line);
   position:relative;flex:none;cursor:pointer}
 .toggle i{position:absolute;top:1px;left:1px;width:13px;height:13px;border-radius:50%;
@@ -213,15 +449,65 @@ textarea{resize:vertical;line-height:1.55}
 input:focus,select:focus,textarea:focus{outline:0;border-color:var(--accent);
   box-shadow:0 0 0 3px var(--accent-wash)}
 
-button.btn{font:13px var(--sans);color:var(--ink);background:var(--panel);cursor:pointer;
+/* Even the plain button gets a ramp - panel at the top, sunk at the bottom. It's a two-value
+   difference in every palette, so it costs nothing and stops a row of outline buttons from
+   reading as flat rectangles next to the filled ones. */
+button.btn{font:13px var(--sans);color:var(--ink);cursor:pointer;
+  background:linear-gradient(180deg,var(--panel),var(--sunk));
   border:1px solid var(--line);border-radius:6px;padding:7px 12px;width:auto}
-button.btn:hover{border-color:var(--dim)}
-button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
-button.primary:hover{filter:brightness(1.07);border-color:var(--accent)}
-button.ghost{border-color:transparent;color:var(--dim)}
-button.ghost:hover{color:var(--ink);border-color:var(--line)}
+button.btn:hover{border-color:var(--dim);box-shadow:0 2px 6px rgba(0,0,0,.10)}
+button.btn:active{box-shadow:inset 0 2px 4px rgba(0,0,0,.14)}
+
+/* ---------- FILLED CONTROLS ----------
+   One recipe, shared by every filled control in the app: a two-stop ramp from the lighter second
+   stop at the top to the base color at the bottom, a hairline inset highlight along that top edge
+   so the surface reads as lit from above, and on hover a drop shadow carrying the control's OWN
+   hue rather than generic black.
+   Text is var(--panel), not #fff. On a dark palette the accent IS the light color, so white-on-
+   accent was the low-contrast pairing; panel tracks the page background, which makes it dark text
+   on a dark theme's bright button and white text on a light theme's deep one - right in both
+   directions without a per-palette token to maintain.
+   The hue-tinted glow is the only color-mix() in the file and it sits behind @supports on purpose:
+   a browser without it loses the glow and keeps everything else. The gradients themselves stick to
+   plain declared tokens, because a var() that fails to substitute inside `background` does not
+   fall back to the previous declaration - it unsets the property, and an invisible Save button is
+   a far worse failure than a missing shadow. */
+button.primary,button.warnfill,.chip.on,.completebtn:not(.on),.prio label.on{
+  color:var(--panel);border-style:solid;border-width:1px;
+  box-shadow:0 1px 2px rgba(0,0,0,.16),inset 0 1px 0 rgba(255,255,255,.22)}
+button.primary:hover,button.warnfill:hover,.completebtn:not(.on):hover{
+  box-shadow:0 3px 12px rgba(0,0,0,.22),inset 0 1px 0 rgba(255,255,255,.3)}
+button.primary:active,button.warnfill:active,.completebtn:not(.on):active{
+  filter:brightness(.96);box-shadow:inset 0 2px 5px rgba(0,0,0,.3)}
+
+button.primary,.chip.on,.prio label.on{
+  background:linear-gradient(170deg,var(--accent2),var(--accent));border-color:var(--accent)}
+button.primary{font-weight:600}
+button.primary:hover{filter:brightness(1.05) saturate(1.08);border-color:var(--accent)}
+/* Same recipe tinted --warn instead of --accent - reuses the color the TODO panel already uses for
+   "this needs action" rather than inventing a second accent. */
+button.warnfill{background:linear-gradient(170deg,var(--warn2),var(--warn));
+  border-color:var(--warn);font-weight:600}
+button.warnfill:hover{filter:brightness(1.05) saturate(1.08);border-color:var(--warn)}
+
+@supports (color:color-mix(in srgb,red,blue)){
+  button.primary:hover{box-shadow:0 3px 14px color-mix(in srgb,var(--accent) 45%,transparent),
+    inset 0 1px 0 rgba(255,255,255,.3)}
+  button.warnfill:hover{box-shadow:0 3px 14px color-mix(in srgb,var(--warn) 45%,transparent),
+    inset 0 1px 0 rgba(255,255,255,.3)}
+  .completebtn:not(.on):hover{box-shadow:0 3px 14px color-mix(in srgb,var(--good) 45%,transparent),
+    inset 0 1px 0 rgba(255,255,255,.3)}
+}
+
+/* Ghost opts back OUT of all of it - it's the "this is not the action you came for" button. */
+button.ghost{border-color:transparent;color:var(--dim);background:none;box-shadow:none}
+button.ghost:hover{color:var(--ink);border-color:var(--line);background:var(--sunk);box-shadow:none}
 button.danger:hover{border-color:var(--bad);color:var(--bad)}
 button.tiny{font-size:12px;padding:4px 9px}
+#notif-btn{display:flex;align-items:center;gap:6px}
+#notif-btn svg{width:13px;height:13px;flex:none}
+#notif-btn.on{color:var(--good);border-color:var(--good-line);background:var(--good-wash)}
+#notif-btn.off{opacity:.6}
 .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 
 /* ---------- filter chips ---------- */
@@ -229,7 +515,7 @@ button.tiny{font-size:12px;padding:4px 9px}
 .chip{border:1px solid var(--line);border-radius:20px;padding:3px 10px;font-size:12px;
   cursor:pointer;color:var(--dim);background:var(--panel);white-space:nowrap;user-select:none}
 .chip:hover{border-color:var(--dim);color:var(--ink)}
-.chip.on{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:500}
+.chip.on{font-weight:500}
 .chip b{font:10px var(--mono);opacity:.65;margin-left:5px;font-weight:400}
 
 /* ---------- result meta ---------- */
@@ -240,7 +526,7 @@ button.tiny{font-size:12px;padding:4px 9px}
   font:11px var(--mono);color:var(--faint);text-transform:uppercase;letter-spacing:.08em;
   border-bottom:1px solid var(--line-soft);margin-bottom:8px}
 
-/* ---------- memory / jot cards ----------
+/* ---------- jot cards ----------
    Cards, not rows: ranking is still visible (the accent top-edge + score badge carry what the
    rail used to), but a jot no longer gets to sprawl into a wall of text - headline and preview
    both clamp to two lines. The top-edge color is the tag-derived "category" - see catColorOf(). */
@@ -253,23 +539,31 @@ mark{background:var(--mark);color:inherit;border-radius:2px;padding:0 1px}
    never collide with a category color. */
 .tag.action{background:var(--bad-wash);color:var(--bad);border:1px solid var(--bad-line)}
 
-.cardgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:11px}
+/* Airy on purpose - fewer, bigger cards read faster than many cramped ones. Widened the column
+   floor, and gave every gap and edge more room, rather than fitting more per row. */
+.cardgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
 .mcard{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);
-  border-top:3px solid var(--cat,var(--accent));padding:11px 12px 10px;cursor:pointer;
-  display:flex;flex-direction:column;gap:6px;min-height:128px}
+  border-top:3px solid var(--cat,var(--accent));padding:16px 17px 14px;cursor:pointer;
+  display:flex;flex-direction:column;gap:9px;min-height:200px}
 .mcard:hover{border-color:var(--dim)}
 .mcard.sel{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-wash)}
-.cathead{display:flex;align-items:center;gap:7px}
-.catdot{width:6px;height:6px;border-radius:50%;background:var(--cat,var(--accent));flex:none}
-.catlabel{font:10px var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--dim)}
-.cathead .when{margin-left:auto;font:10.5px var(--mono);color:var(--faint)}
-.slug{font:12px var(--mono);color:var(--accent-ink);font-weight:600;letter-spacing:-.01em}
-.headline{color:var(--ink);font-size:13.5px;font-weight:500;line-height:1.4;
-  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.preview{color:var(--dim);font-size:12.5px;line-height:1.5;
-  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.cathead{display:flex;align-items:center;gap:7px;min-width:0}
+/* A tinted chip, not a dot-plus-caption - the category has to read at a glance, the way the
+   screenshot's scope badge does, not require parsing a line of small caps. color-mix keeps this
+   working across every category (only 4 hues in CAT_VARS) and every palette without a matching
+   --cat-wash variable for each. */
+.catpill{flex:none;background:color-mix(in srgb,var(--cat,var(--accent)) 16%,transparent);
+  color:var(--cat,var(--accent));font:10px var(--mono);text-transform:uppercase;
+  letter-spacing:.05em;padding:2px 7px;border-radius:20px}
+/* The slug is the fast-recognition handle for a named jot - short, stable, chosen on purpose - so
+   it leads in the big type. Everything else is one quiet, single-clamped line underneath. */
+.title{color:var(--ink);font-size:15.5px;font-weight:600;line-height:1.3;letter-spacing:-.005em;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.headline{color:var(--dim);font-size:12.5px;line-height:1.5;
+  display:-webkit-box;-webkit-line-clamp:7;-webkit-box-orient:vertical;overflow:hidden}
 .mfoot{margin-top:auto;display:flex;align-items:center;gap:6px;flex-wrap:wrap;
-  font:10.5px var(--mono);color:var(--faint)}
+  font:11px var(--mono);color:var(--faint)}
+.mtrail{margin-left:auto;display:flex;gap:6px;align-items:center}
 .scbadge{font:10.5px var(--mono);color:var(--accent-ink);font-weight:600}
 
 /* view toggle - cards (the default grid above) vs. a dense wide list, same .mcard markup either
@@ -283,11 +577,10 @@ mark{background:var(--mark);color:inherit;border-radius:2px;padding:0 1px}
 .viewtoggle button:hover{color:var(--ink)}
 .cardgrid.list{display:flex;flex-direction:column;gap:6px}
 .cardgrid.list .mcard{flex-direction:row;align-items:center;gap:14px;min-height:auto;
-  padding:8px 14px;border-top:1px solid var(--line);border-left:3px solid var(--cat,var(--accent))}
-.cardgrid.list .cathead{flex:0 0 180px}
-.cardgrid.list .slug{flex:0 0 170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  padding:9px 14px;border-top:1px solid var(--line);border-left:3px solid var(--cat,var(--accent))}
+.cardgrid.list .cathead{flex:0 0 100px}
+.cardgrid.list .title{flex:0 0 210px}
 .cardgrid.list .headline{flex:1 1 auto;-webkit-line-clamp:1;white-space:nowrap;text-overflow:ellipsis}
-.cardgrid.list .preview{display:none}
 .cardgrid.list .mfoot{margin-top:0;flex:0 0 auto;flex-wrap:nowrap}
 
 /* ---------- dashboard: overview ----------
@@ -311,14 +604,127 @@ mark{background:var(--mark);color:inherit;border-radius:2px;padding:0 1px}
 .ov-card.hi .eyebrow,.ov-card.hi .cap{color:rgba(255,255,255,.78)}
 .ov-card.hi .num{color:#fff}
 
-.ov-row{display:grid;grid-template-columns:1.7fr 1fr;gap:12px;margin-bottom:12px}
+/* align-items:start so a panel is only as tall as its content - a 10-row distribution chart next
+   to an 8-pill tag cloud was stretching the tag panel to match and leaving half of it blank. */
+.ov-row{display:grid;grid-template-columns:1.7fr 1fr;gap:12px;margin-bottom:12px;align-items:start}
 @media(max-width:900px){.ov-row{grid-template-columns:1fr}}
 .ov-panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);
   padding:16px 18px}
 .ov-panel .phead{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:14px}
 .ov-panel .phead h3{margin:2px 0 0;font-size:14px;font-weight:600;color:var(--ink)}
 .ov-panel .phead a{font-size:12px;color:var(--accent-ink);cursor:pointer}
-.ov-todo{margin-bottom:20px}
+/* The TODO panel is the one thing on the dashboard meant to interrupt you, so it doesn't get to
+   look like just another ov-panel - tinted ground, a bolder rule under the eyebrow, a visible
+   accent bar down the left edge. Everything else on Overview is context; this is the thing to
+   act on, and it should read that way before you've read a word of it.
+   THE GROUND IS A TOKEN, not a hardcoded --warn-wash, because "tint the whole surface with the
+   warning color" only works when the warning color is a pale cream. On a saturated dark palette
+   that same rule paints a large olive-brown slab underneath violet cards, which is exactly as
+   good as it sounds. The default below is a flat warn wash - a gradient between two identical
+   stops, so every palette that doesn't override renders byte-identically to before - and the
+   vivid palettes redefine the four tokens to get a different treatment entirely. */
+.ov-todo{margin-bottom:20px;border-color:var(--todo-edge);
+  background:linear-gradient(180deg,var(--todo-top),var(--todo-bot));
+  border-left:4px solid var(--todo-bar);padding-left:17px;
+  box-shadow:0 3px 16px -6px color-mix(in srgb,var(--todo-glow) 55%,transparent)}
+/* margin-right:auto on the title block, not space-between on the parent - with three children
+   (badge, titles, link) space-between stranded the heading floating in the middle of the panel
+   instead of reading as a caption on the badge beside it. */
+.ov-todo .phead{align-items:center;gap:12px}
+.phead .pheadmain{margin-right:auto}
+.ov-todo .phead .eyebrow{color:var(--warn);font-weight:700}
+.ov-todo .phead h3{font-size:17px}
+.ov-todobadge{flex:none;width:34px;height:34px;border-radius:9px;background:var(--warn);color:#fff;
+  display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px -2px color-mix(in srgb,var(--warn) 70%,transparent)}
+.ov-todobadge svg{width:16px;height:16px}
+.ov-todocols{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+@media(max-width:760px){.ov-todocols{grid-template-columns:1fr}}
+.ov-todocolhead{display:flex;align-items:center;gap:7px;margin-bottom:9px;padding-bottom:7px;
+  border-bottom:2px solid var(--line)}
+.ov-todocol.pr-high .ov-todocolhead{border-bottom-color:var(--bad)}
+.ov-todocol.pr-normal .ov-todocolhead{border-bottom-color:var(--warn)}
+.ov-todocol.pr-low .ov-todocolhead{border-bottom-color:var(--line-soft)}
+.ov-todocolhead .ptitle{font-size:11.5px;font-weight:700;color:var(--ink);text-transform:uppercase;
+  letter-spacing:.06em}
+.ov-todocol.pr-high .ptitle{color:var(--bad)}
+.ov-todocol.pr-normal .ptitle{color:var(--warn)}
+.ov-todocolhead .pcount{margin-left:auto;font:11px var(--mono);color:var(--faint)}
+.ov-todobody{min-height:34px;border-radius:8px;transition:background .1s ease}
+.ov-todobody.dragover{background:var(--sunk);outline:2px dashed var(--dim);outline-offset:-2px}
+/* A TODO IS A CARD YOU CAN ACT ON WITHOUT OPENING IT.
+   The old row was a checkbox, one bold line and one faint line - to find out what a TODO actually
+   was, or to do anything but complete it, you had to open the dialog. The card states the four
+   things you need to triage at a glance, in reading order:
+
+     1. what kind of thing it is      - the tag chips across the top (TODO / priority / scope)
+     2. what it is                    - the title, in real type
+     3. when it's due                 - its own line, red and bold once that time is past
+     4. what you can do about it      - Edit / Snooze / Complete, visible, not hover-revealed
+
+   Hidden controls were the wrong call here: this panel exists to be dispatched, and a button you
+   have to discover by hovering is a button you don't count on. Dragging between columns still
+   reprioritizes, so the card is a drag handle too - hence the explicit draggable=false on every
+   button inside it. */
+.ov-trow{display:flex;flex-direction:column;gap:7px;background:var(--panel);
+  border:1px solid var(--line);border-left:3px solid var(--dim);border-radius:8px;
+  padding:11px 13px 10px;margin-bottom:9px;cursor:grab}
+.ov-trow:active{cursor:grabbing}
+.ov-trow:hover{border-color:var(--dim);box-shadow:0 2px 10px -3px rgba(0,0,0,.13)}
+.ov-trow.dragging{opacity:.35}
+.ov-todocol.pr-high .ov-trow{border-left-color:var(--bad)}
+.ov-todocol.pr-normal .ov-trow{border-left-color:var(--warn)}
+
+/* chip row - the "what kind of thing is this" line the reference leads with */
+.ov-tchips{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+.ov-tchip{font:9.5px var(--mono);text-transform:uppercase;letter-spacing:.06em;font-weight:600;
+  padding:2px 6px;border-radius:4px;background:var(--sunk);color:var(--dim);flex:none}
+.ov-tchip.todo{background:var(--warn-wash);color:var(--warn);border:1px solid var(--warn-line)}
+.ov-tchip.pr-high{background:var(--bad-wash);color:var(--bad);border:1px solid var(--bad-line)}
+.ov-tchip.pr-normal{background:var(--sunk);color:var(--dim)}
+.ov-tchip.pr-low{background:var(--sunk);color:var(--faint)}
+/* the scope/topic chip carries the same hashed category color the rest of the UI uses */
+.ov-tchip.scope{background:color-mix(in srgb,var(--cat,var(--accent)) 15%,transparent);
+  color:var(--cat,var(--accent));text-transform:none;letter-spacing:.02em}
+.ov-tid{margin-left:auto;font:10px var(--mono);color:var(--faint)}
+
+.ov-trow .ov-atitle{font-size:13.5px;font-weight:600;white-space:normal;line-height:1.35;
+  color:var(--ink)}
+/* Due reads as a full absolute stamp, not just "Overdue by 3 days" - when triaging you want to
+   know it was due Tuesday at 9, not do the arithmetic back from a relative figure. The relative
+   magnitude rides along in parentheses since it's the faster of the two to compare. */
+.ov-tdue{font-size:11.5px;color:var(--dim);display:flex;align-items:center;gap:6px}
+.ov-tdue svg{width:12px;height:12px;flex:none;opacity:.75}
+.ov-tdue.over{color:var(--bad);font-weight:600}
+.ov-tdue .rel{color:var(--faint);font-weight:400}
+.ov-tdue.over .rel{color:var(--bad);opacity:.75}
+
+.ov-tacts{display:flex;align-items:center;gap:6px;margin-top:2px;padding-top:8px;
+  border-top:1px solid var(--line-soft)}
+.ov-tacts button:not(.completebtn){font:11.5px var(--sans);color:var(--dim);background:none;
+  cursor:pointer;border:1px solid transparent;border-radius:6px;padding:3px 8px;display:flex;
+  align-items:center;gap:5px}
+.ov-tacts button:not(.completebtn):hover{color:var(--ink);border-color:var(--line);
+  background:var(--sunk)}
+.ov-tacts button svg{width:11px;height:11px;flex:none}
+
+/* ONE Complete treatment, shared by the reminder card and the detail dialog: same green, same
+   box-and-check, same caption, and margin-left:auto puts it bottom-right in both. Completing a
+   TODO is then one gesture to learn, not two that happen to do the same thing. It is also the
+   only affirmative action in either place, which is why it is the only one carrying color -
+   and on the card it sits at the far end, away from Edit/Snooze on something you may be dragging. */
+.completebtn{margin-left:auto;display:inline-flex;align-items:center;gap:6px;cursor:pointer;
+  font:12px var(--sans);font-weight:600;border-radius:6px;padding:5px 11px;
+  background:linear-gradient(170deg,var(--good2),var(--good));border-color:var(--good)}
+.completebtn:hover{filter:brightness(1.05) saturate(1.08);border-color:var(--good)}
+.completebtn svg{width:13px;height:13px;flex:none}
+/* Already completed: the box reads as ticked, and the button becomes the way back. */
+.completebtn.on{color:var(--dim);background:var(--sunk);border:1px solid var(--line);
+  font-weight:400;box-shadow:none}
+.completebtn.on:hover{color:var(--ink);background:var(--sunk);border-color:var(--dim)}
+.ov-tacts .completebtn{font-size:11.5px;padding:3px 9px}
+.ov-tacts .completebtn svg{width:12px;height:12px}
+.ov-colempty{color:var(--faint);font-size:12px;padding:8px 0}
+.ov-asub.bad{color:var(--bad)}
 
 .ov-bar{display:flex;align-items:center;gap:10px;margin-bottom:10px}
 .ov-bar:last-child{margin-bottom:0}
@@ -346,6 +752,19 @@ mark{background:var(--mark);color:inherit;border-radius:2px;padding:0 1px}
   overflow:hidden;text-overflow:ellipsis}
 .ov-asub{font-size:11px;color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ov-awhen{margin-left:auto;font:10.5px var(--mono);color:var(--faint);flex:none}
+
+.taskbits{display:flex;gap:6px;align-items:center}
+.priochip{font:10px var(--mono);text-transform:uppercase;letter-spacing:.04em;padding:2px 6px;
+  border-radius:4px}
+.priochip.pr-high{background:var(--bad-wash);color:var(--bad)}
+.priochip.pr-low{background:var(--sunk);color:var(--faint)}
+.duechip{font:10.5px var(--mono);color:var(--faint);padding:2px 6px;border-radius:4px;
+  background:var(--sunk)}
+.duechip.over{background:var(--bad-wash);color:var(--bad);font-weight:600}
+.donechip{font:10px var(--mono);text-transform:uppercase;letter-spacing:.04em;padding:2px 6px;
+  border-radius:4px;background:var(--good-wash);color:var(--good)}
+.mcard.done{opacity:.6}
+.mcard.done .title{text-decoration:line-through;text-decoration-color:var(--faint)}
 
 .ov-health .lead{font-size:12.5px;color:var(--good);margin-bottom:12px;line-height:1.5}
 .ov-health .vrow{cursor:default;padding:6px 0}
@@ -408,39 +827,87 @@ label u{text-decoration:none;color:var(--accent-ink);text-transform:none;letter-
 #toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(8px);z-index:60;
   padding:10px 16px;border-radius:8px;font-size:13px;max-width:min(520px,90vw);
   box-shadow:0 6px 24px rgba(0,0,0,.16);opacity:0;pointer-events:none;
-  transition:opacity .16s,transform .16s}
-#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  display:flex;align-items:center;gap:12px;transition:opacity .16s,transform .16s}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0);pointer-events:auto}
 #toast.ok{background:var(--good-wash);color:var(--good);border:1px solid var(--good-line)}
 #toast.err{background:var(--bad-wash);color:var(--bad);border:1px solid var(--bad-line)}
 #toast.warn{background:var(--warn-wash);color:var(--warn);border:1px solid var(--warn-line)}
+#toast .undo{flex:none;font:inherit;font-weight:700;text-decoration:underline;background:none;
+  border:0;padding:0;cursor:pointer;color:inherit}
 </style>
 </head>
 <body>
 
-<header>
-  <div class="brand">
-    <img src="/icon.png" width="64" height="64" alt="">
-    Loom
-    <button type="button" id="about-btn" title="About Loom" aria-label="About Loom">
-      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
-        <circle cx="8" cy="8" r="6.3"/><path d="M8 7.2v4M8 5.1v.1"/>
-      </svg>
-    </button>
+<div id="shell">
+
+  <aside id="side">
+    <div class="brand">
+      <img src="/icon.png" width="38" height="38" alt="">
+      Loom
+      <button type="button" id="about-btn" title="Help" aria-label="Help">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="8" cy="8" r="6.3"/><path d="M6.1 6.3a2 2 0 0 1 3.8.7c0 1.3-1.9 1.5-1.9 2.9"/><path d="M8 12v.1"/>
+        </svg>
+      </button>
+    </div>
+
+    <nav id="nav"></nav>
+
+    <div class="side-cta">
+      <button type="button" class="btn primary" id="new-jot-btn">+ New Jot</button>
+      <button type="button" class="btn warnfill" id="new-todo-btn">+ New TODO</button>
+    </div>
+
+    <div class="side-foot">
+      <div id="live-slot"></div>
+      <button type="button" class="btn tiny" id="notif-btn" title="Browser reminders for due TODOs">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 6.2a4 4 0 0 1 8 0c0 3 1 4 1.4 4.6H2.6C3 10.2 4 9.2 4 6.2Z"/><path d="M6.6 13a1.5 1.5 0 0 0 2.8 0"/>
+        </svg>
+        <span id="notif-label">Reminders</span>
+      </button>
+      <select id="palette-select" title="Color theme">
+        <optgroup label="Vivid">
+          <option value="nebula">Nebula</option>
+          <option value="synth">Synthwave</option>
+          <option value="aurora">Aurora</option>
+          <option value="sorbet">Sorbet</option>
+        </optgroup>
+        <optgroup label="Light">
+          <option value="paper">Paper</option>
+          <option value="nord">Nord</option>
+          <option value="earth">Earth</option>
+          <option value="twilight">Twilight</option>
+        </optgroup>
+        <optgroup label="Dark">
+          <option value="midnight">Midnight</option>
+          <option value="nord-dark">Nord Dark</option>
+          <option value="earth-dark">Earth Dark</option>
+          <option value="twilight-dark">Twilight Dark</option>
+        </optgroup>
+      </select>
+    </div>
+  </aside>
+
+  <div id="mainwrap">
+    <header id="topbar">
+      <div class="navsearch">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6">
+          <circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/>
+        </svg>
+        <input id="navsearch-input" placeholder="Search everything…">
+        <span class="kbd">/</span>
+      </div>
+      <div class="stats" id="stats"></div>
+      <button type="button" class="btn tiny" id="agent-btn">Brief a fresh agent</button>
+    </header>
+
+    <main>
+      <div class="pane" id="list"></div>
+    </main>
   </div>
-  <div class="stats" id="stats"></div>
-  <button type="button" class="btn tiny" id="agent-btn">Brief a fresh agent</button>
-  <select id="palette-select" title="Color theme">
-    <option value="">Loom</option>
-    <option value="midnight">Midnight</option>
-    <option value="parchment">Parchment</option>
-  </select>
-</header>
 
-<nav id="nav"></nav>
-
-<main>
-  <div class="pane" id="list"></div>
-</main>
+</div>
 
 <div id="toast"></div>
 
@@ -450,6 +917,49 @@ label u{text-decoration:none;color:var(--accent-ink);text-transform:none;letter-
     <h2>Loom</h2>
     <p>The weaver at the loom, working the same threads Loom keeps for you - jots pulled taut
        into memory, one strand at a time.</p>
+
+    <h3>What this is</h3>
+    <p>A single shared notebook. Every record - note, fact, task, reminder - is a <b>jot</b>:
+       free text, plus optional tags and a summary. There's no separate "task" or "memory" type;
+       a plain jot becomes a TODO just by picking up a <code>todo</code> tag, a priority, or a
+       due date, and stops being one the moment none of those apply.</p>
+
+    <h3>The four tabs</h3>
+    <p><b>Dashboard</b> - the TODOs &amp; Reminders panel, recent activity, tag distribution,
+       and drift warnings, all at a glance.<br>
+       <b>Search</b> - find anything by text or tag; toggle card/list view; open a result to
+       read or edit it.<br>
+       <b>Tags</b> - every tag in use, with counts and possible near-duplicates flagged.<br>
+       <b>Health</b> - store size, persistence (WAL/snapshot) status, and admin actions.</p>
+
+    <h3>Naming and linking</h3>
+    <p>Give a jot a <b>slug</b> (its optional <code>name</code>) to make it addressable: link to
+       it from another jot with <code>[[slug]]</code>, or write to it again with the same slug to
+       update it in place instead of creating a duplicate.</p>
+
+    <h3>TODOs &amp; reminders</h3>
+    <p>Open any jot and click <b>Make this a TODO</b> to reveal Priority and Due - or just add a
+       <code>todo</code>/<code>warning</code>/<code>error</code> tag, which does the same thing
+       automatically. TODOs get their own panel on the Dashboard, split into High/Normal/Low
+       columns; drag a card between columns to reprioritize it. <b>Snooze</b> just pushes the due
+       date later - there's no separate snoozed state to keep track of. <b>Complete</b> - the green
+       checkbox at the bottom right of both the card and the dialog - adds a
+       <code>status:done</code> tag and drops it out of the panel, keeping <code>todo</code> so the
+       finished work stays on the record; hit the same button again to bring it back exactly as
+       it was.</p>
+
+    <h3>Notifications</h3>
+    <p>The <b>Reminders</b> button in the header asks the browser for permission to show
+       notifications. Once granted, this tab checks for due TODOs about once a minute and fires
+       one notification 15 minutes before something's due and another right at the time - only
+       while this tab is open. If the button says "blocked," your browser was told no at some
+       point; undo that from the browser's own site-permissions UI (the icon in the address bar
+       is the usual way in), then reload.</p>
+
+    <h3>Shortcuts</h3>
+    <p><code>/</code> jumps to the search box from anywhere. <code>Esc</code> closes whatever's
+       open. <code>Ctrl/Cmd+Enter</code> saves the open jot.</p>
+
     <button type="button" class="btn" id="about-close">Close</button>
   </div>
 </dialog>
@@ -483,16 +993,34 @@ const el=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;
 const escHtml=s=>(s??'').toString().replace(/[&<>"]/g,c=>
   ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
-/* sortOrder/sinceWhen/memOnly live here, not inside viewSearch(), for the same reason activeTags
-   and lastQ do: viewSearch() is torn down and rebuilt on every render() - including the render()
-   that just opening a result triggers - so filter state kept local to it would silently reset the
+/* sortOrder/sinceWhen live here, not inside viewSearch(), for the same reason activeTags and
+   lastQ do: viewSearch() is torn down and rebuilt on every render() - including the render() that
+   just opening a result triggers - so filter state kept local to it would silently reset the
    instant a jot is clicked. */
 let view='dashboard',sel=null,activeTags=new Set(),allTags=[],lastQ='',stats={},
-    sortOrder='',sinceWhen='',memOnly=false;
+    sortOrder='',sinceWhen='';
 let cardMode='cards';try{cardMode=localStorage.getItem('loom-cardmode')||'cards';}catch(e){}
+/* The detail dialog defaults to a minimal summary/priority/due view; detailExpanded tracks whether
+   the current jot has been switched to the full form. Keyed by detailOpenedKey so it resets to
+   minimal the moment a DIFFERENT jot is opened, rather than leaking "expanded" across selections. */
+let detailExpanded=false,detailOpenedKey=null,detailForceTodo=false;
 
-function toast(msg,kind){const t=$('#toast');t.textContent=msg;t.className='show '+(kind||'ok');
-  clearTimeout(t._t);t._t=setTimeout(()=>t.className='',3200);}
+/* undoFn turns a toast into a brief "in case that was a mistake" window - the checkmark on a
+   TODO row, or a drag between priority columns, are both one accidental click/slip away from
+   changing something, so the actions most likely to be hit by mistake carry an inline Undo
+   rather than requiring a confirm dialog on every click (which would make the common, intended
+   case slower to punish the rare accidental one). Stays up longer than a plain toast so there's
+   real time to catch it. */
+function toast(msg,kind,undoFn){
+  const t=$('#toast');t.innerHTML='';t.append(document.createTextNode(msg));
+  if(undoFn){
+    const b=el('button','undo','Undo');b.type='button';
+    b.onclick=function(){clearTimeout(t._t);t.className='';undoFn();};
+    t.append(b);
+  }
+  t.className='show '+(kind||'ok');
+  clearTimeout(t._t);t._t=setTimeout(()=>t.className='',undoFn?6000:3200);
+}
 
 async function api(path,opts){
   const r=await fetch(path,opts);const text=await r.text();
@@ -528,6 +1056,14 @@ const stamp=us=>D(us).toLocaleString(undefined,
   {year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
 
 /* ---------- header ---------- */
+/* Counters go to the topbar readout; connection state goes to the floor of the rail. They used to
+   sit in the same header cluster, which put "RAM only" - a thing you need to notice - at the same
+   visual weight as a jot count you glance at. */
+function setLive(cls,text){
+  const H=$('#live-slot');H.innerHTML='';
+  const L=el('div','live');L.append(el('i','dot'+cls));L.append(el('span',null,text));
+  H.append(L);
+}
 async function refreshStats(){
   const S=$('#stats');
   try{
@@ -535,20 +1071,27 @@ async function refreshStats(){
     S.innerHTML='';
     const add=(v,k)=>{const w=el('div','stat');w.append(el('b',null,v));
                       w.append(el('span',null,k));S.append(w);};
-    add(stats.jots,'jots');add(stats.named,'memories');add(stats.tags,'tags');
+    add(stats.jots,'jots');add(stats.named,'named');add(stats.tags,'tags');
     if(p.enabled)add((p.wal_bytes/1024).toFixed(0)+'k','wal');
-    const L=el('div','live');
-    const d=el('i','dot'+(p.enabled?'':' off'));
-    L.append(d);L.append(el('span',null,p.enabled?'persistent':'RAM only'));
-    S.append(L);
+    setLive(p.enabled?'':' off',p.enabled?'persistent':'RAM only');
     drawNav();
   }catch(e){
     S.innerHTML='';
-    const L=el('div','live');L.append(el('i','dot off'));
-    L.append(el('span',null,'unreachable'));S.append(L);
+    setLive(' off','unreachable');
   }
 }
 
+const NAV_ICONS={
+  dashboard:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round">'+
+    '<rect x="1.8" y="1.8" width="5" height="5" rx="1.2"/><rect x="9.2" y="1.8" width="5" height="5" rx="1.2"/>'+
+    '<rect x="1.8" y="9.2" width="5" height="5" rx="1.2"/><rect x="9.2" y="9.2" width="5" height="5" rx="1.2"/></svg>',
+  search:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">'+
+    '<circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>',
+  tags:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">'+
+    '<path d="M6.2 2 4.7 14M11.3 2 9.8 14M3 6h11M2 10h11"/></svg>',
+  health:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">'+
+    '<path d="M1.8 8h3l1.6-4 2.6 8 1.7-4h3.5"/></svg>'
+};
 const VIEWS=[['dashboard','Dashboard'],['search','Search'],['tags','Tags'],['health','Health']];
 let navTabEls=[];
 function drawNav(){
@@ -556,6 +1099,7 @@ function drawNav(){
   navTabEls=[];
   VIEWS.forEach(function(v){
     const b=el('button',v[0]===view?'on':'');
+    const ic=el('span','nvi');ic.innerHTML=NAV_ICONS[v[0]]||'';b.append(ic);
     b.append(document.createTextNode(v[1]));
     if(v[0]==='tags'&&stats.tags!==undefined)b.append(el('span','pill',stats.tags));
     if(v[0]==='dashboard'&&stats.jots!==undefined)b.append(el('span','pill',stats.jots));
@@ -564,15 +1108,18 @@ function drawNav(){
     navTabEls.push(b);
     N.append(b);
   });
+  /* The topbar input is no longer rebuilt here, so it has to be re-synced instead - but never
+     while it has focus, or a periodic refreshStats() would yank the caret mid-word. */
+  const ni=$('#navsearch-input');
+  if(ni&&document.activeElement!==ni&&ni.value!==lastQ)ni.value=lastQ;
+}
 
-  /* search is pinned here, not just inside the Search tab, so it is reachable from anywhere -
-     typing here switches to Search and runs the query; drawNav() itself is never called from its
-     own oninput, or the input (and the user's cursor position in it) would be destroyed mid-type */
-  const ns=el('div','navsearch');
-  ns.innerHTML='<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6">'+
-    '<circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>';
-  const ni=el('input');ni.id='navsearch-input';ni.placeholder='Search everything…';ni.value=lastQ;
-  ns.append(ni);ns.append(el('span','kbd','/'));
+/* Search is static markup in the topbar, wired exactly once - it is reachable from every view, and
+   typing in it switches to Search and runs the query. It deliberately does NOT live inside
+   drawNav() any more: drawNav() is called from refreshStats() on a timer, and rebuilding the input
+   out from under a typing user destroyed the element (and their cursor position) mid-keystroke. */
+(function(){
+  const ni=$('#navsearch-input');
   let nt;
   ni.oninput=function(){
     clearTimeout(nt);
@@ -583,8 +1130,7 @@ function drawNav(){
       render();
     },160);
   };
-  N.append(ns);
-}
+})();
 
 /* ---------- cards ---------- */
 function highlight(text,terms){
@@ -602,12 +1148,98 @@ const CAT_VARS=['--accent','--warn','--good','--dim'];
 /* Tags meaning "you may need to act on this", independent of topic - see the .tag.action rule. */
 const ACTION_TAGS=new Set(['todo','warning','warn','error','bug']);
 const tagClass=t=>'tag'+(t.indexOf(':')>=0?' res':'')+(ACTION_TAGS.has(t)?' action':'');
+
+/* TODO/reminder metadata rides structural tags - due:<local-datetime>, priority:high|normal|low,
+   done - rather than new wire fields. Colon tags are already excluded from the free vocabulary
+   (see catColorOf/TagRegistry::IsReserved), so this is the same rule applied to one more concern
+   instead of a second field system bolted onto one jot "type" that isn't really a separate type
+   at all. Deliberately ONE date, not a due date plus a separate snooze state to track: "snooze"
+   is just an action that reschedules `due` to later - nothing needs to remember that a jot was
+   ever snoozed, because there's nothing left to remember once the due date itself has moved. */
+/* Tags are lowercased server-side (vocabulary normalization), which turns the ISO "T" separator
+   into "t" - fine for Date parsing (accepted either way) but not for a datetime-local input's
+   value, which is picky about exact case. Normalize back to "T" the moment a due value comes off
+   a tag, so round-tripping through the picker doesn't silently blank it out. */
+const tagValue=(tags,prefix)=>{const t=(tags||[]).find(x=>x.indexOf(prefix)===0);
+  return t?t.slice(prefix.length).replace('t','T'):null;};
+const toLocalDT=v=>v?new Date(v.length>10?v:v+'T00:00'):null;
+const dueOf=j=>toLocalDT(tagValue(j.tags,'due:'));
+function priorityOf(j){
+  const p=tagValue(j.tags,'priority:');
+  if(p==='high'||p==='normal'||p==='low')return p;
+  return((j.tags||[]).some(t=>ACTION_TAGS.has(t))||dueOf(j))?'normal':null;
+}
+/* Whether a jot gets the TODO treatment at all (priority/due fields, the panel, notifications) -
+   gated so opening an ordinary jot never shows task controls it has no use for. A completed jot
+   still counts, so its dialog keeps showing priority/due plus the reopen button. */
+function isTodo(j){
+  return isDone(j)||(j.tags||[]).some(t=>ACTION_TAGS.has(t))||
+    !!tagValue(j.tags,'due:')||!!tagValue(j.tags,'priority:');
+}
+function dueLabel(d){
+  const ms=d.getTime()-Date.now(),hr=3600000,day=86400000,abs=Math.abs(ms),overdue=ms<0;
+  let mag;
+  if(abs<hr)mag=Math.max(1,Math.round(abs/60000))+'m';
+  else if(abs<day)mag=Math.round(abs/hr)+'h';
+  else{const n=Math.round(abs/day);mag=n+(n===1?' day':' days');}
+  return(overdue?'Overdue by ':'Due in ')+mag;
+}
+function toLocalInputValue(d){
+  const pad=n=>String(n).padStart(2,'0');
+  return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+'T'+pad(d.getHours())+':'+pad(d.getMinutes());
+}
+async function setPriority(j,newP){
+  const tags=(j.tags||[]).filter(t=>t.indexOf('priority:')!==0);
+  tags.push('priority:'+newP);
+  const exp=j.updated||j.id;
+  return api('/jots/'+j.id+'?expect_updated='+exp,
+    {method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({tags})});
+}
+async function setDue(j,val){
+  const tags=(j.tags||[]).filter(t=>t.indexOf('due:')!==0);
+  if(val)tags.push('due:'+val);
+  const exp=j.updated||j.id;
+  return api('/jots/'+j.id+'?expect_updated='+exp,
+    {method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({tags})});
+}
+/* Completed ADDS `status:done` alongside `todo` - it does not replace `todo`/priority/due. Keeping
+   both is what makes the todo tag a history of work rather than a list that forgets: open work is
+   `todo` minus `status:done`. It's also what makes "completed can go back to being a TODO" free -
+   drop the one tag and nothing else about the jot has changed. */
+const isDone=j=>(j.tags||[]).includes('status:done');
+async function toggleDone(j,markDone){
+  const tags=(j.tags||[]).filter(t=>t!=='status:done');
+  if(markDone)tags.push('status:done');
+  const exp=j.updated||j.id;
+  return api('/jots/'+j.id+'?expect_updated='+exp,
+    {method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({tags})});
+}
+/* The check-in-a-box, defined once. Both Complete buttons draw from here so they can't drift
+   apart the way two hand-written copies of an icon do. */
+const CHECKBOX_SVG='<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" '+
+  'stroke-linecap="round" stroke-linejoin="round"><rect x="2.3" y="2.3" width="11.4" '+
+  'height="11.4" rx="2.6"/><path d="M5 8.2l2.1 2.1L11.2 6"/></svg>';
+function completeBtn(bDone,fn){
+  const b=el('button','completebtn'+(bDone?' on':''));
+  b.type='button';b.draggable=false;
+  b.innerHTML=CHECKBOX_SVG;
+  b.append(document.createTextNode(bDone?'Completed':'Complete'));
+  b.title=bDone?'Reopen this TODO':'Mark this TODO completed';
+  b.onclick=function(e){e.stopPropagation();e.preventDefault();fn();};
+  return b;
+}
 function hashCat(name){
   let h=0;for(let i=0;i<name.length;i++)h=(h*31+name.charCodeAt(i))>>>0;
   return{cssVar:CAT_VARS[h%CAT_VARS.length],name:name};
 }
 function catColorOf(tags){
-  const t=(tags||[]).find(x=>x.indexOf(':')<0);
+  /* An action tag is never the topic. "todo" says what to DO with a jot, not what it's ABOUT, and
+     letting it win here made every open task claim `todo` as its category - which put a bogus
+     "todo" bar at the top of the distribution chart, painted unrelated tasks the same category
+     color, and left the real topic off the TODO card entirely. Prefer the first genuine topic tag;
+     only fall back to an action tag when a jot truly has nothing else. */
+  const bare=(tags||[]).filter(x=>x.indexOf(':')<0);
+  const t=bare.find(x=>!ACTION_TAGS.has(x)&&x!=='done')||bare[0];
   if(t)return hashCat(t);
   // No free-form tag - fall back to type:<x> rather than claiming "untagged" when
   // structural tags actually exist (a jot can be all-reserved-tags and still be tagged).
@@ -619,34 +1251,55 @@ function catColorOf(tags){
 function jotCard(j,maxScore,terms){
   const isMem=!!j.name;
   const cat=catColorOf(j.tags);
-  const c=el('div','mcard'+(sel&&sel.id===j.id?' sel':''));
+  const done=isDone(j);
+  const c=el('div','mcard'+(sel&&sel.id===j.id?' sel':'')+(done?' done':''));
   c.style.setProperty('--cat','var('+cat.cssVar+')');
 
+  /* Reserved tags (type:x, cluster:x) and the editor stay out of the card face entirely - they're
+     already implied by the pill/detail and just added noise repeated on every card. A card is a
+     thing to recognize and click, not the full record. */
   const head=el('div','cathead');
-  head.append(el('i','catdot'));
-  head.append(el('span','catlabel',cat.name));
-  const when=el('span','when',ago(j.id));when.title=stamp(j.id);head.append(when);
+  head.append(el('span','catpill',cat.name));
   c.append(head);
 
-  if(isMem)c.append(el('div','slug',j.name));
-  /* headline vs. preview is keyed on "does a summary exist", not on isMem: a terse jot may be
-     summary-only (weighted highest in search on purpose - see Jot.h), with nothing in text at
-     all, named or not. Rendering that as headline+empty-second-line was the bug this replaced. */
-  if(j.summary){
-    const s=el('div','headline');s.innerHTML=highlight(j.summary,terms);c.append(s);
-    if(j.text){const t=el('div','preview');t.innerHTML=highlight(j.text,terms);c.append(t);}
+  /* The slug is the fast-recognition handle for a named jot - short, stable, chosen on purpose - so
+     it gets the big type. Everything else (summary, or text when there's no summary) is one quiet
+     line underneath, not competing for the same attention. A jot with no name has no slug to lead
+     with, so its own text/summary steps up into the big spot instead. */
+  if(isMem){
+    c.append(el('div','title',j.name));
+    const sub=j.summary||j.text;
+    if(sub){const s=el('div','headline');s.innerHTML=highlight(sub,terms);c.append(s);}
+  }else if(j.summary){
+    const s=el('div','title');s.innerHTML=highlight(j.summary,terms);c.append(s);
+    if(j.text){const t=el('div','headline');t.innerHTML=highlight(j.text,terms);c.append(t);}
   }else{
-    const t=el('div','headline');t.innerHTML=highlight(j.text||'',terms);c.append(t);
+    const t=el('div','title');t.innerHTML=highlight(j.text||'',terms);c.append(t);
   }
 
   const f=el('div','mfoot');
-  /* Action tags sort first so a `todo`/`warning`/`error` tag is never lost to the 3-tag clip -
+  /* Priority/due only surface when they say something a normal card doesn't already imply - a
+     `normal` priority chip on every third card would just be more noise to filter past. */
+  const prio=priorityOf(j),due=dueOf(j);
+  if(done){
+    const tb=el('span','taskbits');tb.append(el('span','donechip','done'));f.append(tb);
+  }else if((prio&&prio!=='normal')||due){
+    const tb=el('span','taskbits');
+    if(prio&&prio!=='normal')tb.append(el('span','priochip pr-'+prio,prio));
+    if(due){
+      const overdue=due.getTime()<Date.now();
+      tb.append(el('span','duechip'+(overdue?' over':''),dueLabel(due)));
+    }
+    f.append(tb);
+  }
+  /* Action tags sort first so a `todo`/`warning`/`error` tag is never lost to the 2-tag clip -
      it's the whole point of flagging it. */
-  const shown=(j.tags||[]).slice().sort((a,b)=>(ACTION_TAGS.has(b)?1:0)-(ACTION_TAGS.has(a)?1:0));
-  shown.slice(0,3).forEach(x=>f.append(el('span',tagClass(x),x)));
-  const trail=el('span');trail.style.cssText='margin-left:auto;display:flex;gap:6px;align-items:center';
-  if(j.editor)trail.append(el('span',null,'@'+j.editor));
+  const folks=(j.tags||[]).filter(t=>t.indexOf(':')<0&&t!=='done');
+  const shown=folks.slice().sort((a,b)=>(ACTION_TAGS.has(b)?1:0)-(ACTION_TAGS.has(a)?1:0));
+  shown.slice(0,2).forEach(x=>f.append(el('span',tagClass(x),'#'+x)));
+  const trail=el('span','mtrail');
   if(j.score!==undefined)trail.append(el('span','scbadge',j.score.toFixed(1)));
+  const when=el('span','when',ago(j.id));when.title=stamp(j.id);trail.append(when);
   f.append(trail);
   c.append(f);
 
@@ -657,20 +1310,16 @@ function jotCard(j,maxScore,terms){
 const queryTerms=q=>(q||'').toLowerCase().split(/[^a-z0-9']+/i).filter(t=>t.length>1);
 
 /* ---------- search ----------
-   Filters (sort, time range, tags, memories-only) all live above the results, and combine - this
-   is the "search is a first-class citizen" pass: previously it was a text box plus a tag-chip row
-   with no time filter and no way to narrow to memories. Sort/tag/time all map straight onto
-   Query.h's existing order/tag/since params; only "memories only" has no server-side filter (no
-   boolean for "has a name"), so it's applied client-side after the fetch. */
-async function viewSearch(){
-  const L=$('#list');
+   Filters (sort, time range, tags) all live above the results, and combine - this is the "search
+   is a first-class citizen" pass: previously it was a text box plus a tag-chip row with no time
+   filter. Sort/tag/time all map straight onto Query.h's existing order/tag/since params. */
+async function viewSearch(target){
+  const L=target;
 
-  const box=el('div','search');
-  box.innerHTML='<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6">'+
-    '<circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>';
-  const q=el('input');q.placeholder='Search memories and jots…';q.value=lastQ;
-  box.append(q);box.append(el('span','kbd','/'));
-  L.append(box);
+  /* No search box of its own any more. The topbar's field is always on screen and already drives
+     this view, so a second input sitting directly under it was two places to type the same query,
+     with only one of them holding the value after a tab switch. This view reads that field. */
+  const q=$('#navsearch-input');
 
   const bar=el('div','filterbar');
 
@@ -688,12 +1337,6 @@ async function viewSearch(){
   when.value=sinceWhen;
   whenG.append(when);bar.append(whenG);
 
-  const memWrap=el('div','togglewrap');
-  memWrap.append(el('span',null,'Memories only'));
-  const memToggle=el('div','toggle'+(memOnly?' on':''));memToggle.append(el('i'));
-  memToggle.onclick=function(){memOnly=!memOnly;memToggle.classList.toggle('on',memOnly);run();};
-  memWrap.append(memToggle);bar.append(memWrap);
-
   const vt=el('div','viewtoggle');
   const cardsBtn=el('button');cardsBtn.type='button';cardsBtn.title='Card view';
   cardsBtn.innerHTML='<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">'+
@@ -709,9 +1352,8 @@ async function viewSearch(){
   cardsBtn.classList.toggle('on',cardMode==='cards');listBtn.classList.toggle('on',cardMode==='list');
   vt.append(cardsBtn,listBtn);bar.append(vt);
 
-  const nw=el('button','btn tiny primary','New jot');
-  nw.onclick=function(){sel={__new:true};render();};
-  bar.append(nw);
+  /* No "New jot" button here either - the rail carries both create actions on every view now, so
+     a third copy in this one filter bar is just another thing to keep in sync. */
   L.append(bar);
 
   if(allTags.length){
@@ -741,13 +1383,12 @@ async function viewSearch(){
     p.set('limit','60');
     try{
       const r=await api('/jots?'+p);
-      const jots=memOnly?r.jots.filter(j=>j.name):r.jots;
+      const jots=r.jots;
 
       meta.innerHTML='';
       meta.append(el('em',null,jots.length+(jots.length===1?' match':' matches')));
       if(r.truncated)meta.append(el('span',null,'showing '+r.returned));
       if(activeTags.size)meta.append(el('span',null,'tag-filtered'));
-      if(memOnly)meta.append(el('span',null,'memories only'));
 
       grid.innerHTML='';
       if(!jots.length){
@@ -763,15 +1404,16 @@ async function viewSearch(){
     }catch(e){grid.innerHTML='';grid.append(el('div','note bad',e.message));}
   }
 
-  let t;q.oninput=function(){clearTimeout(t);t=setTimeout(run,130);};
+  /* q's own oninput is owned by the topbar wiring (it re-renders this whole view on every
+     debounced keystroke), so this view must not overwrite it - it only listens to the controls
+     it actually owns. */
   order.onchange=function(){sortOrder=order.value;run();};
   when.onchange=function(){sinceWhen=when.value;run();};
   await run();
-  /* don't steal focus from the nav search box mid-keystroke - it's what re-renders this view
-     on every debounced input when a search started there rather than in this panel */
-  if(!sel&&document.activeElement!==$('#navsearch-input')){
-    q.focus();q.setSelectionRange(q.value.length,q.value.length);
-  }
+  /* Arriving at Search with nothing else claiming the caret should put it in the search field -
+     but never yank it away from something the user is already typing in (including the field
+     itself, mid-keystroke, which is what re-rendered this view in the first place). */
+  if(!sel&&(document.activeElement===document.body||document.activeElement===null))q.focus();
 }
 
 /* ---------- dashboard: at-a-glance home view ---------- */
@@ -797,7 +1439,7 @@ function agentPrompt(){
 "   deeper reads, or any other work just because this prompt loaded - nothing below this line",
 "   is a task.",
 "",
-"This project's shared memory is Loom ("+o+"), holding "+n+" jots ("+m+" named memories),",
+"This project's shared memory is Loom ("+o+"), holding "+n+" jots ("+m+" named),",
 "replacing the old H:\\\\Alex\\\\dev\\\\.claude markdown store as source of truth while reachable.",
 "",
 "How Alex wants answers: concise, outline form - a top-level bullet per point, detail nested",
@@ -810,21 +1452,21 @@ function agentPrompt(){
 "REST, no registration needed:",
 "  GET  "+o+"/jots?q=<terms>          search, best match first",
 "  GET  "+o+"/jots?order=newest&limit=20   what changed lately",
-"  GET  "+o+"/jots/by-name/<slug>     one named memory",
+"  GET  "+o+"/jots/by-name/<slug>     one named jot",
 "  POST "+o+"/jots                    {name,summary,text,tags,links,editor}",
 "  &brief=1 on any /jots search       drops jot bodies - id/name/summary/tags only, for a skim",
 "",
-"How memory here works:",
-"- A jot WITH a `name` (slug) is a durable memory: one fact, one jot. Without a name it is a",
-"  passing note. Prefer updating the existing memory over writing a second one about the same",
-"  thing - POST with an existing name upserts it.",
+"How Loom works:",
+"- Every fact is a jot. Giving one a `name` (slug) makes it addressable by [[link]] and lets a",
+"  later write upsert it instead of creating a duplicate - it isn't a separate class of record.",
+"  Prefer updating an existing named jot over writing a second one about the same thing.",
 "- `summary` is the one-line fact and is weighted 3x in ranking; `text` is the supporting",
 "  detail and is optional. A terse jot can be summary-only.",
 "- Tags with a colon are structural (type:project, asserted:2026-08-31, status:superseded).",
 "  Bare tags are topical. Both are searchable.",
 "- Writes answer with a `warnings` array when a tag nearly duplicates an existing one. The",
 "  write still succeeded - fix the tag and write again rather than ignoring it.",
-"- Link related memories by slug in `links`. A slug that does not exist yet is kept pending",
+"- Link related jots by slug in `links`. A slug that does not exist yet is kept pending",
 "  and connects itself the moment something takes that name.",
 "",
 "When you learn something durable in this session, write it back before the session ends."
@@ -860,8 +1502,8 @@ const OV_ICONS={
    One bulk brief=1 fetch (see loom-todo-summary-only-listing) drives both the distribution bars
    and the activity list - a topic-level skim has no business pulling every jot body over the
    wire twice. */
-async function viewDashboard(){
-  const L=$('#list');
+async function viewDashboard(target){
+  const L=target;
   try{
     const [tags,sim,recent,health]=await Promise.all([
       api('/tags'), api('/tags/similar'),
@@ -874,9 +1516,11 @@ async function viewDashboard(){
        Sits above the stat cards on purpose - open work is the thing to act on next, everything
        else below is context for deciding what to do about it. Pulled from the same brief=1 fetch
        as activity/distribution, so it inherits the same newest-200 cap rather than a second call. */
-    const todos=recent.jots.filter(j=>(j.tags||[]).some(t=>ACTION_TAGS.has(t)));
+    const todos=recent.jots.filter(j=>!isDone(j)&&isTodo(j));
     const todoP=el('div','ov-panel ov-todo');L.append(todoP);
-    const th=el('div','phead');const th1=el('div');
+    const th=el('div','phead');
+    const badge=el('div','ov-todobadge');badge.innerHTML=OV_ICONS.flag;th.append(badge);
+    const th1=el('div','pheadmain');
     th1.append(el('div','eyebrow','TODOS & REMINDERS'));
     th1.append(el('h3',null,todos.length?todos.length+' open':'Nothing outstanding'));
     th.append(th1);
@@ -884,26 +1528,139 @@ async function viewDashboard(){
     th.lastChild.onclick=function(){view='search';activeTags=new Set(['todo']);drawNav();render();};
     todoP.append(th);
     if(!todos.length){
-      todoP.append(el('div','empty','Nothing tagged todo, warning, or error. Clear.'));
+      todoP.append(el('div','empty','Nothing tagged todo, warning, or error, and nothing due. Clear.'));
     }else{
-      const list=el('div','ov-activity');todoP.append(list);
-      todos.slice(0,8).forEach(function(j){
-        const flagged=(j.tags||[]).filter(t=>ACTION_TAGS.has(t));
-        const r=el('div','ov-arow');r.style.setProperty('--cat','var(--bad)');
-        r.append(el('i','ov-adot'));
-        const mid=el('div','ov-amid');
-        mid.append(el('div','ov-atitle',j.name||(j.summary||'').slice(0,80)||'(untitled)'));
-        mid.append(el('div','ov-asub',flagged.map(t=>'#'+t).join(' ')+' · '+(j.editor||'user')));
-        r.append(mid);
-        r.append(el('span','ov-awhen',ago(j.updated||j.id)));
-        r.onclick=async function(){
-          try{sel=await api('/jots/'+j.id);render();}
-          catch(e){toast(e.message,'err');}
-        };
-        list.append(r);
+      /* Split by priority rather than one flat list - high-priority work should never be scrolled
+         past to find it. Due date breaks ties within a column, soonest (or most overdue) first;
+         undated items sink to the bottom since there's nothing urgent to say about them yet. */
+      const cols=el('div','ov-todocols');todoP.append(cols);
+      const byPrio={high:[],normal:[],low:[]};
+      todos.forEach(j=>byPrio[priorityOf(j)||'normal'].push(j));
+      ['high','normal','low'].forEach(function(p){
+        const list=byPrio[p].slice().sort(function(a,b){
+          const da=dueOf(a),db=dueOf(b);
+          if(da&&db)return da-db;
+          if(da)return-1;
+          if(db)return 1;
+          return b.id-a.id;
+        });
+        const col=el('div','ov-todocol pr-'+p);cols.append(col);
+        const ch=el('div','ov-todocolhead');
+        ch.append(el('span','ptitle',p));
+        ch.append(el('span','pcount',String(list.length)));
+        col.append(ch);
+        const body=el('div','ov-todobody');col.append(body);
+        /* Drag a card from one column to another to reprioritize it - a click-through to the full
+           editor just to flip one select box is friction the panel doesn't need. Reordering within
+           a column stays sort-driven (by due date) rather than draggable, on purpose. */
+        col.addEventListener('dragover',function(e){e.preventDefault();col.classList.add('dragover');});
+        col.addEventListener('dragleave',function(){col.classList.remove('dragover');});
+        col.addEventListener('drop',async function(e){
+          e.preventDefault();col.classList.remove('dragover');
+          const id=e.dataTransfer.getData('text/plain');
+          const j=todos.find(x=>String(x.id)===id);
+          if(!j||(priorityOf(j)||'normal')===p)return;
+          const prevP=priorityOf(j)||'normal';
+          try{
+            const updated=await setPriority(j,p);
+            toast('Moved to '+p,'ok',async function(){
+              try{await setPriority(updated,prevP);toast('Moved back to '+prevP);render();}
+              catch(err){toast(err.message,'err');}
+            });
+            render();
+          }catch(e){toast(e.message,'err');}
+        });
+        if(!list.length){body.append(el('div','ov-colempty','Nothing here.'));return;}
+        list.slice(0,6).forEach(function(j){
+          const due=dueOf(j);
+          const cat=catColorOf(j.tags);
+          const r=el('div','ov-trow');
+          r.style.setProperty('--cat','var('+cat.cssVar+')');
+          r.draggable=true;
+          r.addEventListener('dragstart',function(e){
+            e.dataTransfer.setData('text/plain',String(j.id));
+            e.dataTransfer.effectAllowed='move';
+            r.classList.add('dragging');
+          });
+          r.addEventListener('dragend',function(){r.classList.remove('dragging');});
+
+          /* 1. chips: the action tag it carries, its priority, and its topic */
+          const chips=el('div','ov-tchips');
+          const act=(j.tags||[]).find(t=>ACTION_TAGS.has(t));
+          chips.append(el('span','ov-tchip todo',act||'todo'));
+          chips.append(el('span','ov-tchip pr-'+p,p));
+          if(cat.name&&cat.name!==act)chips.append(el('span','ov-tchip scope',cat.name));
+          chips.append(el('span','ov-tid',j.editor||'user'));
+          r.append(chips);
+
+          /* 2. what it is - the slug when it has one, else the first line of what it says */
+          r.append(el('div','ov-atitle',
+            j.name||(j.summary||j.text||'').slice(0,90)||'(untitled)'));
+
+          /* 3. when - absolute stamp, with the relative magnitude trailing it */
+          if(due){
+            const overdue=due.getTime()<Date.now();
+            const dl=el('div','ov-tdue'+(overdue?' over':''));
+            dl.innerHTML='<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" '+
+              'stroke-width="1.6" stroke-linecap="round"><circle cx="8" cy="8" r="6.2"/>'+
+              '<path d="M8 4.6V8l2.4 1.6"/></svg>';
+            dl.append(document.createTextNode((overdue?'Overdue · ':'Due · ')+stamp(due.getTime()*1000)));
+            dl.append(el('span','rel','('+dueLabel(due).replace(/^(Overdue by|Due in) /,'')+')'));
+            r.append(dl);
+          }
+
+          /* 4. what you can do about it, without opening anything */
+          const acts=el('div','ov-tacts');
+          const mkAct=function(cls,label,icon,fn){
+            const b=el('button',cls);b.type='button';b.draggable=false;
+            if(icon)b.innerHTML=icon;
+            b.append(document.createTextNode(label));
+            b.onclick=function(e){e.stopPropagation();fn();};
+            acts.append(b);return b;
+          };
+          mkAct('','Edit','<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" '+
+            'stroke-linejoin="round"><path d="M11.2 2.4 13.6 4.8 5.6 12.8 2.4 13.6l.8-3.2 8-8Z"/></svg>',
+            async function(){
+              try{sel=await api('/jots/'+j.id);render();}catch(e){toast(e.message,'err');}
+            });
+          /* Snooze pushes `due` to tomorrow morning - the same "reschedule, don't track a snoozed
+             state" rule the dialog's snooze buttons follow. One click, no submenu: the dialog is
+             right there for an exact time. */
+          mkAct('','Snooze','<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" '+
+            'stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.2"/>'+
+            '<path d="M8 4.6V8l2.4 1.6"/></svg>',
+            async function(){
+              const prev=tagValue(j.tags,'due:');
+              const d=new Date(Date.now()+86400000);d.setHours(9,0,0,0);
+              try{
+                const updated=await setDue(j,toLocalInputValue(d));
+                toast('Snoozed to tomorrow 9:00','ok',async function(){
+                  try{await setDue(updated,prev||'');toast('Snooze undone');render();}
+                  catch(err){toast(err.message,'err');}
+                });
+                render();
+              }catch(e){toast(e.message,'err');}
+            });
+          acts.append(completeBtn(false,async function(){
+            try{
+              const updated=await toggleDone(j,true);
+              toast('Marked completed','ok',async function(){
+                try{await toggleDone(updated,false);toast('Restored');render();}
+                catch(err){toast(err.message,'err');}
+              });
+              render();
+            }catch(e){toast(e.message,'err');}
+          }));
+          r.append(acts);
+
+          r.onclick=async function(){
+            try{sel=await api('/jots/'+j.id);render();}
+            catch(e){toast(e.message,'err');}
+          };
+          body.append(r);
+        });
+        if(list.length>6)col.append(el('div','note','+'+(list.length-6)+' more — open Search.'));
       });
-      if(todos.length>8)
-        todoP.append(el('div','note','+'+(todos.length-8)+' more — open Search and filter by tag.'));
     }
 
     /* ---- stat cards ---- */
@@ -917,8 +1674,8 @@ async function viewDashboard(){
       c.append(el('div','cap',cap));
       grid.append(c);
     };
-    card('hi','dot','Active memories',health.jots??'—',
-      (health.named||0)+' named · '+Math.max((health.jots||0)-(health.named||0),0)+' passing notes');
+    card('hi','dot','Active jots',health.jots??'—',
+      (health.named||0)+' named · '+Math.max((health.jots||0)-(health.named||0),0)+' unnamed');
     card('','layers','Topics',topTags.length,'Bare-tag vocabulary');
     card('','hash','Tags in use',health.tags??'—','Including structural tags');
     card('','flag','Needs attention',sim.clusters.length,
@@ -1014,8 +1771,8 @@ async function viewDashboard(){
 }
 
 /* ---------- tags ---------- */
-async function viewTags(){
-  const L=$('#list');
+async function viewTags(target){
+  const L=target;
   try{
     const both=await Promise.all([api('/tags?reserved=1'),api('/tags/similar')]);
     const tags=both[0],sim=both[1];
@@ -1071,8 +1828,8 @@ async function viewTags(){
 }
 
 /* ---------- health ---------- */
-async function viewHealth(){
-  const L=$('#list');
+async function viewHealth(target){
+  const L=target;
   try{
     const s=await api('/stats');const p=s.persistence||{};
     const group=function(title,rows){
@@ -1082,7 +1839,7 @@ async function viewHealth(){
         r.append(el('span',null,kv[0]));r.append(el('span','n',kv[1]));L.append(r);
       });
     };
-    group('Store',[['Jots',s.jots],['Named memories',s.named],['Tag vocabulary',s.tags],
+    group('Store',[['Jots',s.jots],['Named',s.named],['Tag vocabulary',s.tags],
       ['Distinct terms',s.terms],['Pending links',s.pending_links],['Editors',s.editors],
       ['Mutations this run',s.mutations]]);
     if(s.oldest)group('Span',[['Oldest',stamp(s.oldest)],['Newest',stamp(s.newest)]]);
@@ -1127,16 +1884,11 @@ function renderDetail(){
   h.append(el('h3',null,isNew?'New jot':(sel.name||'Edit jot')));
   W.append(h);
 
-  if(!isNew){
-    const m=el('div','dmeta');
-    const line=function(k,v){const d=el('div');d.append(el('i',null,k));
-      d.append(el('span',null,v));m.append(d);};
-    line('id',String(sel.id));
-    line('created',stamp(sel.id));
-    if(sel.updated)line('edited',stamp(sel.updated));
-    line('editor',sel.editor||'user');
-    W.append(m);
-  }
+  /* Expanded/force-todo state remembers across re-renders of the SAME jot (e.g. after Save) but
+     resets the moment a different jot is opened - carrying "I had it expanded" or "I turned this
+     into a TODO" over to the next unrelated click would defeat the point of both. */
+  const key=isNew?'__new':sel.id;
+  if(key!==detailOpenedKey){detailExpanded=false;detailForceTodo=false;detailOpenedKey=key;}
 
   const f={};
   /* every field is its own .fld block so short fields can be paired two-up in a .frow when
@@ -1151,29 +1903,145 @@ function renderDetail(){
     if(tag==='textarea')e.rows=(key==='text')?9:2;
     box.append(e);f[key]=e;return e;
   };
-  const frow=function(){const d=el('div','frow');W.append(d);return d;};
+  const frow=function(host){const d=el('div','frow');(host||W).append(d);return d;};
 
-  const idRow=frow();
-  field('name','slug',null,'durable memories only',idRow);
+  /* ---- minimal core: what a TODO actually needs, always visible ---- */
+  /* Priority/due only show for jots that are already TODO-ish (see isTodo()) - otherwise every
+     ordinary jot's dialog got task controls it had no use for. "Make this a TODO" is the explicit
+     opt-in for a plain jot; it doesn't touch the server by itself, it just reveals the fields so
+     they can be set before the next Save. */
+  const showTask=isTodo(sel)||detailForceTodo;
+  /* pr is a plain {value} holder rather than the <select> it used to be, so Save reads priority
+     the same way regardless of which control drew it. */
+  const pr={value:showTask?(tagValue(sel.tags,'priority:')||''):''};
+  let dueIn;
+
+  /* ---- priority leads: highest-traffic field on a TODO, and the one that moves a card ---- */
+  if(showTask){
+    W.append(el('label',null,'priority'));
+    const prRow=el('div','prio');W.append(prRow);
+    const rname='prio-'+key;
+    [['high','High'],['normal','Normal'],['low','Low'],['','Clear']].forEach(function(o){
+      const lab=el('label',pr.value===o[0]?'on':null);
+      const rb=el('input');rb.type='radio';rb.name=rname;rb.value=o[0];
+      rb.checked=(pr.value===o[0]);
+      /* Radios do the unsetting for free: "Clear" is just the option whose value is empty, so
+         picking it deselects the other three exactly the way picking High does. */
+      rb.onchange=function(){
+        pr.value=o[0];
+        Array.prototype.forEach.call(prRow.children,function(x){
+          x.classList.toggle('on',x.firstChild.checked);
+        });
+      };
+      lab.append(rb,document.createTextNode(o[1]));
+      prRow.append(lab);
+    });
+  }
+
+  field('summary','summary','textarea','the main point of this jot');
+
+  if(!showTask){
+    const mk=el('button','btn tiny ghost','Make this a TODO');
+    mk.type='button';
+    mk.onclick=function(){detailForceTodo=true;renderDetail();};
+    W.append(mk);
+  }
+
+  const toggle=el('button','btn tiny ghost dtoggle',detailExpanded?'Fewer fields ▲':'More fields ▾');
+  toggle.type='button';
+  W.append(toggle);
+
+  /* ---- everything else: slug, editor, details, tags, links, metadata - hidden until asked for,
+     so opening a quick reminder isn't several fields deep before you've typed anything. */
+  const ex=el('div','dextra');ex.hidden=!detailExpanded;
+  W.append(ex);
+  toggle.onclick=function(){
+    detailExpanded=!detailExpanded;
+    ex.hidden=!detailExpanded;
+    toggle.textContent=detailExpanded?'Fewer fields ▲':'More fields ▾';
+  };
+
+  if(!isNew){
+    const m=el('div','dmeta');
+    const line=function(k,v){const d=el('div');d.append(el('i',null,k));
+      d.append(el('span',null,v));m.append(d);};
+    line('id',String(sel.id));
+    line('created',stamp(sel.id));
+    if(sel.updated)line('edited',stamp(sel.updated));
+    line('editor',sel.editor||'user');
+    ex.append(m);
+  }
+
+  const idRow=frow(ex);
+  field('name','slug',null,'optional - makes this jot addressable',idRow);
   field('editor','editor',null,null,idRow);
-  field('summary','summary','textarea','weighted highest in search');
-  field('text','text','textarea');
-  const metaRow=frow();
+
+  const TASK_TAG=/^(priority|due):/;
+  const detailsBox=el('details','fld dfld');
+  if(sel.text)detailsBox.open=true;
+  const dsum=document.createElement('summary');
+  dsum.textContent='details'+(sel.text?'':' (optional)');
+  detailsBox.append(dsum);
+  const dta=el('textarea');dta.setAttribute('data-k','text');dta.value=sel.text||'';dta.rows=8;
+  detailsBox.append(dta);
+  ex.append(detailsBox);
+  f.text=dta;
+
+  const metaRow=frow(ex);
   const tg=field('tags','tags',null,'comma separated',metaRow);
-  tg.value=(sel.tags||[]).join(', ');
+  tg.value=(sel.tags||[]).filter(t=>!TASK_TAG.test(t)).join(', ');
   const lk=field('links','links',null,'ids or slugs',metaRow);
   lk.value=(sel.links||[]).concat(sel.pending||[]).join(', ');
 
   if(!isNew&&(sel.pending||[]).length)
-    W.append(el('div','note','Unresolved: '+sel.pending.join(', ')+
+    ex.append(el('div','note','Unresolved: '+sel.pending.join(', ')+
       ' — these connect themselves when a jot takes that slug.'));
+
+  /* Due is its own subsection below the fields: WHEN something is due is a separate decision from
+     what it says and from how much it matters, and pairing it with priority in one row made the
+     two look like halves of a single setting. */
+  if(showTask){
+    const dueSect=el('div','duesect');W.append(dueSect);
+    dueSect.append(el('label',null,'due'));
+    dueIn=el('input');dueIn.type='datetime-local';
+    const dv=tagValue(sel.tags,'due:');
+    dueIn.value=dv?(dv.length>10?dv:dv+'T00:00'):'';
+    dueSect.append(dueIn);
+
+    /* Snooze is just "reschedule due to later" - there's no separate snoozed state to track, so
+       these apply immediately (PATCH the due tag, update the field) rather than staging a value
+       for the next unrelated Save. Only shown for an EXISTING jot with something to reschedule. */
+    if(!isNew){
+      const snBtns=el('div','snbtns');dueSect.append(snBtns);
+      const applyDue=async function(val){
+        try{
+          sel=await setDue(sel,val);
+          dueIn.value=val?(val.length>10?val:val+'T00:00'):'';
+          toast(val?'Rescheduled':'Due date cleared');
+        }catch(e){toast(e.message,'err');}
+      };
+      const mkSnBtn=function(label,fn){
+        const b=el('button','btn tiny ghost',label);b.type='button';
+        b.onclick=function(e){e.preventDefault();applyDue(fn());};
+        snBtns.append(b);
+      };
+      mkSnBtn('Snooze +1h',()=>toLocalInputValue(new Date(Date.now()+3600000)));
+      mkSnBtn('Snooze to tomorrow',()=>{const d=new Date(Date.now()+86400000);d.setHours(9,0,0,0);
+        return toLocalInputValue(d);});
+      mkSnBtn('Snooze +1 week',()=>toLocalInputValue(new Date(Date.now()+7*86400000)));
+      mkSnBtn('Clear due',()=>'');
+    }
+  }
 
   const act=el('div','actions');
   const save=el('button','btn primary',isNew?'Create':'Save');
   save.onclick=async function(){
+    const tags=tg.value.split(',').map(s=>s.trim()).filter(Boolean);
+    if(pr&&pr.value)tags.push('priority:'+pr.value);
+    if(dueIn&&dueIn.value)tags.push('due:'+dueIn.value);
     const body={text:f.text.value,name:f.name.value,summary:f.summary.value,
       editor:f.editor.value,
-      tags:tg.value.split(',').map(s=>s.trim()).filter(Boolean),
+      tags:tags,
       links:lk.value.split(',').map(s=>s.trim()).filter(Boolean)};
     try{
       let r;
@@ -1188,9 +2056,11 @@ function renderDetail(){
           {method:'PATCH',headers:{'Content-Type':'application/json'},
            body:JSON.stringify(body)});
       }
-      sel=r;
       if(r.warnings&&r.warnings.length)toast(r.warnings[0],'warn');
       else toast(isNew?'Created':'Saved');
+      /* Save closes the dialog - it's the "I'm done with this" action, not a checkpoint to keep
+         editing from. Re-open it from the list/panel to keep going. */
+      sel=null;
       allTags=(await api('/tags')).tags;await refreshStats();render();
     }catch(e){
       if(e.status===409)
@@ -1202,14 +2072,17 @@ function renderDetail(){
 
   if(!isNew){
     const rel=el('button','btn tiny','Linked');
+    let linkedBox=null;
     rel.onclick=async function(){
       try{
         const r=await api('/jots/'+sel.id+'/links?depth=2');
-        W.append(el('div','sect','Linked — 2 hops, both directions'));
-        if(!r.jots.length)W.append(el('div','empty','Nothing links here.'));
+        if(linkedBox)linkedBox.remove();
+        linkedBox=el('div');W.append(linkedBox);
+        linkedBox.append(el('div','sect','Linked — 2 hops, both directions'));
+        if(!r.jots.length)linkedBox.append(el('div','empty','Nothing links here.'));
         const g=el('div','cardgrid');
         r.jots.forEach(j=>g.append(jotCard(j,0,[])));
-        W.append(g);
+        linkedBox.append(g);
       }catch(e){toast(e.message,'err');}
     };
     const del=el('button','btn tiny danger','Delete');
@@ -1225,6 +2098,27 @@ function renderDetail(){
   const close=el('button','btn tiny ghost','Close');
   close.onclick=function(){sel=null;render();};
   act.append(close);
+
+  /* Complete rides the actions row at the bottom right - same button, same place it occupies on
+     a reminder card. Toggling it touches ONLY `status:done`: priority, due and everything else
+     survive, which is what makes reopening a completed TODO put it back exactly as it was. */
+  if(showTask&&!isNew){
+    const wasDone=isDone(sel);
+    act.append(completeBtn(wasDone,async function(){
+      try{
+        sel=await toggleDone(sel,!wasDone);
+        const updated=sel;
+        toast(wasDone?'Reopened':'Marked completed','ok',async function(){
+          try{
+            sel=await toggleDone(updated,wasDone);
+            toast(wasDone?'Marked completed':'Reopened');
+            await refreshStats();render();
+          }catch(err){toast(err.message,'err');}
+        });
+        await refreshStats();render();
+      }catch(e){toast(e.message,'err');}
+    }));
+  }
   W.append(act);
 
   P.onkeydown=function(e){
@@ -1233,23 +2127,47 @@ function renderDetail(){
 }
 
 /* ---------- shell ---------- */
+/* Each view builds into a detached staging container and only gets swapped into #list once every
+   await inside it has resolved - the old approach cleared #list synchronously and repopulated it
+   across several awaited fetches, so the panel sat visibly blank for the round trip every time
+   (glaringly so on the 15s dashboard auto-refresh). One atomic swap means there's never a blank
+   frame; scroll position is kept only when the view didn't change, since jumping to the same
+   scroll offset after switching views would be its own kind of glitch. */
+let lastRenderedView=null;
 async function render(){
-  $('#list').innerHTML='';
-  if(view==='dashboard')await viewDashboard();
-  else if(view==='search')await viewSearch();
-  else if(view==='tags')await viewTags();
-  else await viewHealth();
+  const D=el('div');
+  if(view==='dashboard')await viewDashboard(D);
+  else if(view==='search')await viewSearch(D);
+  else if(view==='tags')await viewTags(D);
+  else await viewHealth(D);
+  const L=$('#list');
+  const keepScroll=(view===lastRenderedView);
+  const top=L.scrollTop;
+  /* Every view lands inside the capped, centered column - done here rather than in each view so
+     a new view can't forget to do it and quietly stretch to 2560px. */
+  const wrap=el('div','contentwrap');
+  wrap.append(...D.childNodes);
+  L.replaceChildren(wrap);
+  L.scrollTop=keepScroll?top:0;
+  lastRenderedView=view;
+  const af=L.querySelector('[data-autofocus]');
+  if(af){af.focus();if(af.setSelectionRange)af.setSelectionRange(af.value.length,af.value.length);}
   renderDetail();
 }
 
 (function(){
+  /* Always an explicit choice now, not "follow the OS, unless overridden" - that's what made the
+     default and the darkest explicit palette collapse into near-duplicates. First visit still
+     picks a sane starting side (light vs dark) from the OS, but from then on it's just whatever
+     was last picked - one of the named values in #palette-select, and an unknown one stored by an
+     older build simply lands on :root's Paper rather than erroring. */
   const KEY='loom-palette';let saved=null;try{saved=localStorage.getItem(KEY);}catch(e){}
-  if(saved)document.documentElement.setAttribute('data-palette',saved);
-  const sel=$('#palette-select');sel.value=saved||'';
+  const initial=saved||(matchMedia('(prefers-color-scheme:dark)').matches?'midnight':'paper');
+  document.documentElement.setAttribute('data-palette',initial);
+  const sel=$('#palette-select');sel.value=initial;
   sel.addEventListener('change',()=>{
     const v=sel.value;
-    if(v)document.documentElement.setAttribute('data-palette',v);
-    else document.documentElement.removeAttribute('data-palette');
+    document.documentElement.setAttribute('data-palette',v);
     try{localStorage.setItem(KEY,v);}catch(e){}
   });
 })();
@@ -1257,6 +2175,19 @@ async function render(){
 $('#about-btn').addEventListener('click',()=>$('#about').showModal());
 $('#about-close').addEventListener('click',()=>$('#about').close());
 $('#about').addEventListener('click',function(e){if(e.target===this)this.close();});
+
+/* Both open the same new-jot editor - a TODO is just a jot with task fields showing. New TODO
+   pre-arms detailOpenedKey/detailForceTodo the way clicking "Make this a TODO" inside the dialog
+   does, so those fields are already open on first paint instead of a second click to reveal them. */
+$('#new-jot-btn').addEventListener('click',function(){
+  sel={__new:true};
+  render();
+});
+$('#new-todo-btn').addEventListener('click',function(){
+  sel={__new:true};
+  detailExpanded=false;detailForceTodo=true;detailOpenedKey='__new';
+  render();
+});
 
 $('#agent-btn').addEventListener('click',function(){
   $('#agent-prompt-text').textContent=agentPrompt();
@@ -1272,6 +2203,81 @@ $('#detail-close-x').addEventListener('click',()=>$('#detail-dialog').close());
 $('#detail-dialog').addEventListener('click',function(e){if(e.target===this)this.close();});
 $('#detail-dialog').addEventListener('close',function(){if(sel){sel=null;render();}});
 $('#agent-copy').addEventListener('click',function(){copyText(agentPrompt(),$('#agent-copy'));});
+
+/* ---------- reminder notifications ----------
+   Runs independently of whatever view is on screen - a reminder due while you're in Search
+   should still fire. Two events per due TODO: "upcoming" (UPCOMING_LEAD_MS before) and "due now"
+   (once the time passes), each fired at most once per due VALUE (loom-notified remembers which
+   due timestamp it already fired for, so editing the due date re-arms it instead of staying
+   silent, but a page reload doesn't re-fire the same one). Snoozing a jot reschedules its `due`
+   tag to later, nothing more - that alone changes dueMs and naturally re-arms both events at the
+   new time, so there's no separate suppression state to check here. */
+const UPCOMING_LEAD_MS=15*60000;
+const NOTIF_KEY='loom-notified';
+const fmtLocal=d=>d.toLocaleString(undefined,
+  {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+function loadNotified(){try{return JSON.parse(localStorage.getItem(NOTIF_KEY)||'{}');}catch(e){return{};}}
+function saveNotified(m){try{localStorage.setItem(NOTIF_KEY,JSON.stringify(m));}catch(e){}}
+function fireReminder(title,body,j,tag){
+  try{
+    const n=new Notification(title,{body:body,tag:tag,icon:location.origin+'/icon.png'});
+    n.onclick=function(){
+      window.focus();
+      (async function(){try{sel=await api('/jots/'+j.id);renderDetail();}catch(e){}})();
+      n.close();
+    };
+  }catch(e){/* Notification can throw in odd embed contexts - a missed reminder beats a crash */}
+}
+async function checkReminders(){
+  if(!('Notification' in window)||Notification.permission!=='granted')return;
+  let jots;
+  try{jots=(await api('/jots?order=newest&limit=200&brief=1')).jots;}catch(e){return;}
+  const notified=loadNotified(),now=Date.now();let changed=false;
+  jots.forEach(function(j){
+    if(isDone(j))return;
+    const due=dueOf(j);if(!due)return;
+    const dueMs=due.getTime(),key=String(j.id),rec=notified[key]||{};
+    const label=j.name||(j.summary||j.text||'Reminder').slice(0,80);
+    if(now>=dueMs-UPCOMING_LEAD_MS&&now<dueMs&&rec.upcomingFor!==dueMs){
+      fireReminder('Upcoming: '+label,dueLabel(due)+' — '+fmtLocal(due),j,'loom-upcoming-'+key);
+      rec.upcomingFor=dueMs;notified[key]=rec;changed=true;
+    }
+    if(now>=dueMs&&rec.dueFor!==dueMs){
+      fireReminder('Due now: '+label,'Was due '+fmtLocal(due),j,'loom-due-'+key);
+      rec.dueFor=dueMs;notified[key]=rec;changed=true;
+    }
+  });
+  if(changed)saveNotified(notified);
+}
+(function(){
+  const btn=$('#notif-btn'),label=$('#notif-label');
+  const paint=function(){
+    if(!('Notification' in window)){btn.classList.add('off');label.textContent='Unsupported';return;}
+    if(Notification.permission==='granted'){btn.classList.add('on');btn.classList.remove('off');
+      label.textContent='Reminders on';}
+    else if(Notification.permission==='denied'){btn.classList.add('off');
+      label.textContent='Reminders blocked';}
+    else{btn.classList.remove('on','off');label.textContent='Enable reminders';}
+  };
+  paint();
+  btn.addEventListener('click',async function(){
+    if(!('Notification' in window))return;
+    if(Notification.permission==='denied'){
+      /* Once a browser has recorded "no," a page can never re-prompt for it - only the user can,
+         from the browser's own permission UI. Best this button can do is say so, not sit there
+         looking clickable with nothing to click. */
+      toast('Reminders were blocked in the browser - click the icon in the address bar (or your '+
+        'browser\'s site settings) to allow notifications, then reload.','warn');
+      return;
+    }
+    if(Notification.permission!=='default')return;
+    try{await Notification.requestPermission();}catch(e){}
+    paint();
+    if(Notification.permission==='granted')checkReminders();
+  });
+  setInterval(checkReminders,60000);
+  if('Notification' in window&&Notification.permission==='granted')checkReminders();
+})();
 
 document.addEventListener('keydown',function(e){
   const typing=/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
