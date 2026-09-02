@@ -84,6 +84,21 @@ public:
 
     std::error_code Delete(tJotID id);
 
+    // Re-applies a complete record read back out of the history log. This is the undo path.
+    //
+    // POLICY, which is why it is here and not a raw LoadFlatBatch at the route:
+    //
+    //   - The id is kept. That is the entire point - a restore puts the SAME jot back, links to it
+    //     survive, and a jot that was deleted comes back at the address other jots still reference.
+    //   - `updated` is stamped NOW rather than carried from the record. The restore is a change and
+    //     it happened at the moment somebody asked for it; keeping the old stamp would hide it from
+    //     "recently changed" and hand every client an expect_updated value that reads as stale.
+    //   - It is REFUSED if the slug now belongs to a different jot. LoadFlatBatch is the replay
+    //     path, where names are unique by construction, so its name-index insert does not overwrite
+    //     - restoring over a taken slug would leave two jots claiming one name with the index
+    //     pointing at whichever got there first. outConflictID names the current holder.
+    std::error_code Restore(const FlatJot& record, tJotID& outConflictID, AddResult& outResult);
+
     std::error_code MergeTags(const std::vector<std::string>& vFrom, const std::string& sTo,
                               size_t& outJotsChanged);
 

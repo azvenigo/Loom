@@ -68,7 +68,9 @@ add_library(loomcore STATIC
     core/Tokenizer.cpp
 
     codec/JotJson.cpp
+    persist/History.cpp
     persist/Journal.cpp
+    persist/Purge.cpp
     persist/Snapshot.cpp
     persist/Importer.cpp
     mcp/McpHandler.cpp
@@ -77,7 +79,9 @@ add_library(loomcore STATIC
     core/LoomError.h core/LoomTime.h core/Ops.h      core/Query.h
     core/TagRegistry.h core/Tokenizer.h
     codec/JotJson.h
-    persist/Journal.h persist/Snapshot.h persist/Importer.h persist/DataLock.h
+    persist/History.h persist/Journal.h persist/Purge.h persist/Snapshot.h
+    persist/Importer.h
+    persist/DataLock.h persist/SinkFanout.h
     mcp/McpHandler.h
 )
 
@@ -89,7 +93,9 @@ target_link_libraries(loomcore PUBLIC Threads::Threads)
 # These four include vendored nlohmann, which does not survive /Wall /WX.
 set_source_files_properties(
     core/IpAcl.cpp
-    codec/JotJson.cpp persist/Journal.cpp persist/Snapshot.cpp persist/Importer.cpp
+    codec/JotJson.cpp persist/History.cpp persist/Journal.cpp persist/Purge.cpp
+    persist/Snapshot.cpp
+    persist/Importer.cpp
     mcp/McpHandler.cpp
     PROPERTIES COMPILE_OPTIONS "$<IF:$<CXX_COMPILER_ID:MSVC>,/W3;/WX-,-w>")
 

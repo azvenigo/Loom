@@ -3,6 +3,7 @@
 
 #include "core/IpAcl.h"
 #include "core/Ops.h"
+#include "persist/History.h"
 #include "persist/Journal.h"
 #include "persist/Snapshot.h"
 
@@ -50,8 +51,12 @@ public:
     // than at the top of each handler, which is the difference between a control that covers every
     // route and one that covers every route somebody remembered. A route added later is gated
     // whether or not its author knew the list existed.
+    //
+    // pHistory may be null, in which case /history and the purge routes report themselves
+    // unavailable rather than pretending to work.
     HttpServer(Ops& ops, JotStore& store, const HttpConfig& config,
-               Journal* pJournal, const SnapshotConfig& snapConfig, IpAcl& acl);
+               Journal* pJournal, const SnapshotConfig& snapConfig, IpAcl& acl,
+               History* pHistory);
     ~HttpServer();
 
     HttpServer(const HttpServer&)            = delete;

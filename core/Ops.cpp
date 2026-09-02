@@ -120,6 +120,44 @@ std::error_code Ops::Delete(tJotID id)
     return mStore.Remove(id);
 }
 
+std::error_code Ops::Restore(const FlatJot& record, tJotID& outConflictID, AddResult& outResult)
+{
+    outResult      = AddResult();
+    outConflictID  = kInvalidJotID;
+
+    if (record.mID == kInvalidJotID)
+        return MakeLoomError(eLoomErr::kInvalidArgument);
+
+    // The slug check is a read, so it races a concurrent write in principle. It is still worth
+    // doing: the window is microseconds, the alternative is a silently duplicated name that nothing
+    // else in the store would ever notice, and the loser of the race gets a name index pointing at
+    // the other jot rather than corruption.
+    if (!record.msName.empty())
+    {
+        Jot holder;
+        if (mStore.GetByName(record.msName, holder) && holder.mID != record.mID)
+        {
+            outConflictID = holder.mID;
+            return MakeLoomError(eLoomErr::kNameInUse);
+        }
+    }
+
+    std::vector<FlatJot> vOne(1, record);
+    vOne[0].mnUpdatedUS = LOOMTIME::NowMicros();
+
+    size_t nLoaded = 0;
+    if (std::error_code ec = mStore.LoadFlatBatch(vOne, nLoaded, /*bJournal*/ true))
+        return ec;
+    if (nLoaded == 0)
+        return MakeLoomError(eLoomErr::kInvalidArgument);
+
+    if (!mStore.Get(record.mID, outResult.mJot))
+        return MakeLoomError(eLoomErr::kNotFound);
+
+    outResult.mbCreated = false;
+    return LoomOK();
+}
+
 std::error_code Ops::MergeTags(const std::vector<std::string>& vFrom, const std::string& sTo,
                                size_t& outJotsChanged)
 {

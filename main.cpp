@@ -14,8 +14,11 @@
 #include "core/Ops.h"
 #include "http/HttpServer.h"
 #include "persist/DataLock.h"
+#include "persist/History.h"
 #include "persist/Importer.h"
 #include "persist/Journal.h"
+#include "persist/Purge.h"
+#include "persist/SinkFanout.h"
 #include "persist/Snapshot.h"
 
 #include <atomic>
@@ -114,6 +117,90 @@ namespace
 }
 
 
+namespace
+{
+    //--------------------------------------------------------------------------------------------
+    // --purge=DIR. The destructive half of the purge, run with the service stopped.
+    //
+    // THE DATA LOCK IS THE INTERLOCK. This takes the same lock the server holds for its whole life,
+    // so "is Loom still running against this directory" is answered by the OS rather than by a
+    // check somebody could race or skip. A refusal here is the guard working.
+    //
+    // A BARE --purge IS A DRY RUN. It says exactly what would go and changes nothing; --yes is what
+    // actually erases. That makes a mistyped or half-remembered command harmless, and it gives the
+    // person doing the confirming something to read that came from the tool rather than from the
+    // request file they are being asked to trust.
+    //--------------------------------------------------------------------------------------------
+    int RunPurge(const std::string& sDir, bool bConfirmed)
+    {
+        DataLock lock;
+        if (!lock.Acquire(sDir + "/loom.lock"))
+        {
+            std::printf("loom is still running against %s\n", sDir.c_str());
+            std::printf("  stop the service before purging - the snapshot, the WAL and the history\n"
+                        "  log are all open and being appended to.\n");
+            return 1;
+        }
+
+        const std::string sPath = PURGE::RequestPath(sDir);
+        PurgeRequest request;
+        std::string sError;
+        if (!PURGE::ReadRequest(sPath, request, sError))
+        {
+            std::printf("%s\n", sError.c_str());
+            std::printf("  a purge is requested from the dashboard (History view) or with\n"
+                        "  POST /purge/request, which writes the file this reads.\n");
+            return 1;
+        }
+
+        std::printf("purge request from %s, created %s\n",
+                    request.msRequestedBy.empty() ? "(unknown)" : request.msRequestedBy.c_str(),
+                    LOOMTIME::FormatUS(request.mnCreatedUS).c_str());
+        if (!request.msReason.empty())
+            std::printf("  reason: %s\n", request.msReason.c_str());
+        std::printf("  %zu jot(s):\n", request.mIDs.size());
+        for (const PurgeLabel& label : request.mLabels)
+        {
+            std::printf("    %lld  %-28s %s\n",
+                        static_cast<long long>(label.mID),
+                        label.msName.empty() ? "(unnamed)" : label.msName.c_str(),
+                        label.msSummary.c_str());
+        }
+
+        if (!bConfirmed)
+        {
+            std::printf("\nDRY RUN - nothing has been changed.\n");
+            std::printf("  Re-run with --yes to erase these from the snapshot, the WAL and the\n"
+                        "  history log. That cannot be undone: the undo log is one of the things\n"
+                        "  being scrubbed.\n");
+            return 0;
+        }
+
+        PurgeReport report;
+        if (std::error_code ec = PURGE::Run(sDir, request, report, sError))
+        {
+            std::printf("purge FAILED: %s\n", sError.empty() ? ec.message().c_str() : sError.c_str());
+            std::printf("  the request file is left in place so this can be retried.\n");
+            return 1;
+        }
+
+        PURGE::ClearRequest(sPath);
+
+        std::printf("\npurged.\n");
+        std::printf("  removed from the store   %zu\n", report.mnRemovedFromStore);
+        if (report.mnNotFound)
+            std::printf("  already absent           %zu\n", report.mnNotFound);
+        std::printf("  snapshot rewritten       %zu records\n", report.mnSnapshotRecords);
+        std::printf("  WAL discarded            %zu bytes\n", report.mnWalBytesDiscarded);
+        std::printf("  history entries dropped  %zu (kept %zu)\n",
+                    report.mnHistoryDropped, report.mnHistoryKept);
+        std::printf("\nStart the service again. Backups of this directory, and anything that already\n"
+                    "read these jots over the API, are out of scope and still need handling by hand.\n");
+        return 0;
+    }
+}
+
+
 int main(int argc, char** argv)
 {
     if (ArgFlag(argc, argv, "--help") || ArgFlag(argc, argv, "-h"))
@@ -131,8 +218,22 @@ int main(int argc, char** argv)
             "\n"
             "  The address allow list lives in DIR/loom.acl.json and is edited from the dashboard\n"
             "  (shield icon, bottom left) or over PUT /acl. Loopback is always allowed, so a bad\n"
-            "  list can always be repaired from the machine itself.\n");
+            "  list can always be repaired from the machine itself.\n"
+            "\n"
+            "  Every change is also appended to DIR/loom.history, which - unlike the WAL - is never\n"
+            "  truncated by a snapshot. That is what GET /history and the dashboard's History view\n"
+            "  read, and what a restore re-applies.\n"
+            "\n"
+            "  --purge=DIR    erase the jots named in DIR/loom.purge-request.json from the snapshot,\n"
+            "                 the WAL and the history log. Requires the service to be STOPPED. On\n"
+            "                 its own it is a dry run; add --yes to actually erase.\n");
         return 0;
+    }
+
+    if (const char* pPurge = ArgStr(argc, argv, "--purge", nullptr))
+    {
+        std::setvbuf(stdout, nullptr, _IONBF, 0);
+        return RunPurge(pPurge, ArgFlag(argc, argv, "--yes"));
     }
 
     // stdout is block-buffered when redirected to a file, so a service launched from a script or a
@@ -146,10 +247,12 @@ int main(int argc, char** argv)
     config.mnThreads = static_cast<size_t>(std::atoi(ArgStr(argc, argv, "--threads", "0")));
     config.msToken   = ArgStr(argc, argv, "--token", "");
 
-    JotStore store;
-    Ops      ops(store);
-    Journal  journal;
-    IpAcl    acl;
+    JotStore   store;
+    Ops        ops(store);
+    Journal    journal;
+    History    history;
+    SinkFanout sinks;
+    IpAcl      acl;
 
     const bool bPersist = !ArgFlag(argc, argv, "--no-persist");
 
@@ -201,9 +304,27 @@ int main(int argc, char** argv)
                                          : eSyncPolicy::kInterval;
 
         if (std::error_code ec = journal.Open(jcfg))
+        {
             std::printf("  journal failed to open: %s - running RAM only\n", ec.message().c_str());
+        }
         else
-            store.SetJournalSink(&journal);
+        {
+            sinks.Add(&journal);
+
+            // The undo log is opened AFTER the WAL and added to the fan-out second, so the
+            // durability path always sees a mutation first. A history failure is reported and then
+            // ignored: it costs undo, not data, and refusing to start over it would be the tail
+            // wagging the dog.
+            HistoryConfig hcfg;
+            hcfg.msPath = sDir + "/loom.history";
+            if (std::error_code ecHist = history.Open(hcfg))
+                std::printf("  history log failed to open: %s - undo unavailable\n",
+                            ecHist.message().c_str());
+            else
+                sinks.Add(&history);
+
+            store.SetJournalSink(&sinks);
+        }
     }
 
     // Import BEFORE seeding, and after the journal is open so imported records are durable.
@@ -236,7 +357,8 @@ int main(int argc, char** argv)
         std::printf("seeded %zu jots\n", store.Size());
     }
 
-    HttpServer server(ops, store, config, bPersist ? &journal : nullptr, snapConfig, acl);
+    HttpServer server(ops, store, config, bPersist ? &journal : nullptr, snapConfig, acl,
+                      &history);
     gpServer = &server;
     std::signal(SIGINT,  OnSignal);
     std::signal(SIGTERM, OnSignal);
@@ -262,6 +384,8 @@ int main(int argc, char** argv)
         else
             std::printf("snapshot wrote %zu records\n", nWritten);
         journal.Close();
+        // After the journal, so anything still queued in either has already been handed over.
+        history.Close();
     }
 
     if (ec)

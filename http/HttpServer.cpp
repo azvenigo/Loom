@@ -11,6 +11,7 @@
 #include "core/LoomTime.h"
 #include "codec/JotJson.h"
 #include "mcp/McpHandler.h"
+#include "persist/Purge.h"
 #include "web/Dashboard.h"
 #include "web/IconAssets.h"
 
@@ -214,19 +215,28 @@ struct HttpServer::Impl
     HttpConfig           mConfig;
     Journal*             mpJournal = nullptr;
     IpAcl&               mAcl;
+    History*             mpHistory = nullptr;
     McpHandler           mMcp;
     SnapshotConfig       mSnapConfig;
     crow::App<AclGuard>  mApp;
     std::atomic<bool>    mbStopping{ false };
 
     Impl(Ops& ops, JotStore& store, const HttpConfig& config,
-         Journal* pJournal, const SnapshotConfig& snapConfig, IpAcl& acl)
+         Journal* pJournal, const SnapshotConfig& snapConfig, IpAcl& acl, History* pHistory)
         : mOps(ops), mStore(store), mConfig(config), mpJournal(pJournal), mAcl(acl),
-          mMcp(ops, store), mSnapConfig(snapConfig)
+          mpHistory(pHistory), mMcp(ops, store), mSnapConfig(snapConfig)
     {
         // The middleware instance is owned by the app, so it is wired here rather than constructed
         // with a reference.
         mApp.get_middleware<AclGuard>().mpAcl = &mAcl;
+    }
+
+    // The purge request file sits beside the snapshot. Derived rather than passed so there is one
+    // definition of "the data directory" and it is the one persistence already uses.
+    std::string DataDir() const
+    {
+        const size_t nSlash = mSnapConfig.msPath.find_last_of("/\\");
+        return nSlash == std::string::npos ? std::string(".") : mSnapConfig.msPath.substr(0, nSlash);
     }
 
     NameTables Names() const
@@ -662,6 +672,197 @@ struct HttpServer::Impl
                       ",\"count\":" + std::to_string(vNow.size()) + "}");
         });
 
+        //------------------------------------------------------------------------------------
+        // History, restore and purge
+        //------------------------------------------------------------------------------------
+
+        CROW_ROUTE(mApp, "/history").methods(crow::HTTPMethod::Get)
+        ([this](const crow::request& req)
+        {
+            if (!Authorized(req)) return Fail(401, "missing or invalid bearer token");
+            if (!mpHistory)       return Fail(403, "running without persistence - no history log");
+
+            const std::string sBad = UnknownParam(req, { "limit", "offset", "id" });
+            if (!sBad.empty())
+                return Fail(400, "unknown query parameter '" + sBad + "'");
+
+            const tJotID idFilter = ParamI64(req, "id", kInvalidJotID);
+
+            std::vector<HistoryEntry> vEntries;
+            size_t nTotal = 0;
+            mpHistory->List(idFilter, ParamSize(req, "limit", 60), ParamSize(req, "offset", 0),
+                            vEntries, nTotal);
+
+            std::vector<crow::json::wvalue> vOut;
+            for (const HistoryEntry& e : vEntries)
+            {
+                crow::json::wvalue entry;
+                entry["seq"]     = e.mnSeq;
+                entry["at"]      = e.mnAtUS;
+                entry["op"]      = e.mbDelete ? "del" : "put";
+                entry["id"]      = e.mID;
+                entry["name"]    = e.msName;
+                entry["editor"]  = e.msEditor;
+                entry["summary"] = e.msSummary;
+                vOut.push_back(std::move(entry));
+            }
+
+            const HistoryStats st = mpHistory->Stats();
+            crow::json::wvalue out;
+            out["entries"]  = std::move(vOut);
+            out["total"]    = nTotal;
+            out["recorded"] = st.mnEntries;
+            out["bytes"]    = st.mnBytes;
+            return Ok(out.dump());
+        });
+
+        // Re-applies one logged version. A `put` entry restores itself; a `del` entry restores what
+        // was in force immediately before it, because "undo this delete" is the only thing anybody
+        // means by restoring a deletion.
+        CROW_ROUTE(mApp, "/history/restore").methods(crow::HTTPMethod::Post)
+        ([this](const crow::request& req)
+        {
+            if (!Authorized(req)) return Fail(401, "missing or invalid bearer token");
+            if (!mpHistory)       return Fail(403, "running without persistence - no history log");
+
+            auto body = crow::json::load(req.body);
+            if (!body || !body.has("seq"))
+                return Fail(400, "expected {\"seq\":N}");
+
+            const uint64_t nSeq = static_cast<uint64_t>(body["seq"].i());
+
+            HistoryEntry entry;
+            if (!mpHistory->Get(nSeq, entry))
+                return Fail(404, "no history entry " + std::to_string(nSeq) +
+                                 " - it may have aged out of the log");
+
+            HistoryEntry target = entry;
+            if (entry.mbDelete && !mpHistory->Previous(nSeq, target))
+                return Fail(404, "nothing to restore: this jot was deleted with no earlier version "
+                                 "still in the log");
+
+            FlatJot record;
+            std::string sError;
+            if (target.msRecord.empty() || !JOTJSON::ParseFlat(target.msRecord, record, sError))
+                return Fail(500, "history entry is unreadable: " + sError);
+
+            tJotID   conflictID = kInvalidJotID;
+            AddResult result;
+            if (std::error_code ec = mOps.Restore(record, conflictID, result))
+            {
+                if (conflictID != kInvalidJotID)
+                    return Fail(409, "the name '" + record.msName + "' now belongs to jot " +
+                                     std::to_string(conflictID) + " - rename or remove that one "
+                                     "first, or this restore would leave two jots claiming it");
+                return Fail(ec);
+            }
+
+            crow::json::wvalue out;
+            out["restored"]      = true;
+            out["from_seq"]      = target.mnSeq;
+            out["undid_delete"]  = entry.mbDelete;
+            out["jot"]           = crow::json::load(
+                JOTJSON::ToJson(Flatten(result.mJot, Names()), false));
+            return Ok(out.dump());
+        });
+
+        // Writes the request file and hands back the instructions. NOTHING IS ERASED HERE - see
+        // persist/Purge.h for why the destructive half cannot run inside a live server.
+        CROW_ROUTE(mApp, "/purge/request").methods(crow::HTTPMethod::Post)
+        ([this](const crow::request& req)
+        {
+            if (!Authorized(req)) return Fail(401, "missing or invalid bearer token");
+            if (!mpJournal)       return Fail(403, "running without persistence - nothing to purge");
+
+            auto body = crow::json::load(req.body);
+            if (!body || !body.has("ids"))
+                return Fail(400, "expected {\"ids\":[...],\"reason\":\"...\"}");
+
+            PurgeRequest request;
+            request.mnCreatedUS   = LOOMTIME::NowMicros();
+            request.msRequestedBy = req.remote_ip_address;
+            if (body.has("reason"))
+                request.msReason = body["reason"].s();
+
+            for (const auto& id : body["ids"])
+                request.mIDs.push_back(static_cast<tJotID>(id.i()));
+
+            if (request.mIDs.empty())
+                return Fail(400, "name at least one jot id to purge");
+
+            // Labels are captured NOW, while the jots still exist, because the confirmation step
+            // happens after the service is stopped and there is nothing left to look them up in.
+            for (tJotID id : request.mIDs)
+            {
+                PurgeLabel label;
+                label.mID = id;
+                Jot jot;
+                if (!mOps.Get(id, jot))
+                {
+                    const FlatJot flat = Flatten(jot, Names());
+                    label.msName = flat.msName;
+                    const std::string& sSrc = flat.msSummary.empty() ? flat.msText : flat.msSummary;
+                    label.msSummary = sSrc.substr(0, 100);
+                    if (sSrc.size() > 100)
+                        label.msSummary += "...";
+                }
+                request.mLabels.push_back(label);
+            }
+
+            const std::string sPath = PURGE::RequestPath(DataDir());
+            if (std::error_code ec = PURGE::WriteRequest(sPath, request))
+                return Fail(500, "could not write the purge request: " + ec.message());
+
+            crow::json::wvalue out;
+            out["written"]      = sPath;
+            out["ids"]          = request.mIDs.size();
+            out["instructions"] = PURGE::AgentInstructions(DataDir(), request);
+            return Ok(out.dump());
+        });
+
+        CROW_ROUTE(mApp, "/purge/request").methods(crow::HTTPMethod::Get)
+        ([this](const crow::request& req)
+        {
+            if (!Authorized(req)) return Fail(401, "missing or invalid bearer token");
+            if (!mpJournal)       return Fail(403, "running without persistence");
+
+            const std::string sPath = PURGE::RequestPath(DataDir());
+            PurgeRequest request;
+            std::string sError;
+            if (!PURGE::ReadRequest(sPath, request, sError))
+                return Fail(404, sError);
+
+            std::vector<crow::json::wvalue> vJots;
+            for (const PurgeLabel& label : request.mLabels)
+            {
+                crow::json::wvalue entry;
+                entry["id"]      = label.mID;
+                entry["name"]    = label.msName;
+                entry["summary"] = label.msSummary;
+                vJots.push_back(std::move(entry));
+            }
+
+            crow::json::wvalue out;
+            out["created"]      = request.mnCreatedUS;
+            out["reason"]       = request.msReason;
+            out["requested_by"] = request.msRequestedBy;
+            out["jots"]         = std::move(vJots);
+            out["instructions"] = PURGE::AgentInstructions(DataDir(), request);
+            return Ok(out.dump());
+        });
+
+        // Cancelling is just removing the file, and it is the reason the request is inert until
+        // somebody runs the offline half: right up to that point this undoes the whole thing.
+        CROW_ROUTE(mApp, "/purge/request").methods(crow::HTTPMethod::Delete)
+        ([this](const crow::request& req)
+        {
+            if (!Authorized(req)) return Fail(401, "missing or invalid bearer token");
+            if (!mpJournal)       return Fail(403, "running without persistence");
+
+            PURGE::ClearRequest(PURGE::RequestPath(DataDir()));
+            return Ok("{\"cancelled\":true}");
+        });
+
         CROW_ROUTE(mApp, "/admin/snapshot").methods(crow::HTTPMethod::Post)
         ([this](const crow::request& req)
         {
@@ -695,8 +896,9 @@ struct HttpServer::Impl
 //====================================================================================================
 
 HttpServer::HttpServer(Ops& ops, JotStore& store, const HttpConfig& config,
-                       Journal* pJournal, const SnapshotConfig& snapConfig, IpAcl& acl)
-    : mpImpl(std::make_unique<Impl>(ops, store, config, pJournal, snapConfig, acl))
+                       Journal* pJournal, const SnapshotConfig& snapConfig, IpAcl& acl,
+                       History* pHistory)
+    : mpImpl(std::make_unique<Impl>(ops, store, config, pJournal, snapConfig, acl, pHistory))
 {
     mpImpl->Routes();
 }

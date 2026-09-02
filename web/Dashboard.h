@@ -69,6 +69,9 @@ R"HTML(<!doctype html>
      highlight, not the ramp, do the lit-from-above work. Measured: every stop here clears 3.2:1
      against its own --panel. */
   --accent2:#7b4fd6; --good2:#2f7d5c; --warn2:#b0561a;
+  /* Second stop for the one destructive filled control. Defaults to --bad, i.e. a flat
+     fill, so a palette that has not thought about it looks exactly as it did. */
+  --bad2:var(--bad);
   /* The blue that means "normal" - a priority level, not a state. Every other semantic colour
      here already existed; there was no neutral-informational hue to code Normal with. */
   --info:#3b6fd4; --info-wash:#e8eefb; --info-line:#b9cdf0;
@@ -186,7 +189,7 @@ R"HTML(<!doctype html>
   --bad:#d4344f; --bad-wash:#fdecef; --bad-line:#f5bcc6;
   --good:#0f8f74; --good-wash:#e7f8f3; --good-line:#a9e2d3;
   --mark:#ffe9a3;
-  --accent2:#7d4ae8; --good2:#1b8f56; --warn2:#c98a1a;
+  --accent2:#7d4ae8; --good2:#1b8f56; --warn2:#c98a1a; --bad2:#e04a86;
   --info:#3f6fe0; --info-wash:#eaf0fe; --info-line:#c2cef6;
   --field-bg:#ffffff; --field-ink:#1c1839; --field-dim:#6a6394;
   --hi-a:#5b53ea; --hi-b:#0f9d8e; --hi-ang:105deg;
@@ -376,6 +379,48 @@ dialog#about b{color:var(--ink);font-weight:600}
 dialog#about code{font:11.5px var(--mono);background:var(--sunk);color:var(--accent-ink);
   padding:1px 5px;border-radius:4px}
 dialog#agent-dialog{width:min(640px,92vw)}
+
+/* ---------- history ----------
+   A change is a row, not a card: you scan history looking for one moment, so the shape that helps
+   is a dense uniform list with the verb and the time in fixed columns. The jot cards are for
+   deciding what to read; this is for deciding what to put back. */
+.hrow{display:flex;align-items:center;gap:11px;padding:9px 11px;border:1px solid var(--line);
+  border-radius:8px;margin-bottom:6px;background:var(--panel)}
+.hrow:hover{border-color:var(--dim)}
+.hrow.sel{border-color:var(--bad);background:var(--bad-wash)}
+.hop{flex:none;width:62px;font:9.5px var(--mono);text-transform:uppercase;letter-spacing:.06em;
+  font-weight:700;text-align:center;padding:3px 0;border-radius:4px}
+.hop.put{background:var(--accent-wash);color:var(--accent-ink)}
+.hop.new{background:var(--good-wash);color:var(--good)}
+.hop.del{background:var(--bad-wash);color:var(--bad)}
+.hmain{flex:1;min-width:0}
+.hname{font-size:13px;font-weight:600;color:var(--ink);overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap}
+.hname.gone{color:var(--faint);text-decoration:line-through}
+.hsum{font-size:11.5px;color:var(--faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hmeta{flex:none;font:10.5px var(--mono);color:var(--faint);text-align:right;min-width:104px}
+.hmeta b{display:block;color:var(--dim);font-weight:400}
+.hacts{flex:none;display:flex;align-items:center;gap:6px}
+.hacts input[type=checkbox]{width:auto;margin:0}
+.hseq{font:10px var(--mono);color:var(--faint);flex:none;min-width:34px;text-align:right}
+/* The purge banner is the one thing on this page that must not be mistaken for chrome. */
+.purgebanner{border:1px solid var(--bad-line);background:var(--bad-wash);border-radius:var(--r);
+  padding:14px 16px;margin-bottom:16px}
+.purgebanner h3{margin:0 0 6px;font-size:14px;color:var(--bad)}
+.purgebanner p{margin:0 0 10px;font-size:12.5px;color:var(--body);line-height:1.5}
+.purgebar{position:sticky;bottom:0;display:flex;align-items:center;gap:10px;padding:11px 14px;
+  border:1px solid var(--bad-line);background:var(--bad-wash);border-radius:var(--r);
+  margin-top:12px;font-size:12.5px;color:var(--body)}
+.purgebar button{margin-left:auto}
+dialog#purge-dialog{border:1px solid var(--line);border-radius:var(--r);padding:0;
+  width:min(680px,94vw);max-height:86vh;background:var(--panel);color:var(--body);overflow-y:auto}
+dialog#purge-dialog::backdrop{background:rgba(0,0,0,.5)}
+dialog#purge-dialog .body{padding:18px 20px 20px}
+dialog#purge-dialog h2{font:600 16px var(--sans);color:var(--ink);margin:0 0 6px}
+dialog#purge-dialog p{margin:0 0 12px;color:var(--dim);font-size:13.5px;line-height:1.55}
+.purgesteps{background:var(--sunk);border:1px solid var(--line);border-radius:8px;padding:12px 14px;
+  font:11.5px/1.6 var(--mono);color:var(--body);white-space:pre-wrap;max-height:38vh;
+  overflow-y:auto;margin-bottom:12px}
 
 /* ---------- access list ---------- */
 dialog#acl-dialog{border:1px solid var(--line);border-radius:var(--r);padding:0;
@@ -663,12 +708,12 @@ button.btn:active{box-shadow:inset 0 2px 4px rgba(0,0,0,.14)}
    plain declared tokens, because a var() that fails to substitute inside `background` does not
    fall back to the previous declaration - it unsets the property, and an invisible Save button is
    a far worse failure than a missing shadow. */
-button.primary,button.warnfill,.chip.on,.completebtn:not(.on),.prio label.on{
+button.primary,button.warnfill,button.badfill,.chip.on,.completebtn:not(.on),.prio label.on{
   color:var(--panel);border-style:solid;border-width:1px;
   box-shadow:0 1px 2px rgba(0,0,0,.16),inset 0 1px 0 rgba(255,255,255,.22)}
-button.primary:hover,button.warnfill:hover,.completebtn:not(.on):hover{
+button.primary:hover,button.warnfill:hover,button.badfill:hover,.completebtn:not(.on):hover{
   box-shadow:0 3px 12px rgba(0,0,0,.22),inset 0 1px 0 rgba(255,255,255,.3)}
-button.primary:active,button.warnfill:active,.completebtn:not(.on):active{
+button.primary:active,button.warnfill:active,button.badfill:active,.completebtn:not(.on):active{
   filter:brightness(.96);box-shadow:inset 0 2px 5px rgba(0,0,0,.3)}
 
 button.primary,.chip.on,.prio label.on{
@@ -680,11 +725,19 @@ button.primary:hover{filter:brightness(1.05) saturate(1.08);border-color:var(--a
 button.warnfill{background:linear-gradient(var(--cta-ang),var(--cta-a),var(--cta-b));
   border-color:var(--cta-edge);font-weight:600}
 button.warnfill:hover{filter:brightness(1.05) saturate(1.08);border-color:var(--cta-edge)}
+/* The same recipe again, tinted --bad. EXACTLY ONE control in the app wears this - the purge - and
+   that is the point: an irreversible action should not be wearing the same clothes as Save. It is a
+   class on the shared recipe rather than a rule on one id so the filled buttons stay siblings. */
+button.badfill{background:linear-gradient(170deg,var(--bad2),var(--bad));
+  border-color:var(--bad);font-weight:600}
+button.badfill:hover{filter:brightness(1.05) saturate(1.08);border-color:var(--bad)}
 
 @supports (color:color-mix(in srgb,red,blue)){
   button.primary:hover{box-shadow:0 3px 14px color-mix(in srgb,var(--accent) 45%,transparent),
     inset 0 1px 0 rgba(255,255,255,.3)}
   button.warnfill:hover{box-shadow:0 3px 14px color-mix(in srgb,var(--cta-b) 45%,transparent),
+    inset 0 1px 0 rgba(255,255,255,.3)}
+  button.badfill:hover{box-shadow:0 3px 14px color-mix(in srgb,var(--bad) 45%,transparent),
     inset 0 1px 0 rgba(255,255,255,.3)}
   .completebtn:not(.on):hover{box-shadow:0 3px 14px color-mix(in srgb,var(--good) 45%,transparent),
     inset 0 1px 0 rgba(255,255,255,.3)}
@@ -1186,6 +1239,36 @@ label u{text-decoration:none;color:var(--accent-ink);text-transform:none;letter-
   </div>
 </dialog>
 
+<dialog id="purge-dialog">
+  <div class="body">
+    <div id="purge-ask">
+      <h2>Request a purge</h2>
+      <p>This erases <b id="purge-count"></b> from the snapshot, the write-ahead log and the history
+         log - every version, not just the current one. It is the tool for something that should
+         never have been written down, and it cannot be undone by anything, because the undo log is
+         one of the things being erased.</p>
+      <p>Nothing is erased now. This writes a request file and hands you a short procedure to
+         follow - or to give an agent - which stops the service, purges, and starts it again.</p>
+      <label for="purge-reason">Why</label>
+      <input type="text" id="purge-reason" placeholder="e.g. pasted a live API key into a note">
+      <div class="row" style="margin-top:14px">
+        <button type="button" class="btn badfill" id="purge-submit">Write the request</button>
+        <button type="button" class="btn ghost" id="purge-cancel">Cancel</button>
+      </div>
+    </div>
+    <div id="purge-done" style="display:none">
+      <h2>Purge requested</h2>
+      <p>Nothing has been erased yet. Follow these steps, or paste them to an agent - the
+         confirmation in step 1 is the point, so do not skip it.</p>
+      <div class="purgesteps" id="purge-step"></div>
+      <div class="row">
+        <button type="button" class="btn primary" id="purge-copy">Copy instructions</button>
+        <button type="button" class="btn ghost" id="purge-close">Close</button>
+      </div>
+    </div>
+  </div>
+</dialog>
+
 <dialog id="acl-dialog">
   <div class="body">
     <h2>Access list</h2>
@@ -1331,9 +1414,12 @@ const NAV_ICONS={
   tags:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">'+
     '<path d="M6.2 2 4.7 14M11.3 2 9.8 14M3 6h11M2 10h11"/></svg>',
   health:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">'+
-    '<path d="M1.8 8h3l1.6-4 2.6 8 1.7-4h3.5"/></svg>'
+    '<path d="M1.8 8h3l1.6-4 2.6 8 1.7-4h3.5"/></svg>',
+  history:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">'+
+    '<path d="M2.4 8a5.6 5.6 0 1 0 1.7-4"/><path d="M2 2.6V6h3.4"/><path d="M8 5.2V8l2 1.4"/></svg>'
 };
-const VIEWS=[['dashboard','Dashboard'],['search','Search'],['tags','Tags'],['health','Health']];
+const VIEWS=[['dashboard','Dashboard'],['search','Search'],['tags','Tags'],
+             ['history','History'],['health','Health']];
 let navTabEls=[];
 function drawNav(){
   const N=$('#nav');N.innerHTML='';
@@ -2132,6 +2218,192 @@ async function viewHealth(target){
   }catch(e){L.append(el('div','note bad',e.message));}
 }
 
+/* ---------- history ----------
+   Reads GET /history and offers the two things the log is for: putting a version back, and - when
+   something was written down that should never have been - marking jots for a purge.
+
+   RESTORE AND PURGE ARE DELIBERATELY UNALIKE HERE. Restore is one click with an undo toast, because
+   it is reversible: restoring the wrong version just adds another entry you can restore past. Purge
+   takes a checkbox, a reason, a dialog and then a procedure carried out with the service stopped,
+   because it is the one operation in Loom that nothing can walk back - including the log this page
+   is showing you. The asymmetry in the UI is the point. */
+let histFilterID=0;
+let purgeSel=new Set();
+
+function histOpClass(e,bFirstForJot){
+  if(e.op==='del')return 'del';
+  return bFirstForJot?'new':'put';
+}
+
+async function viewHistory(target){
+  const L=target;
+
+  /* A pending request outranks everything else on the page: it means somebody has already asked
+     for an irreversible thing and it is sitting there waiting to be carried out or cancelled. */
+  try{
+    const pending=await api('/purge/request');
+    const b=el('div','purgebanner');
+    b.append(el('h3',null,'A purge is pending'));
+    const p=el('p');
+    p.append(document.createTextNode(
+      pending.jots.length+' jot'+(pending.jots.length===1?'':'s')+' marked by '+
+      (pending.requested_by||'someone')+' on '+stamp(pending.created)+'. '+
+      'Nothing has been erased yet - the request is inert until somebody runs the offline purge.'));
+    b.append(p);
+    if(pending.reason)b.append(el('p',null,'Reason: '+pending.reason));
+    const row=el('div','row');
+    const show=el('button','btn tiny','Show instructions');
+    show.onclick=function(){showPurgeInstructions(pending.instructions);};
+    const cancel=el('button','btn tiny danger','Cancel the request');
+    cancel.onclick=async function(){
+      try{await api('/purge/request',{method:'DELETE'});toast('purge request cancelled');render();}
+      catch(e){toast(e.message,'bad');}
+    };
+    row.append(show,cancel);b.append(row);
+    L.append(b);
+  }catch(e){/* 404 is the normal case - no request pending */}
+
+  const head=el('div','row');head.style.marginBottom='14px';
+  head.append(el('div','sect','Every change, newest first'));
+  if(histFilterID){
+    const clear=el('button','btn tiny','Showing one jot - show all');
+    clear.onclick=function(){histFilterID=0;render();};
+    head.append(clear);
+  }
+  L.append(head);
+
+  let data;
+  try{
+    data=await api('/history?limit=200'+(histFilterID?'&id='+histFilterID:''));
+  }catch(e){
+    L.append(el('div','note bad',e.message));
+    return;
+  }
+
+  if(!data.entries.length){
+    L.append(el('div','note','Nothing recorded yet. Every create, edit and delete lands here.'));
+    return;
+  }
+
+  /* Oldest-first pass to work out which entry is a jot's FIRST, so it can read "created" rather
+     than "edited" - the log itself does not distinguish them, because a put is a put. */
+  const seen=new Set();
+  const firstSeq=new Set();
+  for(let i=data.entries.length-1;i>=0;i--){
+    const e=data.entries[i];
+    if(e.op!=='del'&&!seen.has(e.id)){seen.add(e.id);firstSeq.add(e.seq);}
+  }
+
+  let lastDay='';
+  data.entries.forEach(function(e){
+    const day=dayKey(e.at);
+    if(day!==lastDay){lastDay=day;L.append(el('div','daybar',dayLabel(e.at)));}
+
+    const row=el('div','hrow'+(purgeSel.has(e.id)?' sel':''));
+    const cls=histOpClass(e,firstSeq.has(e.seq));
+    row.append(el('div','hop '+cls,cls==='del'?'deleted':(cls==='new'?'created':'edited')));
+
+    const main=el('div','hmain');
+    const name=el('div','hname'+(e.op==='del'?' gone':''),e.name||'(unnamed)');
+    main.append(name);
+    if(e.summary)main.append(el('div','hsum',e.summary));
+    /* Clicking the row filters to that jot - "what else happened to this one" is the question you
+       always have next. */
+    main.style.cursor='pointer';
+    main.onclick=function(){histFilterID=e.id;render();};
+    row.append(main);
+
+    const meta=el('div','hmeta');
+    meta.append(el('b',null,e.editor||'user'));
+    meta.append(document.createTextNode(ago(e.at)));
+    row.append(meta);
+
+    const acts=el('div','hacts');
+    const rb=el('button','btn tiny',e.op==='del'?'Undo delete':'Restore');
+    rb.title=e.op==='del'
+      ?'Put this jot back as it was immediately before the delete'
+      :'Make this jot look like it did at this point';
+    rb.onclick=async function(){
+      rb.disabled=true;
+      try{
+        const r=await api('/history/restore',
+          {method:'POST',headers:{'Content-Type':'application/json'},
+           body:JSON.stringify({seq:e.seq})});
+        toast(r.undid_delete?'restored '+(r.jot.name||'the jot')
+                            :'restored '+(r.jot.name||'the jot')+' to that version');
+        render();
+      }catch(err){toast(err.message,'bad');rb.disabled=false;}
+    };
+    acts.append(rb);
+
+    const cb=el('input');cb.type='checkbox';cb.checked=purgeSel.has(e.id);
+    cb.title='Mark this jot for purging';
+    cb.onchange=function(){
+      if(cb.checked)purgeSel.add(e.id);else purgeSel.delete(e.id);
+      render();
+    };
+    acts.append(cb);
+    row.append(acts);
+    L.append(row);
+  });
+
+  if(data.total>data.entries.length)
+    L.append(el('div','note','Showing the most recent '+data.entries.length+' of '+data.total+
+      ' entries in memory. Older ones are still in loom.history on disk.'));
+
+  if(purgeSel.size){
+    const bar=el('div','purgebar');
+    bar.append(document.createTextNode(
+      purgeSel.size+' jot'+(purgeSel.size===1?'':'s')+' marked. Purging erases every version of '+
+      'them from the snapshot, the WAL and this log - it cannot be undone.'));
+    const go=el('button','btn tiny danger','Request purge...');
+    go.onclick=openPurge;
+    const clr=el('button','btn tiny ghost','Clear');
+    clr.onclick=function(){purgeSel.clear();render();};
+    bar.append(go,clr);
+    L.append(bar);
+  }
+}
+
+function showPurgeInstructions(sText){
+  $('#purge-step').textContent=sText;
+  $('#purge-ask').style.display='none';
+  $('#purge-done').style.display='';
+  /* Reached two ways: from the pending banner with the dialog CLOSED, and from Write-the-request
+     with it already open on the ask step. showModal() on an open dialog throws InvalidStateError,
+     so the second path has to swap panels without reopening. */
+  const d=$('#purge-dialog');
+  if(!d.open)d.showModal();
+}
+
+function openPurge(){
+  $('#purge-reason').value='';
+  $('#purge-count').textContent=purgeSel.size+' jot'+(purgeSel.size===1?'':'s');
+  $('#purge-ask').style.display='';
+  $('#purge-done').style.display='none';
+  $('#purge-dialog').showModal();
+  $('#purge-reason').focus();
+}
+
+$('#purge-cancel').addEventListener('click',()=>$('#purge-dialog').close());
+$('#purge-close').addEventListener('click',function(){$('#purge-dialog').close();render();});
+$('#purge-copy').addEventListener('click',function(){
+  navigator.clipboard.writeText($('#purge-step').textContent)
+    .then(()=>toast('instructions copied - paste them to an agent'))
+    .catch(()=>toast('could not copy','bad'));
+});
+$('#purge-submit').addEventListener('click',async function(){
+  const reason=$('#purge-reason').value.trim();
+  if(!reason){toast('say why - the confirmation step depends on it','warn');return;}
+  try{
+    const r=await api('/purge/request',
+      {method:'POST',headers:{'Content-Type':'application/json'},
+       body:JSON.stringify({ids:Array.from(purgeSel),reason:reason})});
+    purgeSel.clear();
+    showPurgeInstructions(r.instructions);
+  }catch(e){toast(e.message,'bad');}
+});
+
 /* ---------- detail / editor ---------- */
 function renderDetail(){
   const dlg=$('#detail-dialog');
@@ -2419,6 +2691,7 @@ async function render(){
   if(view==='dashboard')await viewDashboard(D);
   else if(view==='search')await viewSearch(D);
   else if(view==='tags')await viewTags(D);
+  else if(view==='history')await viewHistory(D);
   else await viewHealth(D);
   const L=$('#list');
   const keepScroll=(view===lastRenderedView);

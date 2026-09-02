@@ -73,10 +73,47 @@ loom --port=7700 --data=./data
 
 Run `loom --help` for the full flag list.
 
+### Undo and restore
+
+Every mutation is also appended to `DIR/loom.history` — which, unlike the WAL, is **never truncated
+by a snapshot**. Because a journal put already carries the complete record, the previous entry for a
+jot *is* its before-image, so restoring is just re-applying a line that is already in the log.
+
+- `GET /history?limit=&offset=&id=` — every change, newest first.
+- `POST /history/restore` `{"seq":N}` — put that version back. A `del` entry restores whatever was in
+  force immediately before it, which is what "undo this delete" means.
+- The dashboard's **History** view is the same thing with buttons.
+
+The id is kept (so links to the jot survive, and a deleted jot comes back at the address others still
+reference) but `updated` is stamped now, because the restore is a change and it happened now. A
+restore is refused if the slug has since been taken by a different jot.
+
+### Purge
+
+`DELETE /jots/<id>` removes a jot from RAM and appends a tombstone. The text is still in the
+snapshot, still in the WAL above the tombstone, and now also in the history log — which exists
+precisely so deletions can be undone. If what you wrote down was a credential, "deleted" is not a
+description of where it is.
+
+Purge is the other thing, and it is deliberately a two-step procedure:
+
+1. `POST /purge/request` `{"ids":[...],"reason":"..."}` — or the History view — writes
+   `DIR/loom.purge-request.json` naming the jots, why, and what they looked like at the time.
+   **Nothing is erased.** `DELETE /purge/request` cancels it.
+2. `loom --purge=DIR` does the work with the service **stopped**. On its own it is a dry run; add
+   `--yes` to erase. It rewrites the snapshot, empties the WAL and scrubs both history generations.
+
+It cannot run inside a live server — the snapshot, WAL and history log are all open and being
+appended to, and there is no correct ordering for rewriting them underneath that. The interlock is
+the data lock itself, so a purge attempted against a running instance refuses rather than corrupting
+anything. The request carries labels captured *before* the purge so that "yes, those ones" stays
+answerable after the content is gone, which is the point of the confirmation step.
+
 ## Status
 
 Working: core store, persistence, REST, MCP, dashboard, an importer for simple `{"ts","entry"}`
-JSONL logs. Not yet built: a Linux build, and a design for backing a shared markdown-based memory
+JSONL logs, a runtime address allow list, and an append-only history log with per-jot restore and
+an offline purge. Not yet built: a Linux build, and a design for backing a shared markdown-based memory
 store (files-as-source-of-truth, offline reconcile, conflict review) sketched but not implemented.
 
 ## License
