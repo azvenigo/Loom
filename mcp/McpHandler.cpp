@@ -492,7 +492,10 @@ namespace
                 "Loom is a shared memory that several agents and a human write to at once.\n"
                 "Search before writing - the thing you are about to record may already be here.\n"
                 "Check loom_tags before inventing a tag.\n"
-                "When editing, pass expect_updated so a concurrent write is reported rather than lost.";
+                "When editing, pass expect_updated so a concurrent write is reported rather than lost.\n"
+                "Tag actionable open work `todo`. When it is finished, ADD `status:done` and KEEP\n"
+                "`todo` - do not remove it. The pair is the record that the work happened; removing\n"
+                "`todo` erases it. Open work is todo minus status:done.";
             return RpcResult(id, result);
         }
 
