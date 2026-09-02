@@ -63,6 +63,13 @@ loom --port=7700 --data=./data
 - `--seed` populates a few sample jots, only if the store loads empty.
 - `--bind=0.0.0.0` to listen beyond loopback — pair it with `--token=SECRET` unless the network is
   fully trusted. Default bind is `127.0.0.1`.
+- **Address allow list.** `GET /acl` and `PUT /acl`, or the shield beside the connection state at
+  the foot of the dashboard's rail. When enabled, Loom answers only the listed addresses (exact or
+  CIDR, v4 and v6) and refuses everything else — dashboard, REST, MCP and `/health` alike. It
+  composes with `--token` rather than replacing it. **Loopback is always allowed and cannot be
+  removed**, so a list that locks out the network can always be repaired from the machine itself;
+  `PUT /acl` additionally refuses a list excluding the caller unless you pass `?force=1`. Stored in
+  `DIR/loom.acl.json`.
 
 Run `loom --help` for the full flag list.
 

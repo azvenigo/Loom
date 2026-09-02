@@ -60,6 +60,7 @@ endif()
 #####################################################################################################
 
 add_library(loomcore STATIC
+    core/IpAcl.cpp
     core/JotStore.cpp
     core/LoomTime.cpp
     core/Ops.cpp
@@ -72,7 +73,7 @@ add_library(loomcore STATIC
     persist/Importer.cpp
     mcp/McpHandler.cpp
 
-    core/FlatJot.h  core/Interner.h  core/Jot.h      core/JotStore.h
+    core/FlatJot.h  core/Interner.h  core/IpAcl.h    core/Jot.h      core/JotStore.h
     core/LoomError.h core/LoomTime.h core/Ops.h      core/Query.h
     core/TagRegistry.h core/Tokenizer.h
     codec/JotJson.h
@@ -87,6 +88,7 @@ target_link_libraries(loomcore PUBLIC Threads::Threads)
 
 # These four include vendored nlohmann, which does not survive /Wall /WX.
 set_source_files_properties(
+    core/IpAcl.cpp
     codec/JotJson.cpp persist/Journal.cpp persist/Snapshot.cpp persist/Importer.cpp
     mcp/McpHandler.cpp
     PROPERTIES COMPILE_OPTIONS "$<IF:$<CXX_COMPILER_ID:MSVC>,/W3;/WX-,-w>")

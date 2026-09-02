@@ -16,6 +16,7 @@
 // Exit code 0 means everything passed. Anything else means read the output.
 //////////////////////////////////////////////////////////////////////////////////////////////////
 
+#include "core/IpAcl.h"
 #include "core/JotStore.h"
 #include "core/LoomTime.h"
 #include "core/Ops.h"
@@ -23,6 +24,7 @@
 #include "core/Tokenizer.h"
 
 #include <algorithm>
+#include <cstring>
 #include <atomic>
 #include <cstdio>
 #include <set>
@@ -616,8 +618,119 @@ namespace
         Check(SearchIDs(ops, spec) == vBefore,
               "indexes still agree with a clean rebuild after concurrent mutation");
     }
-}
 
+
+    //--------------------------------------------------------------------------------------------
+    // IpAcl. The matcher is a security control, so the cases that matter are the ones where a bug
+    // fails OPEN: a rule that accidentally matches everything, or an address spelling that slips
+    // past a list that should have caught it.
+    //--------------------------------------------------------------------------------------------
+    bool Allowed(IpAcl& acl, const char* pAddr)
+    {
+        return acl.Allows(pAddr);
+    }
+
+    void TestIpAclParsing()
+    {
+        Section("ip acl - parsing");
+
+        AclRule rule;
+        Check(IpAcl::ParseRule("192.168.1.5", rule),        "plain v4 address parses");
+        Check(rule.mnPrefixBits == 128,                     "a bare address is an exact match");
+        Check(IpAcl::ParseRule("192.168.1.0/24", rule),     "v4 cidr parses");
+        Check(rule.mnPrefixBits == 120,                     "v4 /24 becomes 120 bits of the mapped form");
+        Check(IpAcl::ParseRule("2001:db8::/32", rule),      "v6 cidr parses");
+        Check(rule.mnPrefixBits == 32,                      "v6 prefix is taken as written");
+        Check(IpAcl::ParseRule("::1", rule),                "compressed v6 parses");
+        Check(IpAcl::ParseRule("::ffff:192.168.1.1", rule), "v4-mapped v6 literal parses");
+
+        Check(!IpAcl::ParseRule("", rule),                  "empty rule rejected");
+        Check(!IpAcl::ParseRule("192.168.1", rule),         "short v4 rejected");
+        Check(!IpAcl::ParseRule("192.168.1.256", rule),     "out-of-range octet rejected");
+        Check(!IpAcl::ParseRule("192.168.01.1", rule),      "leading-zero octet rejected as ambiguous");
+        Check(!IpAcl::ParseRule("192.168.1.0/33", rule),    "v4 prefix over 32 rejected");
+        Check(!IpAcl::ParseRule("2001:db8::/129", rule),    "v6 prefix over 128 rejected");
+        Check(!IpAcl::ParseRule("1::2::3", rule),           "double compression rejected");
+        Check(!IpAcl::ParseRule("not an address", rule),    "garbage rejected");
+
+        // Host bits must be discarded or two spellings of one network stop agreeing.
+        AclRule a, b;
+        Check(IpAcl::ParseRule("192.168.1.5/24", a) && IpAcl::ParseRule("192.168.1.0/24", b) &&
+              std::memcmp(a.mBytes, b.mBytes, 16) == 0,
+              "host bits are zeroed so /24 spellings normalize to the same network");
+
+        Check(IpAcl::IsLoopback("127.0.0.1"),               "127.0.0.1 is loopback");
+        Check(IpAcl::IsLoopback("127.1.2.3"),               "all of 127/8 is loopback");
+        Check(IpAcl::IsLoopback("::1"),                     "::1 is loopback");
+        Check(IpAcl::IsLoopback("::ffff:127.0.0.1"),        "mapped loopback is loopback");
+        Check(!IpAcl::IsLoopback("192.168.1.1"),            "a lan address is not loopback");
+        Check(!IpAcl::IsLoopback("128.0.0.1"),              "128.0.0.1 is not loopback");
+    }
+
+    void TestIpAclMatching()
+    {
+        Section("ip acl - matching");
+
+        IpAcl acl;
+        std::string sWarn;
+
+        // Disabled is the shipped default and must allow everything, or an upgrade locks the
+        // operator out of a service that was working a minute ago.
+        Check(Allowed(acl, "8.8.8.8"),   "a disabled list allows any address");
+        Check(!acl.Enabled(),            "a fresh list is disabled");
+
+        std::string sBad;
+        std::vector<AclEntry> v;
+        v.push_back({ "192.168.1.0/24", "home lan" });
+        Check(!acl.Set(true, v, sBad),   "enabling with one rule succeeds");
+        Check(acl.Enabled(),             "list reports enabled");
+
+        Check(Allowed(acl, "192.168.1.112"),  "an address inside the range is allowed");
+        Check(Allowed(acl, "192.168.1.0"),    "the network address itself is allowed");
+        Check(Allowed(acl, "192.168.1.255"),  "the broadcast address is allowed");
+        Check(!Allowed(acl, "192.168.2.1"),   "an address outside the range is refused");
+        Check(!Allowed(acl, "8.8.8.8"),       "an internet address is refused");
+
+        // THE ONE THAT ACTUALLY BITES. A dual-stack listener may report a v4 caller in the mapped
+        // form, and a list written in v4 has to catch it either way.
+        Check(Allowed(acl, "::ffff:192.168.1.112"),
+              "a v4 rule matches the v4-mapped spelling of the same caller");
+        Check(!Allowed(acl, "::ffff:192.168.2.1"),
+              "and still refuses a mapped address outside the range");
+
+        // Loopback is the floor, and it holds even though no rule mentions it.
+        Check(Allowed(acl, "127.0.0.1"), "loopback is allowed with no rule for it");
+        Check(Allowed(acl, "::1"),       "v6 loopback is allowed with no rule for it");
+
+        // An unparseable caller address must fail CLOSED once the list is on.
+        Check(!Allowed(acl, "garbage"),  "an unparseable remote address is refused");
+        Check(!Allowed(acl, ""),         "an empty remote address is refused");
+
+        // A rejected edit must leave the running list untouched, not half-applied.
+        std::vector<AclEntry> vBad;
+        vBad.push_back({ "10.0.0.0/8", "" });
+        vBad.push_back({ "nonsense", "" });
+        Check(static_cast<bool>(acl.Set(true, vBad, sBad)),
+              "a list containing a bad rule is rejected");
+        Check(sBad == "nonsense",        "the offending rule is named");
+        Check(Allowed(acl, "192.168.1.112") && !Allowed(acl, "10.1.2.3"),
+              "the previous list is still in force after a rejected edit");
+
+        // Exact host rules, and v6.
+        std::vector<AclEntry> v2;
+        v2.push_back({ "10.0.0.7", "" });
+        v2.push_back({ "2001:db8::/32", "" });
+        Check(!acl.Set(true, v2, sBad),      "replacing the list succeeds");
+        Check(Allowed(acl, "10.0.0.7"),      "an exact host rule matches");
+        Check(!Allowed(acl, "10.0.0.8"),     "and matches nothing adjacent");
+        Check(Allowed(acl, "2001:db8:1::9"), "a v6 prefix matches inside itself");
+        Check(!Allowed(acl, "2001:db9::1"),  "and refuses outside itself");
+
+        // Turning it off is the way back for someone who is already in.
+        Check(!acl.Set(false, v2, sBad), "disabling succeeds");
+        Check(Allowed(acl, "8.8.8.8"),   "everything is allowed again once disabled");
+    }
+}
 
 int main()
 {
@@ -633,6 +746,10 @@ int main()
     TestTagSuggestions();
     TestSearch();
     TestIndexCoherence();
+    TestIpAclParsing();
+    TestIpAclMatching();
+    // LAST on purpose: this one is known to hang (4 spinning readers starve both writers on
+    // JotStore's shared_mutex), so anything sequenced after it never runs.
     TestConcurrentReadWrite();
 
     std::printf("\n%d checks, %d failed\n", gnChecks, gnFailed);

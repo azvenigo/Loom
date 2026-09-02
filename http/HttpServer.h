@@ -1,6 +1,7 @@
 #pragma once
 // Copyright (c) 2026 Alexander Zvenigorodsky. MIT License. See LICENSE.
 
+#include "core/IpAcl.h"
 #include "core/Ops.h"
 #include "persist/Journal.h"
 #include "persist/Snapshot.h"
@@ -44,8 +45,13 @@ class HttpServer
 {
 public:
     // pJournal may be null (RAM-only). snapConfig is only read when pJournal is non-null.
+    //
+    // acl is taken by reference and outlives the server: it is enforced in a crow middleware rather
+    // than at the top of each handler, which is the difference between a control that covers every
+    // route and one that covers every route somebody remembered. A route added later is gated
+    // whether or not its author knew the list existed.
     HttpServer(Ops& ops, JotStore& store, const HttpConfig& config,
-               Journal* pJournal, const SnapshotConfig& snapConfig);
+               Journal* pJournal, const SnapshotConfig& snapConfig, IpAcl& acl);
     ~HttpServer();
 
     HttpServer(const HttpServer&)            = delete;

@@ -376,6 +376,46 @@ dialog#about b{color:var(--ink);font-weight:600}
 dialog#about code{font:11.5px var(--mono);background:var(--sunk);color:var(--accent-ink);
   padding:1px 5px;border-radius:4px}
 dialog#agent-dialog{width:min(640px,92vw)}
+
+/* ---------- access list ---------- */
+dialog#acl-dialog{border:1px solid var(--line);border-radius:var(--r);padding:0;
+  width:min(560px,92vw);background:var(--panel);color:var(--body);overflow:hidden}
+dialog#acl-dialog::backdrop{background:rgba(0,0,0,.45)}
+dialog#acl-dialog .body{padding:18px 20px 20px}
+dialog#acl-dialog h2{font:600 16px var(--sans);color:var(--ink);margin:0 0 6px}
+dialog#acl-dialog p{margin:0 0 14px;color:var(--dim);font-size:13.5px;line-height:1.55}
+.aclswitch{display:flex;align-items:center;gap:10px;padding:11px 13px;border-radius:8px;
+  background:var(--sunk);margin-bottom:14px}
+.aclswitch input{width:auto;margin:0;flex:none}
+/* The bare `label` rule is a 10px mono all-caps field caption for the editor. This one is a
+   sentence you read, so it opts out of every part of that. */
+.aclswitch label{display:inline;font:600 13.5px var(--sans);color:var(--ink);cursor:pointer;
+  text-transform:none;letter-spacing:normal}
+.aclswitch .sub{margin-left:auto;font:11px var(--mono);color:var(--faint)}
+.aclrules{display:flex;flex-direction:column;gap:6px;margin-bottom:12px;max-height:34vh;
+  overflow-y:auto}
+.aclrule{display:flex;align-items:center;gap:9px;padding:7px 9px;border:1px solid var(--line);
+  border-radius:7px}
+.aclrule .r{font:12px var(--mono);color:var(--ink);flex:none}
+.aclrule .n{font-size:12px;color:var(--faint);flex:1;min-width:0;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+/* The rule covering the caller is marked, because "am I about to lock myself out" is the only
+   question anybody actually has while looking at this list. */
+.aclrule.self{border-color:var(--good-line);background:var(--good-wash)}
+.aclrule .me{font:9.5px var(--mono);text-transform:uppercase;letter-spacing:.06em;
+  color:var(--good);font-weight:700;flex:none}
+.aclrule button{flex:none;background:none;border:0;color:var(--faint);cursor:pointer;
+  font-size:15px;line-height:1;padding:0 2px}
+.aclrule button:hover{color:var(--bad)}
+.aclempty{color:var(--faint);font-size:12.5px;padding:10px 2px}
+.aclcaller{display:flex;align-items:center;gap:8px;margin-bottom:12px;font-size:12.5px;
+  color:var(--dim)}
+.aclcaller b{font:12px var(--mono);color:var(--ink);font-weight:600}
+.aclcaller button{margin-left:auto}
+.aclerr{background:var(--bad-wash);border:1px solid var(--bad-line);color:var(--bad);
+  border-radius:7px;padding:9px 11px;font-size:12.5px;line-height:1.5;margin-bottom:12px}
+.aclerr .row{margin-top:9px}
+.aclnote{font-size:12px;color:var(--faint);line-height:1.5;margin:0 0 14px}
 dialog#agent-dialog .promptbox{max-height:min(50vh,460px);overflow-y:auto}
 dialog#agent-dialog .row button{flex:1}
 
@@ -412,6 +452,20 @@ dialog#detail-dialog .dclose:hover{background:var(--sunk);color:var(--ink)}
 .live{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--dim)}
 .dot{width:7px;height:7px;border-radius:50%;background:var(--good);flex:none}
 .dot.off{background:var(--bad)}
+/* Connection state and the access list share a row at the floor of the rail. They belong together:
+   both answer "can I talk to this thing, and who else can" - and the shield only means anything
+   next to something that says the service is up. */
+.footrow{display:flex;align-items:center;gap:8px}
+.footrow #live-slot{flex:1;min-width:0}
+.shieldbtn{flex:none;width:26px;height:26px;border-radius:7px;border:1px solid transparent;
+  background:none;color:var(--faint);cursor:pointer;display:flex;align-items:center;
+  justify-content:center;padding:0}
+.shieldbtn svg{width:14px;height:14px}
+.shieldbtn:hover{background:var(--sunk);color:var(--ink);border-color:var(--line)}
+/* On is not a colour change alone - the icon swaps to a closed shackle. A colour-only state is one
+   a colour-blind reader has to take on trust, and this is the control that decides who can reach
+   the service. */
+.shieldbtn.on{color:var(--good);background:var(--good-wash);border-color:var(--good-line)}
 
 /* ---------- topbar ----------
    Deliberately thin and mostly empty. The search field is the only thing here that's used every
@@ -1008,7 +1062,13 @@ label u{text-decoration:none;color:var(--accent-ink);text-transform:none;letter-
     </div>
 
     <div class="side-foot">
-      <div id="live-slot"></div>
+      <div class="footrow">
+        <div id="live-slot"></div>
+        <button type="button" class="shieldbtn" id="acl-btn" title="Access list">
+          <svg id="acl-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+               stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></svg>
+        </button>
+      </div>
       <button type="button" class="btn tiny" id="notif-btn" title="Browser reminders for due TODOs">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
           <path d="M4 6.2a4 4 0 0 1 8 0c0 3 1 4 1.4 4.6H2.6C3 10.2 4 9.2 4 6.2Z"/><path d="M6.6 13a1.5 1.5 0 0 0 2.8 0"/>
@@ -1122,6 +1182,38 @@ label u{text-decoration:none;color:var(--accent-ink);text-transform:none;letter-
     <div class="row" style="margin-top:12px">
       <button type="button" class="btn primary" id="agent-copy">Copy prompt</button>
       <button type="button" class="btn ghost" id="agent-close">Close</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="acl-dialog">
+  <div class="body">
+    <h2>Access list</h2>
+    <p>When this is on, Loom answers only the addresses listed here and refuses everything else -
+       the dashboard, the API and MCP alike.</p>
+    <div id="acl-err"></div>
+    <div class="aclswitch">
+      <input type="checkbox" id="acl-enabled">
+      <label for="acl-enabled">Only answer listed addresses</label>
+      <span class="sub" id="acl-count"></span>
+    </div>
+    <div class="aclcaller">
+      You are <b id="acl-caller"></b>
+      <button type="button" class="btn tiny" id="acl-addme">Add this address</button>
+    </div>
+    <div class="aclrules" id="acl-rules"></div>
+    <div class="row" style="margin-bottom:14px">
+      <input type="text" id="acl-input" placeholder="192.168.1.0/24  or  10.0.0.7"
+             style="flex:2;min-width:120px">
+      <input type="text" id="acl-note" placeholder="note (optional)" style="flex:1;min-width:90px">
+      <button type="button" class="btn" id="acl-add">Add</button>
+    </div>
+    <p class="aclnote">This machine can always reach Loom, whatever the list says - that is what
+       stops a typo here from locking you out permanently. Repair a bad list from a browser or
+       curl on the server itself.</p>
+    <div class="row">
+      <button type="button" class="btn primary" id="acl-save">Save</button>
+      <button type="button" class="btn ghost" id="acl-cancel">Cancel</button>
     </div>
   </div>
 </dialog>
@@ -2360,6 +2452,138 @@ async function render(){
   });
 })();
 
+/* ---------- access list ----------
+   The dialog edits a LOCAL COPY and sends the whole list on Save. Nothing here mutates the running
+   list a rule at a time: a half-applied allow list is a security control nobody can reason about,
+   and it is also the state you would be left in if the page failed between two of the requests.
+
+   THE SERVER OWNS THE LOCKOUT RULES, not this page. The dashboard offers "Add this address" and
+   marks whichever rule covers you, but the refusal to apply a list that excludes you comes back
+   from PUT /acl - so curl gets the same protection, and a future front end cannot forget it. The
+   Force button below is how you overrule it, and it is deliberately not the primary action. */
+const ACL_LOCKED='<path d="M8 1.6 2.6 3.9v3.7c0 3.1 2.2 6 5.4 6.8 3.2-.8 5.4-3.7 5.4-6.8V3.9Z"/>'+
+                 '<path d="M6.3 7.6V6.4a1.7 1.7 0 0 1 3.4 0v1.2"/>'+
+                 '<rect x="5.6" y="7.6" width="4.8" height="3.6" rx="0.8"/>';
+const ACL_OPEN  ='<path d="M8 1.6 2.6 3.9v3.7c0 3.1 2.2 6 5.4 6.8 3.2-.8 5.4-3.7 5.4-6.8V3.9Z"/>'+
+                 '<path d="M6.3 7.6V6.4a1.7 1.7 0 0 1 3.3-.4"/>'+
+                 '<rect x="5.6" y="7.6" width="4.8" height="3.6" rx="0.8"/>';
+let aclNow={enabled:false,entries:[],caller:'',caller_is_loopback:false};
+let aclDraft={enabled:false,entries:[]};
+
+/* Reflects the LIVE list, not the draft - the rail has to keep telling the truth while the dialog
+   is open with unsaved changes in it. */
+function drawShield(){
+  const b=$('#acl-btn'),i=$('#acl-icon');
+  if(!b)return;
+  b.classList.toggle('on',!!aclNow.enabled);
+  i.innerHTML=aclNow.enabled?ACL_LOCKED:ACL_OPEN;
+  b.title=aclNow.enabled
+    ?('Access list on - '+aclNow.entries.length+' rule'+(aclNow.entries.length===1?'':'s'))
+    :'Access list off - Loom answers any address';
+}
+
+async function refreshAcl(){
+  try{aclNow=await api('/acl');}catch(e){/* an unreachable server is already said by the dot */}
+  drawShield();
+}
+
+function aclCovers(rule,caller){
+  /* Deliberately NOT a reimplementation of the server's matcher - that would be a second parser to
+     keep in step with the first. This only has to decide whether to draw a badge, so it answers the
+     two cases a person actually types and says nothing about the rest. */
+  if(!caller)return false;
+  if(rule===caller)return true;
+  const m=/^(\d+\.\d+\.\d+)\.\d+\/24$/.exec(rule);
+  if(m)return caller.replace(/^::ffff:/,'').startsWith(m[1]+'.');
+  return false;
+}
+
+function renderAclRules(){
+  const R=$('#acl-rules');R.innerHTML='';
+  const caller=(aclDraft.entries.length?aclNow.caller:aclNow.caller)||'';
+  if(!aclDraft.entries.length){
+    R.append(el('div','aclempty','No addresses listed. Add one before turning the list on.'));
+  }
+  aclDraft.entries.forEach(function(e,i){
+    const mine=aclCovers(e.rule,caller);
+    const row=el('div','aclrule'+(mine?' self':''));
+    row.append(el('span','r',e.rule));
+    if(mine)row.append(el('span','me','you'));
+    row.append(el('span','n',e.note||''));
+    const x=el('button',null,'×');
+    x.title='Remove';
+    x.onclick=function(){aclDraft.entries.splice(i,1);renderAclRules();};
+    row.append(x);
+    R.append(row);
+  });
+  $('#acl-count').textContent=aclDraft.entries.length+' rule'+
+    (aclDraft.entries.length===1?'':'s');
+}
+
+function aclAdd(sRule,sNote){
+  const r=(sRule||'').trim();
+  if(!r)return;
+  if(aclDraft.entries.some(e=>e.rule===r)){toast('already listed','warn');return;}
+  aclDraft.entries.push({rule:r,note:(sNote||'').trim()});
+  renderAclRules();
+}
+
+async function openAcl(){
+  try{aclNow=await api('/acl');}
+  catch(e){toast('could not read the access list: '+e.message,'bad');return;}
+  aclDraft={enabled:!!aclNow.enabled,entries:(aclNow.entries||[]).map(e=>({rule:e.rule,note:e.note||''}))};
+  $('#acl-enabled').checked=aclDraft.enabled;
+  $('#acl-caller').textContent=aclNow.caller+(aclNow.caller_is_loopback?' (this machine)':'');
+  /* Loopback is always allowed, so offering to add it would list a rule that changes nothing. */
+  $('#acl-addme').style.display=aclNow.caller_is_loopback?'none':'';
+  $('#acl-err').innerHTML='';
+  $('#acl-input').value='';$('#acl-note').value='';
+  renderAclRules();
+  drawShield();
+  $('#acl-dialog').showModal();
+}
+
+async function saveAcl(bForce){
+  $('#acl-err').innerHTML='';
+  const body={enabled:$('#acl-enabled').checked,entries:aclDraft.entries};
+  try{
+    await api('/acl'+(bForce?'?force=1':''),
+              {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    $('#acl-dialog').close();
+    await refreshAcl();
+    toast(aclNow.enabled?'access list on - '+aclNow.entries.length+' rule'+
+          (aclNow.entries.length===1?'':'s'):'access list off');
+  }catch(e){
+    const box=el('div','aclerr');
+    box.append(el('div',null,e.message));
+    /* Only a refusal the server says is overridable gets an override button. A 500 does not. */
+    if(e.status===403||e.status===400){
+      const row=el('div','row');
+      const f=el('button','btn tiny danger','Apply anyway');
+      f.onclick=function(){saveAcl(true);};
+      const c=el('button','btn tiny ghost','Back');
+      c.onclick=function(){$('#acl-err').innerHTML='';};
+      row.append(f);row.append(c);box.append(row);
+    }
+    $('#acl-err').innerHTML='';$('#acl-err').append(box);
+  }
+}
+
+$('#acl-btn').addEventListener('click',openAcl);
+$('#acl-cancel').addEventListener('click',()=>$('#acl-dialog').close());
+$('#acl-save').addEventListener('click',()=>saveAcl(false));
+$('#acl-add').addEventListener('click',function(){
+  aclAdd($('#acl-input').value,$('#acl-note').value);
+  $('#acl-input').value='';$('#acl-note').value='';$('#acl-input').focus();
+});
+$('#acl-input').addEventListener('keydown',function(e){
+  if(e.key==='Enter'){e.preventDefault();$('#acl-add').click();}
+});
+$('#acl-addme').addEventListener('click',function(){
+  aclAdd(aclNow.caller,'this machine');
+});
+$('#acl-dialog').addEventListener('click',function(e){if(e.target===this)this.close();});
+
 $('#about-btn').addEventListener('click',()=>$('#about').showModal());
 $('#about-close').addEventListener('click',()=>$('#about').close());
 $('#about').addEventListener('click',function(e){if(e.target===this)this.close();});
@@ -2480,6 +2704,7 @@ document.addEventListener('keydown',function(e){
   drawNav();
   try{allTags=(await api('/tags')).tags;}catch(e){}
   await refreshStats();
+  await refreshAcl();
   await render();
   setInterval(refreshStats,4000);
 })();

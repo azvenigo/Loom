@@ -8,6 +8,7 @@
 // Arg parsing is minimal and swaps to CLP::CLI_Parser when the ZLibraries submodule lands.
 //////////////////////////////////////////////////////////////////////////////////////////////////
 
+#include "core/IpAcl.h"
 #include "core/JotStore.h"
 #include "core/LoomTime.h"
 #include "core/Ops.h"
@@ -126,7 +127,11 @@ int main(int argc, char** argv)
             "  --data=DIR     persist to DIR/loom.wal + DIR/loom.snapshot (default ./loom-data)\n"
             "  --no-persist   RAM only; a restart starts empty\n"
             "  --sync=MODE    never | interval | always            (default interval)\n"
-            "  --seed         populate a few sample jots, only if the store loads empty\n");
+            "  --seed         populate a few sample jots, only if the store loads empty\n"
+            "\n"
+            "  The address allow list lives in DIR/loom.acl.json and is edited from the dashboard\n"
+            "  (shield icon, bottom left) or over PUT /acl. Loopback is always allowed, so a bad\n"
+            "  list can always be repaired from the machine itself.\n");
         return 0;
     }
 
@@ -144,6 +149,7 @@ int main(int argc, char** argv)
     JotStore store;
     Ops      ops(store);
     Journal  journal;
+    IpAcl    acl;
 
     const bool bPersist = !ArgFlag(argc, argv, "--no-persist");
 
@@ -168,6 +174,13 @@ int main(int argc, char** argv)
 
         snapConfig.msPath    = sDir + "/loom.snapshot";
         snapConfig.msWalPath = sDir + "/loom.wal";
+
+        // Loaded here rather than inside the server so a bad list is reported at startup, on the
+        // console, where somebody can see it - not on the first refused request.
+        std::string sAclWarning;
+        acl.Load(sDir + "/loom.acl.json", sAclWarning);
+        if (!sAclWarning.empty())
+            std::printf("  %s\n", sAclWarning.c_str());
 
         // Load BEFORE opening the journal. Replaying with the sink already attached would re-log
         // every record it just read, doubling the WAL on each restart.
@@ -223,7 +236,7 @@ int main(int argc, char** argv)
         std::printf("seeded %zu jots\n", store.Size());
     }
 
-    HttpServer server(ops, store, config, bPersist ? &journal : nullptr, snapConfig);
+    HttpServer server(ops, store, config, bPersist ? &journal : nullptr, snapConfig, acl);
     gpServer = &server;
     std::signal(SIGINT,  OnSignal);
     std::signal(SIGTERM, OnSignal);
@@ -231,8 +244,10 @@ int main(int argc, char** argv)
     std::printf("loom listening on http://%s:%u  (%zu jots, %s)\n",
                 config.msBind.c_str(), static_cast<unsigned>(config.mnPort), store.Size(),
                 bPersist ? snapConfig.msWalPath.c_str() : "no persistence");
-    if (config.msToken.empty() && config.msBind != "127.0.0.1")
-        std::printf("  WARNING: bound beyond loopback with no --token\n");
+    if (config.msToken.empty() && config.msBind != "127.0.0.1" && !acl.Enabled())
+        std::printf("  WARNING: bound beyond loopback with no --token and no address list\n");
+    if (acl.Enabled())
+        std::printf("  address list active (loopback always allowed)\n");
 
     const std::error_code ec = server.Run();
     gpServer = nullptr;
