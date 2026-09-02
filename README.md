@@ -84,6 +84,13 @@ jot *is* its before-image, so restoring is just re-applying a line that is alrea
   force immediately before it, which is what "undo this delete" means.
 - The dashboard's **History** view is the same thing with buttons.
 
+**A patch that changes nothing is not a mutation.** Front ends send whole records and whole tag
+arrays rather than diffs — the dashboard's Save, its snooze buttons, an agent re-asserting a memory
+it already wrote — so re-submitting an unchanged state is the common case, not an edge one. Those
+calls still succeed and still return the record, but nothing is written: no `updated` bump (so other
+agents' `expect_updated` tokens stay valid), no WAL line, and no history point. The response carries
+`"no_change": true` when that happened.
+
 The id is kept (so links to the jot survive, and a deleted jot comes back at the address others still
 reference) but `updated` is stamped now, because the restore is a change and it happened now. A
 restore is refused if the slug has since been taken by a different jot.

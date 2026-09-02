@@ -80,8 +80,9 @@ std::error_code Ops::Upsert(const JotInput& input, int64_t nExpectUpdatedUS, Add
                 return ec2;
 
             CollectWarnings(result.mSuggestions, outResult.mWarnings);
-            outResult.mJot      = std::move(result.mJot);
-            outResult.mbCreated = false;
+            outResult.mJot       = std::move(result.mJot);
+            outResult.mbCreated  = false;
+            outResult.mbNoChange = result.mbNoChange;
             return LoomOK();
         }
         return ec;
@@ -92,8 +93,11 @@ std::error_code Ops::Upsert(const JotInput& input, int64_t nExpectUpdatedUS, Add
         return ec;
 
     CollectWarnings(result.mSuggestions, outResult.mWarnings);
-    outResult.mJot      = std::move(result.mJot);
-    outResult.mbCreated = false;
+    outResult.mJot       = std::move(result.mJot);
+    outResult.mbCreated  = false;
+    // Upsert is the memory-store path: an agent re-asserting a memory it already wrote is the
+    // single most common no-op in the system, so this flag matters more here than anywhere.
+    outResult.mbNoChange = result.mbNoChange;
     return LoomOK();
 }
 
@@ -110,8 +114,9 @@ std::error_code Ops::Update(tJotID id, const JotInput& patch, int64_t nExpectUpd
         return ec;
 
     CollectWarnings(result.mSuggestions, outResult.mWarnings);
-    outResult.mJot      = std::move(result.mJot);
-    outResult.mbCreated = false;
+    outResult.mJot       = std::move(result.mJot);
+    outResult.mbCreated  = false;
+    outResult.mbNoChange = result.mbNoChange;
     return LoomOK();
 }
 

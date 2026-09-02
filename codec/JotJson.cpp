@@ -310,6 +310,11 @@ namespace JOTJSON
         json out = FlatToObject(Flatten(result.mJot, names), bVerbose);
         out["created"] = result.mbCreated;
 
+        // Emitted only when true, per the omit-empty rule - a write that changed something says
+        // nothing, which is the common case and the uninteresting one.
+        if (result.mbNoChange)
+            out["no_change"] = true;
+
         if (!result.mWarnings.Empty())
             out["warnings"] = result.mWarnings.mMessages;
 

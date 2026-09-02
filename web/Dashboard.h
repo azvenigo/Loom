@@ -2567,9 +2567,10 @@ function renderDetail(){
       const snBtns=el('div','snbtns');dueSect.append(snBtns);
       const applyDue=async function(val){
         try{
-          sel=await setDue(sel,val);
+          const r=await setDue(sel,val);
+          sel=r;
           dueIn.value=val?(val.length>10?val:val+'T00:00'):'';
-          toast(val?'Rescheduled':'Due date cleared');
+          toast(r.no_change?'Already due then':(val?'Rescheduled':'Due date cleared'));
         }catch(e){toast(e.message,'err');}
       };
       const mkSnBtn=function(label,fn){
@@ -2609,6 +2610,9 @@ function renderDetail(){
            body:JSON.stringify(body)});
       }
       if(r.warnings&&r.warnings.length)toast(r.warnings[0],'warn');
+      /* Says so out loud when the save resolved to what was already stored. Without this the only
+         evidence is a history point that never appears, which reads as the log dropping writes. */
+      else if(r.no_change)toast('No changes');
       else toast(isNew?'Created':'Saved');
       /* Save closes the dialog - it's the "I'm done with this" action, not a checkpoint to keep
          editing from. Re-open it from the list/panel to keep going. */

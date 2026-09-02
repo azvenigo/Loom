@@ -50,6 +50,10 @@ struct AddResult
     Jot        mJot;
     OpWarnings mWarnings;
     bool       mbCreated = false;   // false means an existing named jot was updated instead
+
+    // The patch resolved to the record that was already there, so nothing was written. See
+    // MutationResult::mbNoChange.
+    bool       mbNoChange = false;
 };
 
 struct SearchResultSet

@@ -630,6 +630,104 @@ namespace
         return acl.Allows(pAddr);
     }
 
+    //--------------------------------------------------------------------------------------------
+    // A patch that resolves to the record already stored must not be a mutation. Front ends send
+    // whole records and whole tag arrays rather than diffs, so re-asserting an unchanged state is
+    // the COMMON case, not an edge one - and treating it as a write bumps `updated` (invalidating
+    // everyone else's expect_updated for nothing), appends to the WAL, and puts a meaningless point
+    // in the history log.
+    //--------------------------------------------------------------------------------------------
+    void TestNoOpUpdates()
+    {
+        Section("no-op updates");
+
+        JotStore store;
+        Ops      ops(store);
+
+        JotInput in;
+        in.msText    = "Backups run nightly at 02:00.";
+        in.msName    = "backup-policy";
+        in.msSummary = "how backups run";
+        in.mTags     = std::vector<std::string>{ "infra", "priority:high" };
+        AddResult created;
+        Check(!ops.Add(in, created), "created a jot to patch");
+
+        const int64_t nFirstUpdated = created.mJot.EffectiveUpdatedUS();
+
+        // Byte-for-byte the same content, sent as a full record the way Save does.
+        JotInput same;
+        same.msText    = "Backups run nightly at 02:00.";
+        same.msName    = "backup-policy";
+        same.msSummary = "how backups run";
+        same.mTags     = std::vector<std::string>{ "infra", "priority:high" };
+
+        AddResult noop;
+        Check(!ops.Update(created.mJot.mID, same, 0, noop), "an identical patch succeeds");
+        Check(noop.mbNoChange,                              "and reports itself as no change");
+        Check(noop.mJot.EffectiveUpdatedUS() == nFirstUpdated,
+              "updated is NOT bumped, so other agents' expect_updated stays valid");
+
+        // Tag order must not matter - the store keeps them sorted, and a client that sends them
+        // back the other way round has still changed nothing.
+        JotInput reordered;
+        reordered.mTags = std::vector<std::string>{ "priority:high", "infra" };
+        AddResult noop2;
+        Check(!ops.Update(created.mJot.mID, reordered, 0, noop2), "reordered tags succeed");
+        Check(noop2.mbNoChange, "and are recognized as the same set");
+
+        // A real change still writes.
+        JotInput real;
+        real.msText = "Backups run nightly at 02:00 and are checksummed.";
+        AddResult changed;
+        Check(!ops.Update(created.mJot.mID, real, 0, changed), "a real edit succeeds");
+        Check(!changed.mbNoChange, "and is not reported as a no change");
+        Check(changed.mJot.EffectiveUpdatedUS() > nFirstUpdated, "and does bump updated");
+
+        // Clearing a field is a change, not a no-op - an engaged-but-empty value means "clear".
+        JotInput clear;
+        clear.msSummary = std::string();
+        AddResult cleared;
+        Check(!ops.Update(created.mJot.mID, clear, 0, cleared), "clearing the summary succeeds");
+        Check(!cleared.mbNoChange, "and counts as a change");
+        Check(cleared.mJot.msSummary.empty(), "and actually cleared it");
+
+        // The journal must see exactly the writes that changed something.
+        struct CountingSink : public IJournalSink
+        {
+            int nPuts = 0;
+            void OnPut(const FlatJot&) override { ++nPuts; }
+            void OnDelete(tJotID) override {}
+        };
+        CountingSink sink;
+        store.SetJournalSink(&sink);
+
+        // Built from what is stored RIGHT NOW - the record has been edited twice since `same` was
+        // written, so re-sending that would be a real change and would prove nothing.
+        Jot current;
+        Check(store.Get(created.mJot.mID, current), "read the current record back");
+        NameTables names;
+        store.SnapshotNames(names);
+        const FlatJot flatNow = Flatten(current, names);
+
+        JotInput echo;
+        echo.msText    = flatNow.msText;
+        echo.msName    = flatNow.msName;
+        echo.msSummary = flatNow.msSummary;
+        echo.mTags     = flatNow.mTags;
+
+        AddResult r;
+        ops.Update(created.mJot.mID, echo, 0, r);
+        Check(r.mbNoChange, "echoing the stored record back is a no change");
+        Check(sink.nPuts == 0, "no-op patches put nothing in the journal");
+
+        JotInput another;
+        another.msText = "Backups run nightly and are verified before rotation.";
+        ops.Update(created.mJot.mID, another, 0, r);
+        Check(sink.nPuts == 1, "and a real edit puts exactly one");
+
+        store.SetJournalSink(nullptr);
+    }
+
     void TestIpAclParsing()
     {
         Section("ip acl - parsing");
@@ -746,6 +844,7 @@ int main()
     TestTagSuggestions();
     TestSearch();
     TestIndexCoherence();
+    TestNoOpUpdates();
     TestIpAclParsing();
     TestIpAclMatching();
     // LAST on purpose: this one is known to hang (4 spinning readers starve both writers on

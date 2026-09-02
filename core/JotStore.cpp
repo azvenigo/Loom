@@ -550,6 +550,10 @@ std::error_code JotStore::Update(tJotID id, const JotInput& patch, int64_t nExpe
 
     const std::string sOldName = jot.msName;
 
+    // Kept so the applied result can be compared against what was already there. See the no-change
+    // check below - this copy is the price of not writing history nobody made.
+    const Jot before = jot;
+
     Locked_UnindexJot(jot);
     if (std::error_code ec = Locked_Apply(jot, patch, false, outResult.mSuggestions))
     {
@@ -558,6 +562,28 @@ std::error_code JotStore::Update(tJotID id, const JotInput& patch, int64_t nExpe
         Locked_IndexJot(jot);
         return ec;
     }
+
+    // A PATCH THAT CHANGES NOTHING IS NOT A MUTATION.
+    //
+    // Front ends send the whole record, or a whole tag array, rather than a diff - the dashboard's
+    // Save, its snooze buttons, and any agent re-asserting a state it already believes in. Treating
+    // those as writes had three costs, and the third is what made it visible: it bumped `updated`,
+    // so every other agent's expect_updated token was invalidated for no reason; it put a line in
+    // the WAL; and it put a point in the history log, which is meant to answer "what changed" and
+    // was instead answering "what was submitted". Eight of the first fourteen entries recorded on
+    // the live store changed no field at all.
+    //
+    // The record is still returned and the call still succeeds: the caller asked for a state and
+    // that is the state. Only the write is skipped, and mbNoChange says so for anyone who cares.
+    if (Locked_SameContent(before, jot))
+    {
+        Locked_IndexJot(jot);
+        outResult.mJot       = jot;
+        outResult.mbCreated  = false;
+        outResult.mbNoChange = true;
+        return LoomOK();
+    }
+
     jot.mnUpdatedUS = LOOMTIME::NowMicros();
     Locked_IndexJot(jot);
 
@@ -905,6 +931,20 @@ void JotStore::Locked_Flatten(const Jot& jot, FlatJot& outFlat) const
 // Journals one record while the caller still holds the write lock. Every mutation path routes
 // through here so no path can forget, and so ordering is guaranteed by the lock rather than by
 // discipline.
+bool JotStore::Locked_SameContent(const Jot& a, const Jot& b)
+{
+    // mTags and mLinks are kept sorted by Locked_Apply, so element-wise equality is the right
+    // comparison and not an accident of insertion order. mPendingLinks is not sorted, but it is
+    // derived from the text in a stable order, so the same text yields the same vector.
+    return a.mEditor      == b.mEditor
+        && a.msName       == b.msName
+        && a.msSummary    == b.msSummary
+        && a.msText       == b.msText
+        && a.mTags        == b.mTags
+        && a.mLinks       == b.mLinks
+        && a.mPendingLinks == b.mPendingLinks;
+}
+
 void JotStore::Locked_JournalPut(const Jot& jot)
 {
     if (!mpJournal)

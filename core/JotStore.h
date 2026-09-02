@@ -154,6 +154,11 @@ struct MutationResult
     Jot                        mJot;
     std::vector<TagSuggestion> mSuggestions;
     bool                       mbCreated = false;
+
+    // True when the patch resolved to the record that was already there. Not an error - the caller
+    // asked for a state and got it - but nothing was written: no `updated` bump, no WAL line, no
+    // history entry. See JotStore::Update for why that matters.
+    bool                       mbNoChange = false;
 };
 
 
@@ -295,6 +300,11 @@ private:
 
     void Locked_Flatten(const Jot& jot, FlatJot& outFlat) const;
     void Locked_JournalPut(const Jot& jot);
+
+    // Content equality over the fields a patch can touch - everything except id, updated, slot and
+    // the derived index lengths. An exact comparison rather than a hash: "these are the same
+    // record" has to be exactly right, and the strings are already in cache from applying them.
+    static bool Locked_SameContent(const Jot& a, const Jot& b);
     std::error_code Locked_LoadBatch(std::vector<Jot>& vJots, size_t& outLoaded, bool bJournal);
 
     std::error_code Locked_Validate(const JotInput& input) const;
