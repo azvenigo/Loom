@@ -1418,7 +1418,13 @@ async function refreshStats(){
     drawNav();
   }catch(e){
     S.innerHTML='';
-    setLive(' off','unreachable');
+    /* 401 is not "unreachable" - the server answered, it just wants a token this page has no way
+       to send. Saying so is the difference between "is loom down?" and "loom is running with
+       --token". The stats block is gone either way, but the agent brief still gets built from
+       here, and it needs to warn that every call it lists requires the header. */
+    const bAuth=e.status===401;
+    if(bAuth)stats={server:{auth:true}};
+    setLive(' off',bAuth?'needs a token':'unreachable');
   }
 }
 
@@ -1796,19 +1802,39 @@ async function viewSearch(target){
    with a stale port is worse than none.
    DELIBERATELY NO CORPUS SIZE. It was in here as "holding N jots (M named)", and a count is the
    one number that tells a fresh agent nothing it can act on while going stale the moment anyone
-   writes: the skim in step 1 shows what is actually there. */
+   writes: the skim in step 1 shows what is actually there.
+   DELIBERATELY NO NAMES. This brief is pasted into agents on machines all over the place and the
+   repo it ships in is public; it addresses whoever is running the thing, not a particular person. */
 function agentPrompt(){
-  const o=location.origin;
+  /* The SERVER's idea of where it is, not the browser's. This page is nearly always opened on the
+     machine running loom, where location.origin is localhost - and a brief that says localhost
+     sends every agent it is pasted into to its own loopback, which either fails or, worse, finds
+     some other service. /stats carries the real one; fall back only if it has not answered yet. */
+  const srv=(stats&&stats.server)||{};
+  const o=srv.origin||location.origin;
   return [
 "INIT ONLY - DO EXACTLY THIS, THEN STOP:",
 "0. If Loom's MCP tools (loom_search, loom_get, ...) are NOT already available in this session,",
-"   register the server, then tell Alex to start a NEW session before going any further - MCP",
+"   register the server, then ask the user to start a NEW session before going any further - MCP",
 "   servers are only picked up at session start, never mid-session:",
 "     Claude Code:  claude mcp add --scope user --transport http loom "+o+"/mcp",
 "     Codex CLI:    codex mcp add loom --url "+o+"/mcp",
 "     Other agents: add a remote/Streamable HTTP MCP server pointing at",
 "                   "+o+"/mcp - or skip it and use the REST calls below instead.",
 "   Use user scope, not project scope - Loom is this machine's memory for every repo, not one.",
+...(srv.origin?[
+"   That address is the one this server answers on across the network; use it verbatim, and do",
+"   not substitute localhost unless loom is running on the same machine as you.",
+]:[
+"   NOTE: the address above is only wherever this browser was pointed - the server could not be",
+"   asked for its own. If it says localhost, get the real one before pasting this anywhere else.",
+]),
+...(srv.auth?[
+"   THIS SERVER REQUIRES A TOKEN. Every call, MCP or REST, must carry the header",
+"     Authorization: Bearer <token>",
+"   The token is not in this brief and is not in the store - ask the user for it. For Claude",
+"   Code, append to the command above:  --header \"Authorization: Bearer <token>\"",
+]:[]),
 "1. One call to skim what's here: loom_search(order=newest, limit=20, brief=true) over MCP if",
 "   connected, else GET "+o+"/jots?order=newest&limit=20&brief=1",
 "   brief drops jot bodies, so the skim stays cheap - only loom_get a hit when its summary",
@@ -1831,26 +1857,26 @@ function agentPrompt(){
 "   deeper reads, or any other work just because this prompt loaded - nothing below this line",
 "   is a task.",
 "",
-"Loom ("+o+") is the shared memory several agents and Alex write to at once.",
+"Loom ("+o+") is the shared memory several agents and the user write to at once.",
 "While it is reachable it is the source of truth, ahead of any markdown memory store on local disk.",
 "",
-"How Alex wants answers: concise, outline form - a top-level bullet per point, detail nested",
-"under it. He'll dive in and ask for more if he wants it; skip lengthy rationale unless it's",
+"How the user wants answers: concise, outline form - a top-level bullet per point, detail nested",
+"under it. They'll dive in and ask for more if they want it; skip lengthy rationale unless it's",
 "important to the work at hand or worth remembering for later. Add a `todo` jot for anything",
 "noticed that should be addressed later instead of doing it now.",
 "",
 "--- reference below, not needed for init ---",
 "",
 "SOURCE TAG - every jot you write carries one:",
-"  Tag: source:<machine>, e.g. source:azzorin, source:alexz. Work it out once, cheaply:",
+"  Tag: source:<machine>, e.g. source:studio-pc, source:thinkpad. Work it out once, cheaply:",
 "  `hostname -s` on Linux/macOS, %COMPUTERNAME% on Windows, lowercased. If that is useless -",
 "  localhost, a container id, a random string - fall back to the LAN address, source:192.168.1.100.",
 "  Any identifier that is stable for this machine beats a clever one that isn't.",
 "  This is NOT the same field as `editor`, and both are worth setting:",
 "    editor  = WHAT wrote it   (claude, codex, user)",
 "    source: = WHERE it ran    (which machine the work and the context came from)",
-"  Alex runs several machines against one store; without source: there is no way to tell whether",
-"  a todo is actionable from where you are sitting, or whose disk a path refers to.",
+"  Several machines share this one store; without source: there is no way to tell whether a todo",
+"  is actionable from where you are sitting, or whose disk a path refers to.",
 "",
 "LOCAL MEMORY -> LOOM (the step-3 todo; do it when asked, not during init):",
 "  1. Find what this machine still keeps outside Loom - CLAUDE.md, MEMORY.md, TODO.md, a",
@@ -1860,8 +1886,8 @@ function agentPrompt(){
 "     Loom under a different wording, in which case UPDATE that jot rather than adding a second.",
 "     Carry the source: tag of the machine it came from, not of the machine doing the ingest.",
 "  3. ARCHIVE, never delete, what you ingested - move it into a dated sibling folder",
-"     (memory-backup-<YYYYMMDD>/, the convention Alex already uses) so nothing is lost if an",
-"     ingest turns out to have been lossy. An ingest that deletes its source is not reversible.",
+"     (memory-backup-<YYYYMMDD>/) so nothing is lost if an ingest turns out to have been lossy.",
+"     An ingest that deletes its source is not reversible.",
 "  4. Add a line to this machine's global CLAUDE.md telling future sessions to check whether",
 "     Loom's MCP tools are available at startup, and to register the server (step 0 above) and",
 "     ask for a fresh session if they are not.",
@@ -1869,7 +1895,7 @@ function agentPrompt(){
 "WHAT TO WRITE BACK, AND WHEN:",
 "- Anything a later session or a DIFFERENT machine would need and could not re-derive from the",
 "  code or the git history: decisions and why, constraints, dead ends and what killed them,",
-"  how Alex wants a thing done. Prefer updating an existing jot over adding a near-duplicate.",
+"  how the user wants a thing done. Prefer updating an existing jot over adding a near-duplicate.",
 "- Do not stop mid-task to curate memory. If you are executing an instruction, keep executing",
 "  it; writing one todo jot is always cheap enough to do inline, a rewrite of the store is not.",
 "  Park it as a todo and carry on.",

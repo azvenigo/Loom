@@ -68,6 +68,13 @@ public:
     // Safe to call from a signal handler context or another thread.
     void Stop();
 
+    // "http://<addr>:<port>" as a machine ACROSS THE NETWORK should type it, resolved once at
+    // construction. With a concrete --bind this is just that address; with a wildcard bind it is
+    // the interface this machine would route out of, because "0.0.0.0" is not something anyone
+    // can be handed. Served on /stats so the dashboard can put a reachable address in the agent
+    // brief instead of the localhost the browser happens to be pointed at.
+    const std::string& AdvertisedOrigin() const;
+
 private:
     struct Impl;
     std::unique_ptr<Impl> mpImpl;

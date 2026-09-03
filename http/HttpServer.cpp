@@ -163,6 +163,48 @@ namespace
         const long long n = std::strtoll(p, &pEnd, 10);
         return (pEnd == p) ? nDefault : static_cast<int64_t>(n);
     }
+
+    //--------------------------------------------------------------------------------------------
+    // The origin a REMOTE machine should use to reach this server: "http://<addr>:<port>".
+    //
+    // The dashboard cannot work this out for itself, and that is the whole reason this exists.
+    // location.origin is only ever whatever the browser was pointed at, and on the machine running
+    // loom that is usually localhost - so the agent brief, which is built in the page, would hand
+    // every other machine an address that resolves to its own loopback. Only the server knows
+    // where it actually is, so it says so once, at startup, and /stats carries it to the page.
+    //
+    // A concrete --bind IS the answer already; there is nothing to discover. A wildcard bind means
+    // "every interface", which is not an address anyone can be given, so ask the routing table
+    // which source address this machine would use to reach the outside world. UDP connect() sends
+    // no packets - it only selects a route - so this touches the network stack, not the network.
+    //--------------------------------------------------------------------------------------------
+    std::string ResolveAdvertisedOrigin(const HttpConfig& config)
+    {
+        std::string sHost = config.msBind;
+        if (sHost.empty() || sHost == "0.0.0.0" || sHost == "::" || sHost == "*")
+        {
+            // Last resort. A machine with no route out still answers on loopback, and a brief
+            // saying localhost is at least true for the agent running on this box.
+            sHost = "127.0.0.1";
+
+            asio::io_context     io;
+            asio::ip::udp::socket sock(io);
+            asio::error_code     ec;
+            // TEST-NET-1 (RFC 5737): reserved for documentation, so it is guaranteed never to be
+            // a real destination - which is safe precisely because nothing is ever sent to it.
+            sock.connect(asio::ip::udp::endpoint(asio::ip::make_address("192.0.2.1"), 9), ec);
+            if (!ec)
+            {
+                const asio::ip::udp::endpoint local = sock.local_endpoint(ec);
+                if (!ec && !local.address().is_unspecified())
+                    sHost = local.address().to_string();
+            }
+        }
+        // An IPv6 literal has to be bracketed or the port reads as another group of the address.
+        if (sHost.find(':') != std::string::npos)
+            sHost = "[" + sHost + "]";
+        return "http://" + sHost + ":" + std::to_string(config.mnPort);
+    }
 }
 
 
@@ -220,11 +262,15 @@ struct HttpServer::Impl
     SnapshotConfig       mSnapConfig;
     crow::App<AclGuard>  mApp;
     std::atomic<bool>    mbStopping{ false };
+    // Resolved once, here, and not per request: the answer cannot change while we are bound, and
+    // a wildcard bind makes it a routing-table lookup that has no business being on a hot path.
+    std::string          msOrigin;
 
     Impl(Ops& ops, JotStore& store, const HttpConfig& config,
          Journal* pJournal, const SnapshotConfig& snapConfig, IpAcl& acl, History* pHistory)
         : mOps(ops), mStore(store), mConfig(config), mpJournal(pJournal), mAcl(acl),
-          mpHistory(pHistory), mMcp(ops, store), mSnapConfig(snapConfig)
+          mpHistory(pHistory), mMcp(ops, store), mSnapConfig(snapConfig),
+          msOrigin(ResolveAdvertisedOrigin(config))
     {
         // The middleware instance is owned by the app, so it is wired here rather than constructed
         // with a reference.
@@ -536,7 +582,8 @@ struct HttpServer::Impl
             PersistStats persist;
             if (mpJournal)
                 mpJournal->FillStats(persist);
-            return Ok(JOTJSON::StatsToJson(mOps.Stats(), persist));
+            return Ok(JOTJSON::StatsToJson(mOps.Stats(), persist, msOrigin,
+                                           !mConfig.msToken.empty()));
         });
 
         //------------------------------------------------------------------------------------
@@ -904,6 +951,11 @@ HttpServer::HttpServer(Ops& ops, JotStore& store, const HttpConfig& config,
 }
 
 HttpServer::~HttpServer() = default;
+
+const std::string& HttpServer::AdvertisedOrigin() const
+{
+    return mpImpl->msOrigin;
+}
 
 std::error_code HttpServer::Run()
 {

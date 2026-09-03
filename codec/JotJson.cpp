@@ -273,7 +273,8 @@ namespace JOTJSON
         return out.dump();
     }
 
-    std::string StatsToJson(const StoreStats& stats, const PersistStats& persist)
+    std::string StatsToJson(const StoreStats& stats, const PersistStats& persist,
+                            const std::string& sOrigin, bool bAuthRequired)
     {
         json out;
         out["jots"]          = stats.mnJots;
@@ -301,6 +302,17 @@ namespace JOTJSON
         if (persist.mnLastSnapshotUS != 0)
             p["last_snapshot_at"] = LOOMTIME::FormatUS(persist.mnLastSnapshotUS);
         out["persistence"] = std::move(p);
+
+        // Where this server is, told by the only party that knows. Omitted rather than guessed
+        // when the caller did not supply one, so the dashboard falls back to its own origin
+        // instead of printing something confidently wrong into an agent brief.
+        if (!sOrigin.empty())
+        {
+            json server;
+            server["origin"] = sOrigin;
+            server["auth"]   = bAuthRequired;
+            out["server"]    = std::move(server);
+        }
 
         return out.dump();
     }

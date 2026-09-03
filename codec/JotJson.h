@@ -62,7 +62,11 @@ namespace JOTJSON
     std::string JotListToJson(const std::vector<Jot>& vJots, const NameTables& names, bool bVerbose);
     std::string TagsToJson(const std::vector<TagStat>& vTags);
     std::string ClustersToJson(const std::vector<TagCluster>& vClusters);
-    std::string StatsToJson(const StoreStats& stats, const PersistStats& persist);
+    // sOrigin is the address a remote machine should use to reach this server; empty leaves the
+    // "server" block out entirely. It is here rather than in StoreStats because it is a fact about
+    // the process, not the store - the same store answers on a different origin on every machine.
+    std::string StatsToJson(const StoreStats& stats, const PersistStats& persist,
+                            const std::string& sOrigin = {}, bool bAuthRequired = false);
 
     // The write response: the record, plus any non-fatal tag warnings. The warnings ride with the
     // result rather than arriving out of band, because an agent that has to make a second call to

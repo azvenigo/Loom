@@ -366,6 +366,10 @@ int main(int argc, char** argv)
     std::printf("loom listening on http://%s:%u  (%zu jots, %s)\n",
                 config.msBind.c_str(), static_cast<unsigned>(config.mnPort), store.Size(),
                 bPersist ? snapConfig.msWalPath.c_str() : "no persistence");
+    // A wildcard bind is not an address anyone can type. Print the one that actually reaches this
+    // machine, because that is what gets pasted into another machine's agent config.
+    if (server.AdvertisedOrigin() != "http://" + config.msBind + ":" + std::to_string(config.mnPort))
+        std::printf("  reachable at %s\n", server.AdvertisedOrigin().c_str());
     if (config.msToken.empty() && config.msBind != "127.0.0.1" && !acl.Enabled())
         std::printf("  WARNING: bound beyond loopback with no --token and no address list\n");
     if (acl.Enabled())
