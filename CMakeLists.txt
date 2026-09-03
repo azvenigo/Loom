@@ -75,6 +75,7 @@ add_library(loomcore STATIC
     persist/Importer.cpp
     mcp/McpHandler.cpp
 
+    core/FairSharedMutex.h
     core/FlatJot.h  core/Interner.h  core/IpAcl.h    core/Jot.h      core/JotStore.h
     core/LoomError.h core/LoomTime.h core/Ops.h      core/Query.h
     core/TagRegistry.h core/Tokenizer.h
@@ -142,3 +143,8 @@ enable_testing()
 add_test(NAME core    COMMAND coretest)
 add_test(NAME persist COMMAND persisttest)
 add_test(NAME mcp     COMMAND mcptest)
+
+# All three finish in about two seconds. The cap is here because a deadlock or a starved writer
+# does not fail a test - it wedges the run until somebody notices, which is exactly how the bug
+# FairSharedMutex now prevents used to present.
+set_tests_properties(core persist mcp PROPERTIES TIMEOUT 120)

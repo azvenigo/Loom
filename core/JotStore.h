@@ -1,6 +1,7 @@
 #pragma once
 // Copyright (c) 2026 Alexander Zvenigorodsky. MIT License. See LICENSE.
 
+#include "FairSharedMutex.h"
 #include "Interner.h"
 #include "FlatJot.h"
 #include "Jot.h"
@@ -19,7 +20,7 @@
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // JotStore - every jot in RAM, plus the indexes that make queries microseconds instead of a scan.
 //
-// CONCURRENCY: one std::shared_mutex over the whole store. Readers take a shared_lock, writers a
+// CONCURRENCY: one FairSharedMutex over the whole store. Readers take a shared_lock, writers a
 // unique_lock. That is a deliberate choice, not a placeholder:
 //
 //   - A query is single-digit microseconds and writers are rare, so a single reader-writer lock is
@@ -28,6 +29,10 @@
 //     jot the tag index does not.
 //   - Sharding is NOT the obvious next step it looks like. A term's posting list spans every
 //     shard, so the text index cannot be partitioned by jot id without turning one lookup into N.
+//
+//   It is FairSharedMutex rather than std::shared_mutex because the plain one lets a busy enough
+//   reader stream starve writes outright on glibc - see that header. Rare writers make the cost of
+//   fairness nil and the cost of missing it unbounded.
 //
 //   If the benchmark ever shows real contention, the documented escape hatch is copy-on-write:
 //   writers build a new immutable index and publish it through an atomic shared_ptr so readers
@@ -326,7 +331,7 @@ private:
 
     //----------------------------------------------------------------------------------------
 
-    mutable std::shared_mutex mLock;
+    mutable FairSharedMutex mLock;
 
     IJournalSink*             mpJournal = nullptr;
 
