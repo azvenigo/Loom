@@ -136,6 +136,11 @@ R"HTML(<!doctype html>
   --accent2:#a8d6e2; --good2:#c0d4ab; --warn2:#f2dcaa;
   --info:#81a1c1; --info-wash:#26303d; --info-line:#3f5062;
   --field-bg:#d8e0ec; --field-ink:#232a36; --field-dim:#5b6577;
+  /* Nord is the coolest palette here and the default warn-wash ground was the most obviously wrong
+     on it - a khaki slab in the middle of a blue-grey page. Same recipe as the vivid set: the
+     palette's own accent washed into --sunk. */
+  --todo-top:#3e4b5a; --todo-bot:#333a48;
+  --todo-edge:#4c566a; --todo-bar:#88c0d0; --todo-glow:#88c0d0;
 }
 :root[data-palette="earth"]{
   --bg:#f3e8d5; --panel:#faf3e6; --sunk:#ecdfc4;
@@ -214,6 +219,12 @@ R"HTML(<!doctype html>
   --accent2:#d2bdf0; --good2:#b0ecc4; --warn2:#f5d492;
   --info:#8fa8e8; --info-wash:#1e2440; --info-line:#34406b;
   --field-bg:#e0d9f0; --field-ink:#1b1730; --field-dim:#6d6490;
+  /* The light Twilight above got its warm wash deliberately - cream over white still reads as
+     paper. Inverted it does not: the same rule on this ground painted an olive-brown slab under
+     violet cards, the one thing the vivid set was fixed away from. Indigo washing into --sunk,
+     the recipe the vivid palettes use. */
+  --todo-top:#2a2348; --todo-bot:#171429;
+  --todo-edge:#3e2f63; --todo-bar:#b39ddb; --todo-glow:#b39ddb;
 }
 :root[data-palette="midnight"]{
   --bg:#141317; --panel:#1b1a20; --sunk:#232128;
@@ -227,6 +238,12 @@ R"HTML(<!doctype html>
   --accent2:#c3b3ff; --good2:#8fd9ae; --warn2:#f0c288;
   --info:#7fa2f0; --info-wash:#182339; --info-line:#2c3c5e;
   --field-bg:#e2dfe9; --field-ink:#17161c; --field-dim:#6b6878;
+  /* Midnight's ground is neutral near-black, so the warm default read as a brown patch rather than
+     as a tint of anything on the page. Its own violet accent into --sunk instead.
+     Earth Dark deliberately keeps the default: it IS the brown palette, its accent is a warm tan,
+     and the warn wash lands on-identity there rather than as mud. Checked, not skipped. */
+  --todo-top:#302c3f; --todo-bot:#232128;
+  --todo-edge:#2c2a32; --todo-bar:#a493f5; --todo-glow:#a493f5;
 }
 /* ---- the vivid set ----------------------------------------------------------------------------
    The eight above are quiet schemes where the second gradient stop is just a lighter shade of the
@@ -1491,10 +1508,16 @@ const tagValue=(tags,prefix)=>{const t=(tags||[]).find(x=>x.indexOf(prefix)===0)
   return t?t.slice(prefix.length).replace('t','T'):null;};
 const toLocalDT=v=>v?new Date(v.length>10?v:v+'T00:00'):null;
 const dueOf=j=>toLocalDT(tagValue(j.tags,'due:'));
+/* Null means UNSET, and unset is not the same as normal. It used to answer 'normal' for anything
+   todo-ish without a priority: tag, which put the dashboard at odds with itself - the TODO panel
+   labelled such a jot NORMAL while its own detail dialog, reading the raw tag, showed Clear.
+   Both readings were defensible; having both on screen at once was not.
+   Unset resolves to the normal COLUMN (see the ||'normal' at every call site) because the board
+   has three columns and a jot has to be in one. That is a placement fallback, not a value, so
+   nothing labels it - a jot claims a priority only when someone actually set one. */
 function priorityOf(j){
   const p=tagValue(j.tags,'priority:');
-  if(p==='high'||p==='normal'||p==='low')return p;
-  return((j.tags||[]).some(t=>ACTION_TAGS.has(t))||dueOf(j))?'normal':null;
+  return(p==='high'||p==='normal'||p==='low')?p:null;
 }
 /* Whether a jot gets the TODO treatment at all (priority/due fields, the panel, notifications) -
    gated so opening an ordinary jot never shows task controls it has no use for. A completed jot
@@ -1515,9 +1538,12 @@ function toLocalInputValue(d){
   const pad=n=>String(n).padStart(2,'0');
   return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+'T'+pad(d.getHours())+':'+pad(d.getMinutes());
 }
+/* An empty newP clears the tag rather than writing one, exactly as setDue does below - that is what
+   lets undoing a drag put a jot back to UNSET instead of inventing the priority:normal it never
+   had. */
 async function setPriority(j,newP){
   const tags=(j.tags||[]).filter(t=>t.indexOf('priority:')!==0);
-  tags.push('priority:'+newP);
+  if(newP)tags.push('priority:'+newP);
   const exp=j.updated||j.id;
   return api('/jots/'+j.id+'?expect_updated='+exp,
     {method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({tags})});
@@ -1931,11 +1957,14 @@ async function viewDashboard(target){
           const id=e.dataTransfer.getData('text/plain');
           const j=todos.find(x=>String(x.id)===id);
           if(!j||(priorityOf(j)||'normal')===p)return;
-          const prevP=priorityOf(j)||'normal';
+          /* Null when it had none - undo restores that, rather than leaving behind the
+             priority:normal the drag would otherwise have invented on the way back. */
+          const prevP=priorityOf(j);
           try{
             const updated=await setPriority(j,p);
             toast('Moved to '+p,'ok',async function(){
-              try{await setPriority(updated,prevP);toast('Moved back to '+prevP);render();}
+              try{await setPriority(updated,prevP);
+                  toast(prevP?'Moved back to '+prevP:'Priority cleared again');render();}
               catch(err){toast(err.message,'err');}
             });
             render();
@@ -1959,7 +1988,11 @@ async function viewDashboard(target){
           const chips=el('div','ov-tchips');
           const act=(j.tags||[]).find(t=>ACTION_TAGS.has(t));
           chips.append(el('span','ov-tchip todo',act||'todo'));
-          chips.append(el('span','ov-tchip pr-'+p,p));
+          /* The jot's OWN priority, not the column's - an unset jot sits in the normal column
+             without claiming to be normal, which is what the dialog has always said about it.
+             The column heading above already says which column this is. */
+          const jp=priorityOf(j);
+          if(jp)chips.append(el('span','ov-tchip pr-'+jp,jp));
           if(cat.name&&cat.name!==act)chips.append(el('span','ov-tchip scope',cat.name));
           chips.append(el('span','ov-tid',j.editor||'user'));
           r.append(chips);
