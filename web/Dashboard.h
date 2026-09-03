@@ -2480,7 +2480,8 @@ function renderDetail(){
   /* Priority/due only show for jots that are already TODO-ish (see isTodo()) - otherwise every
      ordinary jot's dialog got task controls it had no use for. "Make this a TODO" is the explicit
      opt-in for a plain jot; it doesn't touch the server by itself, it just reveals the fields so
-     they can be set before the next Save. */
+     they can be set before the next Save. That Save is also what writes the `todo` tag - see the
+     save handler; revealing the fields alone left the jot invisible to every todo-tag consumer. */
   const showTask=isTodo(sel)||detailForceTodo;
   /* pr is a plain {value} holder rather than the <select> it used to be, so Save reads priority
      the same way regardless of which control drew it. */
@@ -2613,6 +2614,16 @@ function renderDetail(){
   const save=el('button','btn primary',isNew?'Create':'Save');
   save.onclick=async function(){
     const tags=tg.value.split(',').map(s=>s.trim()).filter(Boolean);
+    /* "Make this a TODO" and New TODO only ever revealed the task fields - nothing wrote the tag
+       that makes a jot a todo to everything OUTSIDE this dialog. isTodo() counts a bare priority:
+       or due: tag, so the overview panel listed it and the button looked like it had worked, while
+       every `todo`-tag consumer - the panel header's own tag filter, REST and MCP clients, the
+       "open work is todo minus status:done" rule the whole store runs on - could not see it at all.
+       Keyed on the explicit opt-in, not on showTask: a jot that is task-ish because someone tagged
+       it `bug` or `warning` does not need this dialog editorializing a second action tag onto it,
+       and re-adding `todo` to a jot whose owner had just deleted it from the tags box would make
+       un-todoing one impossible from here. */
+    if(detailForceTodo&&!tags.some(t=>ACTION_TAGS.has(t)))tags.push('todo');
     if(pr&&pr.value)tags.push('priority:'+pr.value);
     if(dueIn&&dueIn.value)tags.push('due:'+dueIn.value);
     const body={text:f.text.value,name:f.name.value,summary:f.summary.value,
@@ -2890,9 +2901,15 @@ $('#about').addEventListener('click',function(e){if(e.target===this)this.close()
 
 /* Both open the same new-jot editor - a TODO is just a jot with task fields showing. New TODO
    pre-arms detailOpenedKey/detailForceTodo the way clicking "Make this a TODO" inside the dialog
-   does, so those fields are already open on first paint instead of a second click to reveal them. */
+   does, so those fields are already open on first paint instead of a second click to reveal them.
+   Each states the mode it wants rather than leaving it to renderDetail's reset, because that reset
+   fires on a change of KEY and every new jot has the same one ('__new'). New TODO followed by New
+   jot is therefore not a change of key, and the plain jot used to inherit TODO mode - visibly, as
+   priority/due controls with no "Make this a TODO" button, and since the save handler learned to
+   write the tag, as a `todo` on a jot nobody asked to be one. */
 $('#new-jot-btn').addEventListener('click',function(){
   sel={__new:true};
+  detailExpanded=false;detailForceTodo=false;detailOpenedKey='__new';
   render();
 });
 $('#new-todo-btn').addEventListener('click',function(){
