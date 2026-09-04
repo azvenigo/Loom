@@ -396,6 +396,20 @@ dialog#about b{color:var(--ink);font-weight:600}
 dialog#about code{font:11.5px var(--mono);background:var(--sunk);color:var(--accent-ink);
   padding:1px 5px;border-radius:4px}
 dialog#agent-dialog{width:min(640px,92vw)}
+dialog#attention-dialog{border:1px solid var(--line);border-radius:var(--r);padding:0;
+  width:min(640px,92vw);max-height:86vh;background:var(--panel);color:var(--body);overflow-y:auto}
+dialog#attention-dialog::backdrop{background:rgba(0,0,0,.45)}
+dialog#attention-dialog .body{padding:18px 20px 20px}
+dialog#attention-dialog h2{font:600 16px var(--sans);color:var(--ink);margin:0 0 6px}
+dialog#attention-dialog p{margin:0 0 14px;color:var(--dim);font-size:13.5px;line-height:1.55}
+dialog#attention-dialog .promptbox{max-height:min(40vh,340px);overflow-y:auto}
+#attention-list{max-height:min(30vh,260px);overflow-y:auto;border:1px solid var(--line);
+  border-radius:8px;padding:2px 12px;margin-bottom:14px;background:var(--sunk)}
+#attention-list .ov-arow{padding:8px 0}
+#attention-list .ov-arow:last-child{border-bottom:0}
+.attn-dismiss{flex:none;background:none;border:1px solid var(--line);border-radius:6px;
+  color:var(--faint);font-size:11px;padding:3px 8px;cursor:pointer}
+.attn-dismiss:hover{color:var(--bad);border-color:var(--bad-line)}
 
 /* ---------- history ----------
    A change is a row, not a card: you scan history looking for one moment, so the shape that helps
@@ -873,6 +887,14 @@ mark{background:var(--mark);color:inherit;border-radius:2px;padding:0 1px}
 .ov-card.hi .ic{background:rgba(255,255,255,.2);color:#fff}
 .ov-card.hi .eyebrow,.ov-card.hi .cap{color:rgba(255,255,255,.78)}
 .ov-card.hi .num{color:#fff}
+.ov-card.clickable{cursor:pointer;transition:transform .12s ease,box-shadow .12s ease}
+.ov-card.clickable:hover{transform:translateY(-1px);box-shadow:0 4px 14px -6px rgba(0,0,0,.25)}
+.ov-card.clickable:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+/* Same accent the TODO panel uses for "this wants a look" - unprocessed jots are exactly that,
+   just surfaced as a card instead of a panel because there's nothing to triage inline here. */
+.ov-card.warn{border-color:var(--warn-line)}
+.ov-card.warn .ic{background:var(--warn-wash);color:var(--warn)}
+.ov-card.warn .num{color:var(--warn)}
 
 /* align-items:start so a panel is only as tall as its content - a 10-row distribution chart next
    to an 8-pill tag cloud was stretching the tag panel to match and leaving half of it blank. */
@@ -1256,6 +1278,22 @@ label u{text-decoration:none;color:var(--accent-ink);text-transform:none;letter-
   </div>
 </dialog>
 
+<dialog id="attention-dialog">
+  <div class="body">
+    <h2>Needs attention</h2>
+    <p><b id="attention-count"></b> came in without a summary and haven't been triaged. Dismiss any
+       that don't actually need work, or copy the prompt below into an agent session to have it
+       process the rest: write a summary, tag it, and fold it into existing memories where it
+       belongs.</p>
+    <div id="attention-list"></div>
+    <div class="promptbox open" id="attention-prompt-text"></div>
+    <div class="row" style="margin-top:12px">
+      <button type="button" class="btn primary" id="attention-copy">Copy prompt</button>
+      <button type="button" class="btn ghost" id="attention-close">Close</button>
+    </div>
+  </div>
+</dialog>
+
 <dialog id="purge-dialog">
   <div class="body">
     <div id="purge-ask">
@@ -1566,6 +1604,22 @@ async function setDue(j,val){
    `todo` minus `status:done`. It's also what makes "completed can go back to being a TODO" free -
    drop the one tag and nothing else about the jot has changed. */
 const isDone=j=>(j.tags||[]).includes('status:done');
+/* status:unprocessed marks a jot that arrived without a summary - typically ZHotkey, whose
+   detail-only capture has nowhere to put one - and hasn't been triaged yet. It is a triage flag,
+   not an audit tag like todo/status:done: there is no reason to keep a record that a jot was ONCE
+   unprocessed, so processing it means removing the tag outright, not pairing it with a "done"
+   counterpart. See the attention-dialog below and the durable `unprocessed-jot-workflow` memory
+   in Loom itself for the full convention. */
+const isUnprocessed=j=>(j.tags||[]).includes('status:unprocessed');
+/* Same shape as setDue/setPriority/toggleDone: returns the updated jot so the caller can chain an
+   undo off ITS expect_updated rather than the stale one the PATCH just moved past. */
+async function setUnprocessed(j,val){
+  const tags=(j.tags||[]).filter(t=>t!=='status:unprocessed');
+  if(val)tags.push('status:unprocessed');
+  const exp=j.updated||j.id;
+  return api('/jots/'+j.id+'?expect_updated='+exp,
+    {method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({tags})});
+}
 async function toggleDone(j,markDone){
   const tags=(j.tags||[]).filter(t=>t!=='status:done');
   if(markDone)tags.push('status:done');
@@ -1976,6 +2030,91 @@ function copyText(t,btn){
   fallback();
 }
 
+/* Deliberately doesn't name the batch itself - the agent re-queries status:unprocessed on its own,
+   so it always acts on whatever is actually pending at the time it runs rather than a snapshot
+   that may have grown or shrunk since the card was clicked. */
+function attentionPrompt(list){
+  const srv=(stats&&stats.server)||{};
+  const o=srv.origin||location.origin;
+  return [
+"Process the unprocessed jots in Loom ("+o+"). Be efficient about it - batch the reads and",
+"tag lookups instead of re-deriving vocabulary per jot, and don't narrate each one at length.",
+"",
+"1. loom_search(tags:[\"status:unprocessed\"]) to get the list - don't rely on any list given to",
+"   you elsewhere, query it fresh.",
+"2. For EACH one: loom_get(id) to read the full text, then work out what it needs -",
+"   - A `summary` and, if useful, a fuller `description`.",
+"   - Any [bracketed text] in the body names a tag - turn it into one, reusing an existing tag",
+"     (check loom_tags first) if a matching one already exists, otherwise creating it.",
+"   - `journal` if the jot is clearly a journal-style entry (a dated personal note, log of the",
+"     day, how-I-felt/what-happened kind of writing) rather than a fact or task.",
+"   - Other topical tags from the EXISTING vocabulary - don't invent one that already exists",
+"     under a different spelling - including `todo` if it reads as actionable work rather than",
+"     a note.",
+"   - If it's a todo, whether it needs a priority: and a due: deadline.",
+"   - If it duplicates or extends a memory already in Loom, update THAT jot instead of leaving",
+"     two records of the same fact.",
+"3. loom_update(id, ...) with whatever changed, tags: <the same tags, MINUS status:unprocessed>.",
+"   Dropping the tag is what marks it processed - this is a triage flag, not an audit trail, so",
+"   don't pair it with a status:done the way `todo` gets one; just remove it.",
+"",
+"If a jot is unclear - ambiguous bracketed text, unsure whether it's a journal entry, unsure how",
+"to categorize it - ask rather than guessing."
+  ].join("\n");
+}
+/* list is a snapshot, not the live store - see attentionPrompt. Rows read from it directly rather
+   than re-fetching, so Dismiss (which DOES write) has to update this closure's copy too or a
+   second dismiss in the same dialog session would re-send an id already cleared. */
+function openAttention(list){
+  list=list.slice();
+  const redraw=function(){
+    $('#attention-count').textContent=list.length+' jot'+(list.length===1?'':'s');
+    const body=$('#attention-list');body.innerHTML='';
+    if(!list.length){
+      body.append(el('div','ov-colempty','Nothing left to process.'));
+    }else{
+      list.slice().sort((a,b)=>a.id-b.id).forEach(function(j){
+        const r=el('div','ov-arow');
+        r.append(el('i','ov-adot'));
+        const mid=el('div','ov-amid');
+        mid.append(el('div','ov-atitle',j.name||'(no summary yet)'));
+        mid.append(el('div','ov-asub',(j.editor||'user')+' · '+stamp(j.id)));
+        r.append(mid);
+        r.append(el('span','ov-awhen',ago(j.id)));
+        const dismiss=el('button','attn-dismiss','Dismiss');
+        dismiss.type='button';
+        dismiss.title='Drop status:unprocessed without opening it';
+        dismiss.onclick=async function(e){
+          e.stopPropagation();
+          try{
+            const updated=await setUnprocessed(j,false);
+            list=list.filter(x=>x.id!==j.id);
+            redraw();
+            toast('Dismissed','ok',async function(){
+              try{const restored=await setUnprocessed(updated,true);
+                  list.push(restored);redraw();}
+              catch(err){toast(err.message,'err');}
+            });
+          }catch(e){toast(e.message,'err');}
+        };
+        r.append(dismiss);
+        r.onclick=async function(){
+          $('#attention-dialog').close();
+          try{sel=await api('/jots/'+j.id);render();}
+          catch(e){toast(e.message,'err');}
+        };
+        body.append(r);
+      });
+    }
+    $('#attention-prompt-text').textContent=list.length?attentionPrompt(list):
+      'Nothing left to copy a prompt for.';
+    $('#attention-copy').disabled=!list.length;
+  };
+  redraw();
+  $('#attention-copy').onclick=function(){copyText(attentionPrompt(list),$('#attention-copy'));};
+  $('#attention-dialog').showModal();
+}
+
 const OV_ICONS={
   dot:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6">'+
       '<circle cx="8" cy="8" r="3.2"/></svg>',
@@ -2006,6 +2145,10 @@ async function viewDashboard(target){
        else below is context for deciding what to do about it. Pulled from the same brief=1 fetch
        as activity/distribution, so it inherits the same newest-200 cap rather than a second call. */
     const todos=recent.jots.filter(j=>!isDone(j)&&isTodo(j));
+    /* Same brief=1/newest-200 fetch, same reasoning as todos above: cheap enough that a second
+       request buys nothing. Caps at 200 like everything else fed by `recent` - a backlog past
+       that is already a "go look at Search" problem, not a dashboard-card one. */
+    const unprocessed=recent.jots.filter(isUnprocessed);
     const todoP=el('div','ov-panel ov-todo');L.append(todoP);
     const th=el('div','phead');
     const badge=el('div','ov-todobadge');badge.innerHTML=OV_ICONS.flag;th.append(badge);
@@ -2161,21 +2304,28 @@ async function viewDashboard(target){
 
     /* ---- stat cards ---- */
     const grid=el('div','ov-grid');L.append(grid);
-    const card=function(cls,icon,eyebrow,num,cap){
-      const c=el('div','ov-card'+(cls?' '+cls:''));
+    const card=function(cls,icon,eyebrow,num,cap,onclick){
+      const c=el('div','ov-card'+(cls?' '+cls:'')+(onclick?' clickable':''));
       const top=el('div','top');
       const ic=el('div','ic');ic.innerHTML=OV_ICONS[icon];top.append(ic);
       top.append(el('div','eyebrow',eyebrow));c.append(top);
       c.append(el('div','num',String(num)));
       c.append(el('div','cap',cap));
+      if(onclick){c.onclick=onclick;c.tabIndex=0;
+        c.onkeydown=function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();onclick();}};}
       grid.append(c);
     };
     card('hi','dot','Active jots',health.jots??'—',
       (health.named||0)+' named · '+Math.max((health.jots||0)-(health.named||0),0)+' unnamed');
     card('','layers','Topics',topTags.length,'Bare-tag vocabulary');
     card('','hash','Tags in use',health.tags??'—','Including structural tags');
-    card('','flag','Needs attention',sim.clusters.length,
-      sim.clusters.length?'Tag groups that look like duplicates':'No drift detected');
+    /* Unprocessed rather than tag-drift: drift already has a permanent home (the Tags tab shows
+       the same sim.clusters at the top of its own page), and it never had a click-through here
+       anyway. What actually needs a human is a jot that came in with no summary - the whole point
+       of `status:unprocessed`, see the attention-dialog below. */
+    card(unprocessed.length?'warn':'','flag','Needs attention',unprocessed.length,
+      unprocessed.length?'Imported without a summary - click to process':'Nothing waiting',
+      unprocessed.length?function(){openAttention(unprocessed);}:null);
 
     /* ---- distribution + signals ---- */
     const row1=el('div','ov-row');L.append(row1);
@@ -2453,7 +2603,9 @@ async function viewHistory(target){
     const main=el('div','hmain');
     const name=el('div','hname'+(e.op==='del'?' gone':''),e.name||'(unnamed)');
     main.append(name);
-    if(e.summary)main.append(el('div','hsum',e.summary));
+    /* A row can stand for a run of edits folded together - say so, or the caption reads as the only
+       thing that happened when it is really the net effect of several saves. */
+    if(e.summary)main.append(el('div','hsum',e.summary+(e.edits>1?'  ·  '+e.edits+' edits':'')));
     /* Clicking the row filters to that jot - "what else happened to this one" is the question you
        always have next. */
     main.style.cursor='pointer';
@@ -2476,7 +2628,11 @@ async function viewHistory(target){
         const r=await api('/history/restore',
           {method:'POST',headers:{'Content-Type':'application/json'},
            body:JSON.stringify({seq:e.seq})});
-        toast(r.undid_delete?'restored '+(r.jot.name||'the jot')
+        /* Restore sits on every row including the newest, and the newest row is the version the jot
+           is already on - so "nothing to do" is a normal outcome here, not a failure. Saying so
+           beats a success message for a write that correctly never happened. */
+        toast(r.no_change?'already at that version'
+             :r.undid_delete?'restored '+(r.jot.name||'the jot')
                             :'restored '+(r.jot.name||'the jot')+' to that version');
         render();
       }catch(err){toast(err.message,'bad');rb.disabled=false;}
@@ -3049,6 +3205,12 @@ $('#agent-btn').addEventListener('click',function(){
 });
 $('#agent-close').addEventListener('click',()=>$('#agent-dialog').close());
 $('#agent-dialog').addEventListener('click',function(e){if(e.target===this)this.close();});
+
+/* opened from the "Needs attention" card (see viewDashboard/openAttention) rather than a static
+   header button, since its content is a specific batch of jots, not a fixed brief. */
+$('#attention-close').addEventListener('click',()=>$('#attention-dialog').close());
+$('#attention-dialog').addEventListener('click',function(e){if(e.target===this)this.close();});
+$('#attention-dialog').addEventListener('close',function(){if(view==='dashboard')render();});
 
 /* Esc and the backdrop both fire the dialog's native close - sel has to fall back in step so a
    later render() doesn't reopen it. The X button and in-panel Close button just call render()
