@@ -101,12 +101,11 @@ namespace
         tools.push_back(Tool("loom_search",
             "Search the shared memory. Ranked by relevance when 'query' is given, newest-first "
             "otherwise. A match in a jot's summary counts far more than the same words in its body, "
-            "so short specific queries work better than long ones. Returns whole records by "
-            "default, so a search is usually all you need - do not follow up with loom_get on "
-            "every hit. Set 'brief' for a startup skim or any browse where you only need topics: "
-            "it drops the body from every hit so N jots cost a fraction of the tokens, and marks "
-            "has_text on any hit whose body got dropped - loom_get that one if it turns out to "
-            "matter.",
+            "so short specific queries work better than long ones. Brief by default - each hit "
+            "comes back as id/name/summary/tags only, with has_text set if a body exists, so N "
+            "results cost a fraction of the tokens of pulling whole records. loom_get (or a "
+            "one-off brief:false) the specific hits whose summary alone isn't enough - do not "
+            "flip brief:false to fetch a whole result set 'just in case'.",
             json{
                 {"query",    Str("Free text. Leave empty to browse by filter alone.")},
                 {"tags",     StrArray("Every tag listed must be present.")},
@@ -118,8 +117,9 @@ namespace
                                  "a query, newest otherwise.")},
                 {"limit",    json{{"type","integer"},{"description","Max results (default 20)."}}},
                 {"brief",    json{{"type","boolean"},
-                             {"description","Drop each hit's body (default false). Use for a cheap "
-                                            "topic skim - id/name/summary/tags only."}}}
+                             {"description","Drop each hit's body (default true - this is the "
+                                            "normal way to search). Set false only once you know "
+                                            "you need full bodies for every hit, not just some."}}}
             }, json::array()));
 
         tools.push_back(Tool("loom_get",
@@ -349,7 +349,7 @@ namespace
             spec.msUntil  = ReadStr(args, "until");
             spec.msOrder  = ReadStr(args, "order");
             spec.mnLimit  = static_cast<size_t>(ReadInt(args, "limit", 20));
-            const bool bBrief = ReadBool(args, "brief", false);
+            const bool bBrief = ReadBool(args, "brief", true);
 
             Query query;
             if (std::error_code ec = ops.BuildQuery(spec, query))
@@ -532,7 +532,10 @@ namespace
                 "When editing, pass expect_updated so a concurrent write is reported rather than lost.\n"
                 "Tag actionable open work `todo`. When it is finished, ADD `status:done` and KEEP\n"
                 "`todo` - do not remove it. The pair is the record that the work happened; removing\n"
-                "`todo` erases it. Open work is todo minus status:done.";
+                "`todo` erases it. Open work is todo minus status:done.\n"
+                "loom_search is brief by default - summaries only. Skim brief, then loom_get (or a\n"
+                "one-off brief:false) only the specific jots the task actually needs; do not pull\n"
+                "whole records to browse.";
             return RpcResult(id, result);
         }
 
