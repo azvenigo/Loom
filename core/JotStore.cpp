@@ -110,6 +110,26 @@ tJotID JotStore::Locked_NextID()
     return nNext;
 }
 
+tJotID JotStore::Locked_ClaimID(int64_t nCreatedUS)
+{
+    // Walk forward off any id already taken, exactly as the importer does. The caller's timestamp
+    // usually has second or millisecond resolution, so two backdated jots from the same source
+    // second land on the same microsecond; taking the next free one keeps ids unique at the cost of
+    // a few microseconds of accuracy, which is below the resolution anybody supplying a date has.
+    tJotID id = nCreatedUS;
+    while (mJots.count(id) != 0)
+        ++id;
+
+    // Keep the allocator ahead, the same as the bulk path - otherwise a backdated jot placed after
+    // the newest live record would let the next natural id collide with one already issued.
+    int64_t nPrev = mnLastID.load(std::memory_order_relaxed);
+    while (nPrev < id && !mnLastID.compare_exchange_weak(nPrev, id, std::memory_order_relaxed))
+    {
+    }
+
+    return id;
+}
+
 //====================================================================================================
 // Index maintenance
 //
@@ -489,8 +509,17 @@ std::error_code JotStore::Add(const JotInput& input, MutationResult& outResult)
             return MakeLoomError(eLoomErr::kNameInUse);
     }
 
+    // BACKDATING. input.mnCreatedUS is the jot's real creation time, and because the id IS the
+    // creation time it has to become the id - there is nowhere else for it to live, and inventing a
+    // second "created" field would leave two answers to one question that nothing keeps in step.
+    //
+    // What that costs is the property that ids ascend in WRITE order. Very little depends on it:
+    // mChrono is kept sorted rather than assumed sorted, since/until are binary searches over it,
+    // order=newest/oldest sort by id, and WAL replay is file-ordered and last-writer-wins per id,
+    // so none of them can tell the difference. The one place that did assume it was mChrono's
+    // append below, now a sorted insert. Ops::Add refuses a future timestamp; see the note there.
     Jot jot;
-    jot.mID = Locked_NextID();
+    jot.mID = input.mnCreatedUS ? Locked_ClaimID(*input.mnCreatedUS) : Locked_NextID();
 
     if (std::error_code ec = Locked_Apply(jot, input, true, outResult.mSuggestions))
         return ec;
@@ -504,7 +533,7 @@ std::error_code JotStore::Add(const JotInput& input, MutationResult& outResult)
 
     stored.mnSlot = Locked_AllocSlot(id);   // must precede indexing - postings carry the slot
     Locked_IndexJot(stored);
-    mChrono.push_back(id);   // ids are monotonic, so appending keeps mChrono sorted
+    SortedInsert(mChrono, id);   // a backdated jot belongs at its own date, not at the end
     if (!stored.msName.empty())
     {
         mNameIndex.emplace(stored.msName, id);
@@ -943,6 +972,31 @@ bool JotStore::Locked_SameContent(const Jot& a, const Jot& b)
         && a.mTags        == b.mTags
         && a.mLinks       == b.mLinks
         && a.mPendingLinks == b.mPendingLinks;
+}
+
+// The FlatJot twin of the check above, and it must cover the same fields - a record read back out
+// of the history log has no interned ids to compare, so this is what the restore path uses.
+bool JotStore::SameContent(const FlatJot& a, const FlatJot& b)
+{
+    // Editor is normalized rather than compared raw: the default editor flattens to an empty string
+    // but a caller may have written the literal "user", and those are the same person.
+    if (a.IsDefaultEditor() != b.IsDefaultEditor()
+        || (!a.IsDefaultEditor() && a.msEditor != b.msEditor))
+        return false;
+
+    if (a.msName != b.msName || a.msSummary != b.msSummary || a.msText != b.msText
+        || a.mLinks != b.mLinks || a.mPendingLinks != b.mPendingLinks
+        || a.mTags.size() != b.mTags.size())
+        return false;
+
+    // Tags are compared as a SET. In RAM they are ordered by interned id, and intern order is only
+    // stable within one process - so the same tags flattened before and after a restart can come out
+    // in different orders. Element-wise here would call an unchanged record changed on every restore
+    // that spans a restart, which is exactly the case this check exists to catch.
+    std::vector<std::string> vA = a.mTags, vB = b.mTags;
+    std::sort(vA.begin(), vA.end());
+    std::sort(vB.begin(), vB.end());
+    return vA == vB;
 }
 
 void JotStore::Locked_JournalPut(const Jot& jot)

@@ -40,9 +40,36 @@ void Ops::CollectWarnings(const std::vector<TagSuggestion>& vSuggestions, OpWarn
 // Writes
 //====================================================================================================
 
+std::error_code Ops::ValidateCreatedUS(int64_t nCreatedUS)
+{
+    // A future creation time is refused, and this is the guard that matters most. The id is also
+    // the allocator's high-water mark, so a jot dated 2099 would drag mnLastID there with it and
+    // every id issued afterwards - for the life of the store - would be a fabricated future
+    // timestamp. One typo would permanently break the meaning of every subsequent id, so this is
+    // not a matter of taste. A little slack absorbs clock skew between a client and this machine.
+    const int64_t nNow = LOOMTIME::NowMicros();
+    if (nCreatedUS > nNow + kCreatedFutureSlackUS)
+        return MakeLoomError(eLoomErr::kInvalidArgument);
+
+    // Below this is not a date anybody means. It catches the standard migration mistake of passing
+    // seconds where microseconds are wanted: a plausible 2026 value in seconds reads as a few
+    // minutes past the epoch here, which would otherwise be accepted and silently file the jot
+    // under 1970 instead of being reported.
+    if (nCreatedUS < kCreatedFloorUS)
+        return MakeLoomError(eLoomErr::kInvalidArgument);
+
+    return LoomOK();
+}
+
 std::error_code Ops::Add(const JotInput& input, AddResult& outResult)
 {
     outResult = AddResult();
+
+    if (input.mnCreatedUS)
+    {
+        if (std::error_code ec = ValidateCreatedUS(*input.mnCreatedUS))
+            return ec;
+    }
 
     MutationResult result;
     if (std::error_code ec = mStore.Add(input, result))
@@ -125,13 +152,43 @@ std::error_code Ops::Delete(tJotID id)
     return mStore.Remove(id);
 }
 
-std::error_code Ops::Restore(const FlatJot& record, tJotID& outConflictID, AddResult& outResult)
+std::error_code Ops::Restore(const FlatJot& record, int64_t nExpectUpdatedUS, tJotID& outConflictID,
+                             AddResult& outResult)
 {
     outResult      = AddResult();
     outConflictID  = kInvalidJotID;
 
     if (record.mID == kInvalidJotID)
         return MakeLoomError(eLoomErr::kInvalidArgument);
+
+    // Same guard Update() applies: if the jot currently exists and has moved since the caller last
+    // saw it, refuse rather than silently overwrite. A jot that no longer exists (deleted) has
+    // nothing to be stale relative to, so the check is skipped and restoring it proceeds.
+    Jot current;
+    if (nExpectUpdatedUS != 0 && mStore.Get(record.mID, current)
+        && current.EffectiveUpdatedUS() != nExpectUpdatedUS)
+        return MakeLoomError(eLoomErr::kConflict);
+
+    // A RESTORE THAT CHANGES NOTHING IS NOT A MUTATION.
+    //
+    // The same rule Update follows, and here it is not an edge case but the common one: the History
+    // view puts a Restore button on EVERY row including the newest, and the newest row is by
+    // definition the version the jot is already on. Writing it anyway bumped `updated` - discarding
+    // every other agent's expect_updated token for nothing - added a WAL line, and appended a
+    // history entry that was a byte-for-byte copy of the one being restored from, differing only in
+    // its timestamp. The log is supposed to answer "what changed".
+    //
+    // The call still succeeds and still returns the record: the caller asked for a state and that is
+    // the state. mbNoChange says nothing was written, for anyone who cares to tell the difference.
+    FlatJot currentFlat;
+    if (mStore.Flatten(record.mID, currentFlat) && JotStore::SameContent(currentFlat, record))
+    {
+        if (!mStore.Get(record.mID, outResult.mJot))
+            return MakeLoomError(eLoomErr::kNotFound);
+        outResult.mbCreated  = false;
+        outResult.mbNoChange = true;
+        return LoomOK();
+    }
 
     // The slug check is a read, so it races a concurrent write in principle. It is still worth
     // doing: the window is microseconds, the alternative is a silently duplicated name that nothing

@@ -50,6 +50,15 @@ namespace JOTJSON
     // untouched fields alone rather than clearing them.
     bool ParseInput(const std::string& sBody, JotInput& outInput, std::string& outError);
 
+    // The accepted spellings of a `created` value, in one place so REST and MCP cannot drift into
+    // taking different ones. A JSON number is passed through as its decimal text, so the same
+    // parser handles both forms: raw microseconds, "2025-08-14", "2025-08-14 09:12:00", or a
+    // relative age like "30d" meaning that long ago. False means nothing parsed.
+    //
+    // This deliberately does NOT range-check; Ops::ValidateCreatedUS owns that, so a bad date is
+    // refused by the same rule whichever door it arrives at.
+    bool ParseCreatedSpec(const std::string& sSpec, int64_t& outUS);
+
     //--------------------------------------------------------------------------------------------
     // Responses
     //--------------------------------------------------------------------------------------------

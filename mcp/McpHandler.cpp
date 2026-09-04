@@ -147,7 +147,13 @@ namespace
                                      "Structural tags use a prefix, e.g. 'type:project'.")},
                 {"links",   StrArray("Jot ids or slugs. A slug that does not exist yet is kept as a "
                                      "pending link and connects itself when that jot is written.")},
-                {"editor",  Str("Who is writing. Defaults to user; set it to your own name.")}
+                {"editor",  Str("Who is writing. Defaults to user; set it to your own name.")},
+                {"created", Str("When this was ACTUALLY created, if that is not now - for content "
+                                "carried in from somewhere else that has its own date. "
+                                "'YYYY-MM-DD', 'YYYY-MM-DD HH:MM:SS', microseconds since the "
+                                "epoch, or a relative age like '30d'. Omit for anything you are "
+                                "writing now. Cannot be in the future, and cannot be changed "
+                                "afterwards.")}
             }, json::array({"text"})));
 
         tools.push_back(Tool("loom_upsert",
@@ -163,6 +169,10 @@ namespace
                 {"tags",           StrArray("Tags to set. Replaces the existing set.")},
                 {"links",          StrArray("Jot ids or slugs.")},
                 {"editor",         Str("Who is writing.")},
+                {"created",        Str("When this was ACTUALLY created, for content carried in "
+                                       "from elsewhere. Applies ONLY if this call creates the jot; "
+                                       "if the slug already exists its original date is kept. "
+                                       "'YYYY-MM-DD', microseconds, or a relative age like '30d'.")},
                 {"expect_updated", json{{"type","integer"},
                     {"description","The 'updated' (or 'id' if never edited) you last saw. "
                                    "Mismatch returns a conflict instead of overwriting."}}}
@@ -284,7 +294,29 @@ namespace
         if (args.contains("editor")  && args["editor"].is_string())  in.msEditor  = args["editor"].get<std::string>();
         if (args.contains("tags")    && args["tags"].is_array())     in.mTags     = ReadStrArray(args, "tags");
         if (args.contains("links")   && args["links"].is_array())    in.mLinks    = ReadStrArray(args, "links");
+
+        // Same accepted spellings as the REST body - see JOTJSON::ParseCreatedSpec. A value that
+        // does not parse is dropped rather than rejected here, and CallTool reports it; models pass
+        // dates in whatever shape they please, so the message has to say what was wanted.
+        if (args.contains("created"))
+        {
+            std::string sSpec;
+            if (args["created"].is_string())               sSpec = args["created"].get<std::string>();
+            else if (args["created"].is_number_integer())  sSpec = std::to_string(args["created"].get<int64_t>());
+
+            int64_t nCreatedUS = 0;
+            if (!sSpec.empty() && JOTJSON::ParseCreatedSpec(sSpec, nCreatedUS))
+                in.mnCreatedUS = nCreatedUS;
+        }
         return in;
+    }
+
+    // True when the caller supplied a 'created' the parser could not make sense of - so the tool
+    // can say so instead of silently stamping the jot with today's date, which is the one outcome
+    // somebody passing a creation time would never want.
+    bool CreatedWasUnusable(const json& args, const JotInput& in)
+    {
+        return args.contains("created") && !in.mnCreatedUS;
     }
 }
 
@@ -390,6 +422,11 @@ namespace
             const JotInput in = ReadJotInput(args);
             AddResult result;
             std::error_code ec;
+
+            if (CreatedWasUnusable(args, in))
+                return ToolFailure("'created' is not a recognizable time. Use 'YYYY-MM-DD', "
+                                   "'YYYY-MM-DD HH:MM:SS', microseconds since the epoch, or a "
+                                   "relative age like '30d'.");
 
             if (sName == "loom_add")
             {

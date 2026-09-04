@@ -51,6 +51,11 @@ struct HistoryEntry
     std::string msEditor;
     std::string msSummary;          // summary, else a clipped first line - for the list only
     std::string msRecord;           // the complete FlatJot JSON. Empty for a delete.
+
+    // How many logged mutations this row stands for. List() folds a run of edits to one jot into a
+    // single row - see the coalescing note in HistoryConfig - and this is the size of that run. 1
+    // means the row is one mutation. Never serialized; it is computed per read.
+    size_t      mnCoalesced = 1;
 };
 
 struct HistoryConfig
@@ -67,6 +72,15 @@ struct HistoryConfig
     size_t  mnMemory = 2000;
 
     int64_t mnFlushIntervalMS = 250;
+
+    // COALESCING. Every mutation is logged, but a run of edits to ONE jot by ONE editor with no more
+    // than this long between them is LISTED as a single point. Saving a jot four times while typing
+    // is one act of editing, and showing it as four rows - each captioned with the jot's unchanged
+    // summary - made the view unreadable without making anything more recoverable. The individual
+    // records are all still in the file and still restorable by seq; this only changes what List()
+    // hands back. The row carries the run's NEWEST state, so restoring the row below it is what
+    // "undo that editing session" means.
+    int64_t mnCoalesceWindowMS = 10 * 60 * 1000;
 };
 
 struct HistoryStats
@@ -123,8 +137,37 @@ private:
     void CommitterLoop();
     void Append(const HistoryEntry& entry, const std::string& sLine);
     bool ScanFileFor(uint64_t nSeq, HistoryEntry& outEntry) const;
+    bool ScanFileForPrevious(uint64_t nSeq, tJotID id, HistoryEntry& outEntry) const;
     static bool ParseLine(const std::string& sLine, HistoryEntry& outEntry);
+    // Reads just the last line of a log file - O(length of that line), not O(file) - so Open() can
+    // learn the highest sequence number a generation reached without parsing the whole thing before
+    // retiring it.
+    static bool ScanLastLine(const std::string& sPath, HistoryEntry& outEntry);
     static std::string Clip(const std::string& s, size_t nMax);
+
+    // Last state seen for each id, so the NEXT entry for it can be captioned with what actually
+    // changed rather than the jot's static summary - which usually does not change from edit to edit.
+    //
+    // msSummary is the RAW summary field and exists only to be diffed. msCaption is the clipped
+    // display line, and is what a delete - which carries only an id - is listed with, so it reads
+    // "deleted <slug>: <summary>" instead of as a bare number. Comparing the clipped form against a
+    // raw one would call the summary edited every time a jot's summary was empty or over the clip
+    // length, which is why these are two fields and not one.
+    struct LastSeen
+    {
+        std::string              msName, msEditor, msSummary, msCaption;
+        std::vector<std::string> mTags;
+        size_t                   mnTextLen = 0;
+    };
+
+    // What actually differs from pPrev, as a short line - "text edited", "+due:...", "-todo" -
+    // instead of the summary, which typically stays fixed across edits to tags or body. Empty means
+    // nothing this coarse a check can see moved; the caller falls back to the plain summary/text clip.
+    static std::string DescribeChange(const LastSeen* pPrev, const FlatJot& jot);
+
+    // Re-captions a coalesced row to describe the whole run against the state it started from,
+    // rather than leaving it showing only what its newest single mutation did.
+    static void Recaption(HistoryEntry& burst, const HistoryEntry& baseline);
 
     HistoryConfig             mConfig;
     void*                     mpFile = nullptr;   // FILE*, opaque to keep the header clean
@@ -138,9 +181,7 @@ private:
     uint64_t                  mnBytes     = 0;
     bool                      mbRunning   = false;
 
-    // Last name and editor seen for each id, so a delete - which carries only an id - can still be
-    // listed as "deleted <slug>" instead of as a bare number.
-    std::unordered_map<tJotID, std::pair<std::string, std::string>> mLastSeen;
+    std::unordered_map<tJotID, LastSeen> mLastSeen;
 
     std::thread               mCommitter;
 };

@@ -188,6 +188,63 @@ namespace
         Check(store.Size() == nTotal, "store holds them all");
     }
 
+    void TestBackdating()
+    {
+        Section("backdating");
+
+        JotStore store;
+        Ops ops(store);
+
+        const int64_t nPast = 1700000000000000LL;   // 2023-11-14, well in the past
+
+        JotInput in = Text("migrated note");
+        in.mnCreatedUS = nPast;
+        AddResult r1;
+        Check(!ops.Add(in, r1), "backdated add accepted");
+        Check(r1.mJot.mID == nPast, "id equals the supplied time");
+
+        AddResult r2;
+        Check(!ops.Add(in, r2), "a second jot at the same instant is accepted");
+        Check(r2.mJot.mID == nPast + 1, "collision resolved by walking forward");
+
+        AddResult rNow;
+        Check(!ops.Add(Text("today"), rNow), "an ordinary add still works afterwards");
+        Check(rNow.mJot.mID > nPast + 1, "the allocator stayed ahead of the backdated ids");
+
+        // A future date is refused outright - see ValidateCreatedUS.
+        JotInput future = Text("from tomorrow");
+        future.mnCreatedUS = LOOMTIME::NowMicros() + 3600LL * 1000000LL;
+        AddResult rFuture;
+        Check(ops.Add(future, rFuture) == MakeLoomError(eLoomErr::kInvalidArgument),
+              "a future creation time is rejected");
+
+        // Update never moves an id, so mnCreatedUS on a patch is simply not a thing to honour -
+        // and a patch carrying only it has nothing else to do.
+        JotInput patch;
+        patch.mnCreatedUS = nPast - 1000;
+        Check(ops.Update(r1.mJot.mID, patch, 0, rNow) == MakeLoomError(eLoomErr::kInvalidArgument),
+              "a patch that only sets created is an empty patch");
+
+        // Upsert only honours the date on the branch that actually creates.
+        const int64_t nUpsertPast = 1650000000000000LL;   // unclaimed by anything above
+
+        JotInput up;
+        up.msName      = "migrated-slug";
+        up.msText      = "first import";
+        up.mnCreatedUS = nUpsertPast;
+        AddResult rUp1;
+        Check(!ops.Upsert(up, 0, rUp1), "named backdated upsert creates");
+        Check(rUp1.mJot.mID == nUpsertPast, "and takes the supplied id");
+
+        JotInput up2;
+        up2.msName      = "migrated-slug";
+        up2.msText      = "re-imported with new content";
+        up2.mnCreatedUS = nUpsertPast + 999999;   // a different date - must be ignored on update
+        AddResult rUp2;
+        Check(!ops.Upsert(up2, 0, rUp2), "re-running the import updates instead of creating");
+        Check(rUp2.mJot.mID == nUpsertPast, "the original id/date survives a re-import");
+    }
+
     void TestNamesAndUpsert()
     {
         Section("names and upsert");
@@ -838,6 +895,7 @@ int main()
     TestTagNormalization();
     TestBareJotShape();
     TestIDMonotonicity();
+    TestBackdating();
     TestNamesAndUpsert();
     TestOptimisticConcurrency();
     TestPendingLinks();

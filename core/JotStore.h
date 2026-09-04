@@ -242,6 +242,12 @@ public:
     // Resolves one record's interned ids into strings. Takes the shared lock.
     bool Flatten(tJotID id, FlatJot& outFlat) const;
 
+    // Content equality between two flattened records, for callers holding a record that came from
+    // outside RAM - the history log's restore path. This is the FlatJot twin of the no-op check
+    // Update applies internally, and the two are defined next to each other in the .cpp so that a
+    // field added to one is visibly missing from the other.
+    static bool SameContent(const FlatJot& a, const FlatJot& b);
+
     // Every live record, flattened, oldest first. This is the snapshot writer's view - taken under
     // a single lock so the file is a coherent point in time rather than a smear across writes.
     void FlattenAll(std::vector<FlatJot>& outFlat) const;
@@ -278,6 +284,10 @@ private:
     using tPostings = std::vector<Posting>;
 
     tJotID Locked_NextID();
+
+    // The id for a jot whose creation time the caller supplied: that timestamp, moved forward past
+    // any id already in use. Keeps the allocator ahead of whatever it hands out.
+    tJotID Locked_ClaimID(int64_t nCreatedUS);
 
     // Index maintenance for one jot. These are exact inverses; an edit is Unindex then Index.
     // Index takes a non-const reference because it writes back the derived term-count fields.

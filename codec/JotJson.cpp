@@ -148,6 +148,11 @@ namespace JOTJSON
         return true;
     }
 
+    bool ParseCreatedSpec(const std::string& sSpec, int64_t& outUS)
+    {
+        return LOOMTIME::ParseTimeSpec(sSpec, LOOMTIME::NowMicros(), outUS);
+    }
+
     bool ParseInput(const std::string& sBody, JotInput& outInput, std::string& outError)
     {
         outInput = JotInput();
@@ -200,6 +205,30 @@ namespace JOTJSON
             if (!ReadStringArray(j["links"], vLinks, outError, "links", true))
                 return false;
             outInput.mLinks = std::move(vLinks);
+        }
+        if (j.contains("created"))
+        {
+            // A number is handed to the same parser as its decimal text, so there is one definition
+            // of what a creation time may look like rather than one per JSON type.
+            std::string sSpec;
+            if (j["created"].is_string())
+                sSpec = j["created"].get<std::string>();
+            else if (j["created"].is_number_integer())
+                sSpec = std::to_string(j["created"].get<int64_t>());
+            else
+            {
+                outError = "created must be a string or an integer";
+                return false;
+            }
+
+            int64_t nCreatedUS = 0;
+            if (!ParseCreatedSpec(sSpec, nCreatedUS))
+            {
+                outError = "created is not a recognizable time: use microseconds, "
+                           "'YYYY-MM-DD', 'YYYY-MM-DD HH:MM:SS', or a relative age like '30d'";
+                return false;
+            }
+            outInput.mnCreatedUS = nCreatedUS;
         }
 
         return true;

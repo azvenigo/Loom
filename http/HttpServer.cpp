@@ -751,6 +751,9 @@ struct HttpServer::Impl
                 entry["name"]    = e.msName;
                 entry["editor"]  = e.msEditor;
                 entry["summary"] = e.msSummary;
+                // How many logged mutations this row stands for; 1 unless a run of edits to one jot
+                // was folded into it. The seq is the run's newest, which is what a restore targets.
+                entry["edits"]   = e.mnCoalesced;
                 vOut.push_back(std::move(entry));
             }
 
@@ -777,6 +780,9 @@ struct HttpServer::Impl
                 return Fail(400, "expected {\"seq\":N}");
 
             const uint64_t nSeq = static_cast<uint64_t>(body["seq"].i());
+            // expect_updated is the multi-agent guard, same as PATCH: pass the value you last saw
+            // and a concurrent edit comes back 409 instead of this restore silently clobbering it.
+            const int64_t nExpectUpdatedUS = body.has("expect_updated") ? body["expect_updated"].i() : 0;
 
             HistoryEntry entry;
             if (!mpHistory->Get(nSeq, entry))
@@ -795,7 +801,7 @@ struct HttpServer::Impl
 
             tJotID   conflictID = kInvalidJotID;
             AddResult result;
-            if (std::error_code ec = mOps.Restore(record, conflictID, result))
+            if (std::error_code ec = mOps.Restore(record, nExpectUpdatedUS, conflictID, result))
             {
                 if (conflictID != kInvalidJotID)
                     return Fail(409, "the name '" + record.msName + "' now belongs to jot " +
@@ -808,6 +814,9 @@ struct HttpServer::Impl
             out["restored"]      = true;
             out["from_seq"]      = target.mnSeq;
             out["undid_delete"]  = entry.mbDelete;
+            // True when the jot was already on that version, so nothing was written. Without it the
+            // only evidence is a history point that never appears, which reads as a dropped write.
+            out["no_change"]     = result.mbNoChange;
             out["jot"]           = crow::json::load(
                 JOTJSON::ToJson(Flatten(result.mJot, Names()), false));
             return Ok(out.dump());

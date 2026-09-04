@@ -77,12 +77,24 @@ public:
     // Creates a jot. If the input carries a name that already exists, this is an ERROR
     // (kNameInUse) - use Upsert when overwrite is what you mean. Keeping the two apart is what
     // stops an import from silently replacing a memory that a human wrote.
+    //
+    // input.mnCreatedUS backdates the jot, which means it becomes the id - see BACKDATING in
+    // JotStore::Add. It is validated here rather than in the store because refusing a future date
+    // is policy, while moving off a taken id is an invariant; kInvalidArgument for either a future
+    // timestamp or one below kCreatedFloorUS.
     std::error_code Add(const JotInput& input, AddResult& outResult);
 
     // Create-or-update keyed on the slug. This is the memory-store and reconcile path.
     // nExpectUpdatedUS applies only when the jot already exists; pass 0 for last-write-wins.
+    //
+    // input.mnCreatedUS applies only on the branch that actually creates. Re-running an import is
+    // therefore safe: the second pass updates the content and leaves the original date alone,
+    // rather than resurrecting a date the jot has since outgrown.
     std::error_code Upsert(const JotInput& input, int64_t nExpectUpdatedUS, AddResult& outResult);
 
+    // input.mnCreatedUS is IGNORED. A jot's id is its creation time, and moving it would strand
+    // every link and backlink pointing at the old one; a patch that only carries a creation time
+    // is an empty patch and comes back kInvalidArgument.
     std::error_code Update(tJotID id, const JotInput& patch, int64_t nExpectUpdatedUS,
                            AddResult& outResult);
 
@@ -101,7 +113,15 @@ public:
     //     path, where names are unique by construction, so its name-index insert does not overwrite
     //     - restoring over a taken slug would leave two jots claiming one name with the index
     //     pointing at whichever got there first. outConflictID names the current holder.
-    std::error_code Restore(const FlatJot& record, tJotID& outConflictID, AddResult& outResult);
+    //   - A restore to the version the jot is ALREADY on writes nothing and reports mbNoChange,
+    //     exactly as Update does. The History view offers Restore on every row including the newest,
+    //     so this is the common case rather than a corner of it.
+    //   - nExpectUpdatedUS is the same optimistic-concurrency guard Update() takes: a restore is a
+    //     whole-record overwrite, so without it two agents acting on stale copies would have one
+    //     silently clobber the other, which is exactly the failure mode expect_updated exists to
+    //     turn into a 409 everywhere else. Pass 0 to skip the check.
+    std::error_code Restore(const FlatJot& record, int64_t nExpectUpdatedUS, tJotID& outConflictID,
+                            AddResult& outResult);
 
     std::error_code MergeTags(const std::vector<std::string>& vFrom, const std::string& sTo,
                               size_t& outJotsChanged);
@@ -147,6 +167,13 @@ public:
     };
 
     std::error_code BuildQuery(const QuerySpec& spec, Query& outQuery) const;
+
+    // Bounds on a caller-supplied creation time. Public so the front doors can quote them in an
+    // error message instead of each inventing its own wording for the same rule.
+    static constexpr int64_t kCreatedFutureSlackUS = 60LL * 1000000LL;        // clock skew allowance
+    static constexpr int64_t kCreatedFloorUS       = 86400LL * 1000000LL;     // 1970-01-02
+
+    static std::error_code ValidateCreatedUS(int64_t nCreatedUS);
 
 private:
     void CollectWarnings(const std::vector<TagSuggestion>& vSuggestions, OpWarnings& outWarnings) const;
