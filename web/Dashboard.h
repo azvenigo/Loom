@@ -825,6 +825,10 @@ button.tiny{font-size:12px;padding:4px 9px}
 .chip .x{font-style:normal;font-size:13px;line-height:1;margin-left:6px;opacity:.75}
 /* No clear-all chip in the row any more - it lives next to the search field (see #cleartags-btn),
    where one obvious control beats a dashed chip that looked like just another tag. */
+/* A zero-count chip STAYS a chip - clicking it is a legitimate way to find out there is nothing
+   there, which is itself useful, so it isn't disabled. Muted instead, so the row still reads at a
+   glance which chips are worth a click from here without removing the option outright. */
+.chip.zero{opacity:.5}
 
 /* ---------- result meta ---------- */
 .rmeta{display:flex;align-items:baseline;gap:8px;margin:2px 0 12px;
@@ -1452,6 +1456,26 @@ const escHtml=s=>(s??'').toString().replace(/[&<>"]/g,c=>
    instant a jot is clicked. */
 let view='dashboard',sel=null,activeTags=new Set(),allTags=[],lastQ='',stats={},
     sortOrder='',sinceWhen='';
+/* Refresh is the only lever this page has for "pull fresh data from the server", and until now it
+   cost you whatever search you had going - a harder reset than anyone asking for fresh data meant
+   to trigger. Seeding these same module-scope vars from storage at load, instead of the blank
+   defaults above, means the first render() of Search picks them up automatically - it just reads
+   these vars the way every later re-render already does (see the comment above).
+   One JSON blob, not four keys: query/tags/order/since are one logical unit ("what Search is
+   currently showing"), not four independent preferences, and saveSearchState() below always
+   writes them together so they can never partially disagree after a crash mid-write.
+   Guarded hard: a hand-edited or half-written blob must fall back to the ordinary empty state, not
+   throw before the page has drawn anything. */
+try{
+  const raw=localStorage.getItem('loom-search-state');
+  if(raw){
+    const s=JSON.parse(raw);
+    if(typeof s.q==='string')lastQ=s.q;
+    if(Array.isArray(s.tags))activeTags=new Set(s.tags);
+    if(typeof s.order==='string')sortOrder=s.order;
+    if(typeof s.since==='string')sinceWhen=s.since;
+  }
+}catch(e){}
 let cardMode='cards';try{cardMode=localStorage.getItem('loom-cardmode')||'cards';}catch(e){}
 /* Completed TODOs keep their `todo` tag and add `status:done` - that pair IS the record that the
    work happened, so nothing ever drops out of the panel's source data. Hiding is therefore a view
@@ -1570,6 +1594,14 @@ const NAV_ICONS={
 };
 const VIEWS=[['dashboard','Dashboard'],['search','Search'],['tags','Tags'],
              ['history','History'],['health','Health']];
+/* A bare refresh used to always reopen Dashboard, discarding whatever tab you'd actually been on -
+   restore the last one instead of defaulting past it. Checked against VIEWS rather than trusted
+   outright: a name a nav click stored before some LATER version renamed or dropped that view must
+   fall back quietly to Dashboard, not leave `view` pointing at a tab drawNav() can never render. */
+try{
+  const savedView=localStorage.getItem('loom-view');
+  if(savedView&&VIEWS.some(v=>v[0]===savedView))view=savedView;
+}catch(e){}
 let navTabEls=[];
 /* The Clear control sits next to the search field because that is where someone looks when the
    result list is smaller than they expected - so it clears BOTH halves of "why am I seeing this":
@@ -1586,31 +1618,45 @@ function syncClearTags(){
   b.hidden=!(activeTags.size||lastQ||(ni&&ni.value));
 }
 
+/* The one place that writes loom-search-state, called wherever query/tags/order/since actually
+   change (run(), and clearQuery() below for the path that changes them WITHOUT running a query).
+   Persist and clear therefore can't drift apart into two different ideas of "cleared" - there is
+   only one function that decides what the stored blob says, and it always reads the same module
+   vars a fresh page load restores into. */
+function saveSearchState(){
+  try{localStorage.setItem('loom-search-state',JSON.stringify(
+    {q:lastQ,tags:Array.from(activeTags),order:sortOrder,since:sinceWhen}));}catch(e){}
+}
+
 /* Leaving Search drops the query rather than parking it in a box that still displays it: the
    field is global, so text left behind after a tab switch reads as a live filter on a view that
    isn't filtered by it at all. Tag filters deliberately survive - the Clear button next to the
-   field says they are on, so they are never silently in effect the way orphaned text was. */
+   field says they are on, so they are never silently in effect the way orphaned text was.
+   Also the reason a refresh doesn't need special-casing here: leaving Search already saves the
+   now-empty query (tags intact) through the same saveSearchState() run() uses, so a refresh after
+   a deliberate tab switch reopens Search exactly as it was left, not as it was mid-search. */
 function clearQuery(){
   const ni=$('#navsearch-input');
   if(ni)ni.value='';
   lastQ='';
   syncClearTags();
+  saveSearchState();
 }
 
-/* "Show completed" sits in the topbar beside Clear rather than in the TODO panel's own header: a
-   panel heading should say what the panel is, not carry the switches that change it, and the two
-   controls that decide WHAT YOU ARE LOOKING AT now live together.
-   It governs the TODO panel and nothing else - the Search view has its own filters and is not
-   quietly re-scoped by a control that never mentions it. Which is also why it only shows on the
-   Dashboard: a switch with no visible effect, next to a count nothing on screen is refreshing, is
-   worse than no switch. */
+/* "Show completed" sits in the topbar beside Clear rather than inside either view's own markup: a
+   panel/view should say what it is, not carry the switches that change it, and this is now the
+   ONE piece of state ("hide completed TODOs, or not") that both Dashboard's TODO panel and Search
+   share - one control, not two independent ones that could disagree.
+   It shows on Dashboard and Search and nowhere else: a switch with no visible effect, next to a
+   count nothing on screen is refreshing, is worse than no switch. */
 function syncDoneOpt(){
   const o=$('#showdone-opt');
-  if(o)o.hidden=(view!=='dashboard');
+  if(o)o.hidden=(view!=='dashboard'&&view!=='search');
 }
-/* The count belongs to the TODO panel's data but the label belongs to the topbar, so the panel
-   pushes it over on every build. Reset to the bare label when there is nothing completed, rather
-   than parking a stale figure there. */
+/* The count belongs to whichever view is active - and "completed" means a different denominator
+   in each (all open-work TODOs vs. completed items inside the current search results) - so each
+   view pushes its own number over whenever it (re)builds. Reset to the bare label when there is
+   nothing completed, rather than parking a stale figure there. */
 function setDoneCount(n){
   const s=$('#showdone-label');
   if(s)s.textContent=n?'Show '+n+' completed':'Show completed';
@@ -1634,8 +1680,13 @@ function drawNav(){
     if(v[0]==='tags'&&stats.tags!==undefined)b.append(el('span','pill',stats.tags));
     if(v[0]==='dashboard'&&stats.jots!==undefined)b.append(el('span','pill',stats.jots));
     /* See clearQuery(): a query only means anything on Search, so it doesn't outlive the trip
-       to any other tab. Arriving AT Search obviously keeps whatever is typed. */
-    b.onclick=function(){if(v[0]!=='search')clearQuery();view=v[0];drawNav();render();};
+       to any other tab. Arriving AT Search obviously keeps whatever is typed.
+       Only an actual nav click writes loom-view - the many OTHER places that flip `view` (a Top
+       Tags pill, "Open in Search") are jumping to a specific search, not choosing a home tab, and
+       persisting those would make a refresh land somewhere the user never deliberately parked. */
+    b.onclick=function(){if(v[0]!=='search')clearQuery();view=v[0];
+      try{localStorage.setItem('loom-view',view);}catch(e){}
+      drawNav();render();};
     b.dataset.view=v[0];
     navTabEls.push(b);
     N.append(b);
@@ -1932,12 +1983,30 @@ async function viewSearch(target){
      anywhere on screen, and the only escape was a reload. Actives are now rendered from activeTags
      itself, so whatever is filtering is always visible and always clickable. */
   const chips=el('div','chips');L.append(chips);
-  function chipFor(tag,count,on){
+  /* A chip's number used to be its GLOBAL count from /tags - "how many zhotkey jots exist", full
+     stop. That answers the wrong question once another filter is already active: with `loom` on,
+     what you actually want to know before clicking `zhotkey` is how many jots carry BOTH, i.e. what
+     you'd get next - and a chip whose intersection with the current filter is empty is exactly as
+     informative as one that isn't, so it still shows 0 rather than vanishing.
+     facetJots holds the last fetch's raw results (the current query+activeTags, pre anything this
+     view itself filters further) and activeCount/facetTruncated are computed alongside it in run() -
+     see there for why this is a tally over data already in hand rather than a query per chip. */
+  let facetJots=[],facetTruncated=false,activeCount=0;
+  const facetCount=tag=>facetJots.reduce((n,j)=>n+((j.tags||[]).includes(tag)?1:0),0);
+  function chipFor(tag,on){
     const c=el('span','chip'+(on?' on':''));
     c.append(document.createTextNode(tag));
-    if(count!==undefined)c.append(el('b',null,count));
+    /* An ACTIVE chip's count needs no tallying - the results on screen already satisfy it, so its
+       count IS the current total match, exact even when the page is capped (r.matched, not the
+       page length). An inactive chip's count is a tally over that capped page, so it can only ever
+       be a lower bound once the fetch is truncated - flagged with a trailing "+" instead of firing
+       a second, larger fetch just to get an exact number for a chip nobody has clicked yet. */
+    const n=on?activeCount:facetCount(tag);
+    if(!on&&n===0)c.classList.add('zero');
+    c.append(el('b',null,n+(!on&&facetTruncated?'+':'')));
     if(on)c.append(el('i','x','×'));
-    c.title=(on?'Remove filter: ':'Filter by ')+tag;
+    c.title=on?'Remove filter: '+tag:
+      (n===0?'No results here also carry '+tag:'Filter by '+tag);
     c.onclick=function(){on?activeTags.delete(tag):activeTags.add(tag);drawChips();run();};
     return c;
   }
@@ -1951,18 +2020,17 @@ async function viewSearch(target){
   const CHIP_CAP=18;
   function drawChips(){
     chips.innerHTML='';
-    const counts={};allTags.forEach(function(t){counts[t.tag]=t.count;});
     const shown=new Set();
     let room=CHIP_CAP;
     allTags.forEach(function(t){
       const on=activeTags.has(t.tag);
       if(!on&&room<=0)return;
       room--;shown.add(t.tag);
-      chips.append(chipFor(t.tag,t.count,on));
+      chips.append(chipFor(t.tag,on));
     });
     /* Actives that /tags never returns (reserved tags, or one set by a Top Tags pill) have no row
        entry to mark, so they trail the vocabulary rather than being invisible. */
-    activeTags.forEach(function(t){if(!shown.has(t))chips.append(chipFor(t,counts[t],true));});
+    activeTags.forEach(function(t){if(!shown.has(t))chips.append(chipFor(t,true));});
     chips.style.display=chips.childElementCount?'':'none';
     syncClearTags();
   }
@@ -1973,6 +2041,11 @@ async function viewSearch(target){
 
   async function run(){
     lastQ=q.value;
+    /* Every road into an actual query - typing, a chip toggle, an order/when change, even the
+       first run() on arrival - funnels through here, so this is the one spot that has to persist
+       rather than every caller remembering to. Saved regardless of whether the fetch below
+       succeeds: a query that failed to load is still the query the user asked for. */
+    saveSearchState();
     const p=new URLSearchParams();
     if(q.value){p.set('q',q.value);p.set('prefix','1');}
     activeTags.forEach(t=>p.append('tag',t));
@@ -1981,7 +2054,13 @@ async function viewSearch(target){
     p.set('limit','60');
     try{
       const r=await api('/jots?'+p);
-      const jots=r.jots;
+      facetJots=r.jots;facetTruncated=!!r.truncated;activeCount=r.matched;
+      /* Completed rides the same tag+status:done test the TODO panel uses (isDone(j) - isTodo()
+         already folds status:done into its own OR, so a done jot is a todo by definition and this
+         is that same check, not a second one) and the same shared pref/switch, so "Show completed"
+         means one thing everywhere instead of a Dashboard meaning and a separate Search meaning. */
+      setDoneCount(r.jots.filter(isDone).length);
+      const jots=hideDoneTodos?r.jots.filter(j=>!isDone(j)):r.jots;
 
       meta.innerHTML='';
       meta.append(el('em',null,jots.length+(jots.length===1?' match':' matches')));
@@ -1994,11 +2073,16 @@ async function viewSearch(target){
         e.append(el('b',null,'Nothing matched'));
         e.append(el('div',null,q.value?'Try fewer words — summaries are weighted highest.'
                                       :'Clear the filters, or write something.'));
-        grid.append(e);return;
+        grid.append(e);
+      }else{
+        let max=0;jots.forEach(j=>{if((j.score||0)>max)max=j.score||0;});
+        const terms=queryTerms(q.value);
+        /* jotCard already marks isDone() jots with the .done dimmed/struck look every completed
+           card gets elsewhere (see the overview and the TODO panel) - reused as-is, not a second
+           "this is finished" style invented just for this view. */
+        jots.forEach(j=>grid.append(jotCard(j,max,terms)));
       }
-      let max=0;jots.forEach(j=>{if((j.score||0)>max)max=j.score||0;});
-      const terms=queryTerms(q.value);
-      jots.forEach(j=>grid.append(jotCard(j,max,terms)));
+      drawChips(); // now that facetJots/activeCount reflect THIS fetch, correct the numbers painted above
     }catch(e){grid.innerHTML='';grid.append(el('div','note bad',e.message));}
   }
 
