@@ -56,6 +56,12 @@ R"HTML(<!doctype html>
   --bad:#a32c22; --bad-wash:#fdf1f0; --bad-line:#e7b3ad;
   --good:#2c6b45; --good-wash:#f0f8f3; --good-line:#a9d4bd;
   --mark:#fdf0a8;
+  /* THE ONE FIXED COLOUR IN HERE, AND ON PURPOSE. Ground for the help dialog's artwork, which is
+     antialiased against a dark background - drop it on a light palette's --panel and every edge
+     fringes. Nothing in the token set can do this job: every surface token flips with the palette,
+     so there is no always-dark one to borrow. Declared once in :root and deliberately NOT
+     redefined by any palette below, and used by exactly one rule (.abouthero). */
+  --figure-ground:#15131c;
   /* SECOND GRADIENT STOP for each filled color. Every palette declares these three and the button
      rules build the ramp from them - see the "filled controls" block. They are plain hex on
      purpose rather than a color-mix() off the base: a var() that fails to substitute inside
@@ -376,7 +382,11 @@ body{margin:0;background:var(--bg);color:var(--body);font:14px/1.55 var(--sans);
 dialog#about,dialog#agent-dialog{border:1px solid var(--line);border-radius:var(--r);padding:0;
   width:min(420px,90vw);background:var(--panel);color:var(--body);overflow:hidden}
 dialog#about::backdrop,dialog#agent-dialog::backdrop{background:rgba(0,0,0,.45)}
-dialog#about img{width:100%;display:block}
+/* The artwork gets a frame instead of being the dialog's full-bleed lid. width:100% stretched a
+   fixed-aspect asset to whatever the dialog happened to be - and widening the help made it worse -
+   so it now sits at its natural size, shrinking on a narrow window but never scaling up past it. */
+.abouthero{background:var(--figure-ground);padding:20px;display:flex;justify-content:center}
+dialog#about .abouthero img{display:block;width:auto;height:auto;max-width:100%}
 dialog#about .body,dialog#agent-dialog .body{padding:18px 20px 20px}
 dialog#about h2,dialog#agent-dialog h2{font:600 16px var(--sans);color:var(--ink);margin:0 0 6px}
 dialog#about p,dialog#agent-dialog p{margin:0 0 14px;color:var(--dim);font-size:13.5px;
@@ -388,9 +398,16 @@ dialog#about button.btn{width:100%}
    IMPORTANT: never put `display:` on a bare `dialog#about{...}` rule - an id selector beats the
    UA stylesheet's own `dialog:not([open]){display:none}` on specificity, which keeps the dialog
    rendered (and blocking the page) even while closed. That exact bug shipped once already. */
-dialog#about{width:min(560px,92vw);max-height:80vh;overflow-y:auto}
+dialog#about{width:min(800px,94vw);max-height:84vh;overflow-y:auto}
+/* This is a document, not a tooltip: a 560px column of 13.5px/1.55 text with 20px of side padding
+   read as a wall. Wider measure, more air around it, and looser leading - the shared
+   about/agent-dialog rules above stay where they are so widening the help doesn't quietly
+   restyle the agent brief, which is a fixed-width code block and wants none of this. */
+dialog#about .body{padding:26px 32px 30px}
+dialog#about .body:focus{outline:0}
+dialog#about p{font-size:14px;line-height:1.72;margin:0 0 18px}
 dialog#about h3{font:600 12px var(--sans);text-transform:uppercase;letter-spacing:.05em;
-  color:var(--dim);margin:18px 0 6px}
+  color:var(--dim);margin:26px 0 8px}
 dialog#about h3:first-of-type{margin-top:4px}
 dialog#about b{color:var(--ink);font-weight:600}
 dialog#about code{font:11.5px var(--mono);background:var(--sunk);color:var(--accent-ink);
@@ -581,6 +598,17 @@ nav button.on .pill{background:color-mix(in srgb,var(--accent) 18%,transparent);
 .navsearch .kbd{position:absolute;right:9px;font:9.5px var(--mono);color:var(--faint);
   border:1px solid var(--line);border-radius:4px;padding:0 4px;background:var(--panel);
   pointer-events:none}
+/* Options that ride beside the search field. flex:none so they never take width from the field,
+   and gone entirely on a narrow window - the field and Clear are the two things that have to
+   survive there, and a checkbox label wrapping under them is worse than not offering it.
+   The [hidden] rule is not redundant: display:flex on the class beats the UA sheet's own
+   [hidden]{display:none}, so without it the JS toggle would do nothing at all. */
+.topopt{display:flex;align-items:center;gap:6px;flex:none;cursor:pointer;user-select:none;
+  font:12px var(--sans);color:var(--dim);white-space:nowrap}
+.topopt:hover{color:var(--ink)}
+.topopt input{accent-color:var(--accent);width:13px;height:13px;cursor:pointer;margin:0;flex:none}
+.topopt[hidden]{display:none}
+@media(max-width:860px){.topopt{display:none}}
 
 /* ---------- layout ---------- */
 main{flex:1;min-height:0;overflow:hidden}
@@ -795,8 +823,8 @@ button.tiny{font-size:12px;padding:4px 9px}
 /* The x is only drawn on an active chip, so it reads as "remove this filter" rather than as
    decoration on every tag in the row. */
 .chip .x{font-style:normal;font-size:13px;line-height:1;margin-left:6px;opacity:.75}
-.chip.clearall{border-style:dashed;color:var(--faint)}
-.chip.clearall:hover{color:var(--bad);border-color:var(--bad-line)}
+/* No clear-all chip in the row any more - it lives next to the search field (see #cleartags-btn),
+   where one obvious control beats a dashed chip that looked like just another tag. */
 
 /* ---------- result meta ---------- */
 .rmeta{display:flex;align-items:baseline;gap:8px;margin:2px 0 12px;
@@ -827,6 +855,15 @@ mark{background:var(--mark);color:inherit;border-radius:2px;padding:0 1px}
   display:flex;flex-direction:column;gap:9px;min-height:200px}
 .mcard:hover{border-color:var(--dim)}
 .mcard.sel{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-wash)}
+/* "Touched in the last few hours" (see FRESH_MS). --accent is the token every palette already
+   tunes for contrast against --panel, in both the light and the dark half, which is exactly the
+   guarantee a raw hex would not have across twelve of them.
+   outline, not border: the card would otherwise grow 2px and reflow the whole grid the moment a
+   jot ages out on the 15s refresh. outline-offset pulls it inside the existing 1px edge so the
+   card reads as thick-bordered rather than ringed, and the same one rule works in list mode,
+   where .mcard's borders are rearranged entirely. */
+.mcard.fresh{outline:2px solid var(--accent);outline-offset:-1px}
+.mcard.fresh.sel{outline-width:3px}
 .cathead{display:flex;align-items:center;gap:7px;min-width:0}
 /* A tinted chip, not a dot-plus-caption - the category has to read at a glance, the way the
    screenshot's scope badge does, not require parsing a line of small caps. color-mix keeps this
@@ -902,6 +939,9 @@ mark{background:var(--mark);color:inherit;border-radius:2px;padding:0 1px}
 @media(max-width:900px){.ov-row{grid-template-columns:1fr}}
 .ov-panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);
   padding:16px 18px}
+/* Panels that stand alone rather than inside an .ov-row have to space themselves - the row was
+   carrying that gap for everything until activity and store health moved out of one. */
+.contentwrap>.ov-panel{margin-bottom:12px}
 .ov-panel .phead{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:14px}
 .ov-panel .phead h3{margin:2px 0 0;font-size:14px;font-weight:600;color:var(--ink)}
 .ov-panel .phead a{font-size:12px;color:var(--accent-ink);cursor:pointer}
@@ -922,7 +962,13 @@ mark{background:var(--mark);color:inherit;border-radius:2px;padding:0 1px}
 /* margin-right:auto on the title block, not space-between on the parent - with three children
    (badge, titles, link) space-between stranded the heading floating in the middle of the panel
    instead of reading as a caption on the badge beside it. */
-.ov-todo .phead{align-items:center;gap:12px}
+/* flex-end, not center. The title block here is TWO lines (eyebrow over heading) while the trailing
+   link is one, so centering hung the link halfway between them - level with neither, and reading
+   as if it had floated up off the heading it belongs to. Aligning the bottom edges puts the link
+   on the heading's own line. The badge is the one child that isn't text, so it opts back out and
+   stays centered against the pair, which is what made it read as a caption on the badge. */
+.ov-todo .phead{align-items:flex-end;gap:12px}
+.ov-todo .phead .ov-todobadge{align-self:center}
 .phead .pheadmain{margin-right:auto}
 .ov-todo .phead .eyebrow{color:var(--warn);font-weight:700}
 .ov-todo .phead h3{font-size:17px}
@@ -963,6 +1009,10 @@ mark{background:var(--mark);color:inherit;border-radius:2px;padding:0 1px}
 .ov-trow:active{cursor:grabbing}
 .ov-trow:hover{border-color:var(--dim);box-shadow:0 2px 10px -3px rgba(0,0,0,.13)}
 .ov-trow.dragging{opacity:.35}
+/* Same treatment a completed card gets in the result grid - faded and struck through, so a shown
+   completed TODO can never be mistaken for something still waiting. */
+.ov-trow.done{opacity:.55}
+.ov-trow.done .ov-atitle{text-decoration:line-through;text-decoration-color:var(--faint)}
 .ov-todocol.pr-high .ov-trow{border-left-color:var(--bad)}
 .ov-todocol.pr-normal .ov-trow{border-left-color:var(--warn)}
 
@@ -1016,6 +1066,13 @@ mark{background:var(--mark);color:inherit;border-radius:2px;padding:0 1px}
 .ov-tacts .completebtn{font-size:11.5px;padding:3px 9px}
 .ov-tacts .completebtn svg{width:12px;height:12px}
 .ov-colempty{color:var(--faint);font-size:12px;padding:8px 0}
+/* Borrows the lift/shadow/focus ring the stat cards use, so the one clickable card at the foot of
+   a column advertises itself the same way every other clickable card on this view does. */
+.note.morecard{cursor:pointer;text-align:center;color:var(--accent-ink);
+  transition:transform .12s ease,box-shadow .12s ease}
+.note.morecard:hover{transform:translateY(-1px);box-shadow:0 4px 14px -6px rgba(0,0,0,.25);
+  border-color:var(--dim)}
+.note.morecard:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .ov-asub.bad{color:var(--bad)}
 
 .ov-bar{display:flex;align-items:center;gap:10px;margin-bottom:10px}
@@ -1033,11 +1090,17 @@ mark{background:var(--mark);color:inherit;border-radius:2px;padding:0 1px}
 .ov-tagpill:hover{border-color:var(--dim);color:var(--ink)}
 .ov-tagpill b{font:10px var(--mono);color:var(--dim);font-weight:600}
 
-.ov-activity{display:grid;grid-template-columns:1fr 1fr;gap:0 20px}
-@media(max-width:900px){.ov-activity{grid-template-columns:1fr}}
+/* One column. Two columns turned a chronology into a reading puzzle: the second most recent jot
+   sat to the RIGHT of the first, so scanning down the left-hand column skipped every other entry. */
+.ov-activity{display:flex;flex-direction:column}
 .ov-arow{display:flex;align-items:center;gap:9px;padding:8px 0;cursor:pointer;
   border-bottom:1px solid var(--line-soft)}
 .ov-arow:hover .ov-atitle{color:var(--accent-ink)}
+/* Same freshness cue as .mcard.fresh. The negative margin cancels the padding, so the outline
+   bulges into the panel's own gutter instead of indenting the row's text out of line with the
+   unhighlighted rows above and below it. */
+.ov-arow.fresh{outline:2px solid var(--accent);outline-offset:-2px;border-radius:7px;
+  padding-left:8px;padding-right:8px;margin:0 -8px}
 .ov-adot{width:7px;height:7px;border-radius:50%;background:var(--cat,var(--accent));flex:none}
 .ov-amid{min-width:0;flex:1}
 .ov-atitle{font-size:12.5px;color:var(--ink);font-weight:500;white-space:nowrap;
@@ -1199,6 +1262,12 @@ label u{text-decoration:none;color:var(--accent-ink);text-transform:none;letter-
         <input id="navsearch-input" placeholder="Search everything…">
         <span class="kbd">/</span>
       </div>
+      <button type="button" class="btn tiny" id="cleartags-btn" title="Remove all tag filters"
+              hidden>Clear</button>
+      <label class="topopt" id="showdone-opt" hidden
+             title="Completed TODOs keep their todo tag - this is where they went">
+        <input type="checkbox" id="showdone-cb"><span id="showdone-label">Show completed</span>
+      </label>
       <div class="stats" id="stats"></div>
       <button type="button" class="btn tiny" id="agent-btn">Brief a fresh agent</button>
     </header>
@@ -1213,8 +1282,13 @@ label u{text-decoration:none;color:var(--accent-ink);text-transform:none;letter-
 <div id="toast"></div>
 
 <dialog id="about">
-  <img src="/icon-full.png" alt="">
-  <div class="body">
+  <div class="abouthero"><img src="/icon-full.png" alt=""></div>
+  <!-- autofocus here, on the top of the document, because showModal() otherwise hands focus to the
+       first focusable descendant - which in a help dialog made of prose is the Close button at the
+       very bottom. The browser then scrolls that into view, and the help opened at its own footer
+       every single time. tabindex="-1" makes this div a legal focus target without putting it in
+       the tab order; the ring is suppressed in CSS. -->
+  <div class="body" tabindex="-1" autofocus>
     <h2>Loom</h2>
     <p>The weaver at the loom, working the same threads Loom keeps for you - jots pulled taut
        into memory, one strand at a time.</p>
@@ -1379,10 +1453,25 @@ const escHtml=s=>(s??'').toString().replace(/[&<>"]/g,c=>
 let view='dashboard',sel=null,activeTags=new Set(),allTags=[],lastQ='',stats={},
     sortOrder='',sinceWhen='';
 let cardMode='cards';try{cardMode=localStorage.getItem('loom-cardmode')||'cards';}catch(e){}
-/* The detail dialog defaults to a minimal summary/priority/due view; detailExpanded tracks whether
-   the current jot has been switched to the full form. Keyed by detailOpenedKey so it resets to
-   minimal the moment a DIFFERENT jot is opened, rather than leaking "expanded" across selections. */
+/* Completed TODOs keep their `todo` tag and add `status:done` - that pair IS the record that the
+   work happened, so nothing ever drops out of the panel's source data. Hiding is therefore a view
+   choice, and it defaults ON because "open work is todo minus status:done" is the project's own
+   definition of open, and this panel is the open-work panel. */
+let hideDoneTodos=true;try{hideDoneTodos=localStorage.getItem('loom-hide-done')!=='0';}catch(e){}
+/* The detail dialog opens minimal (summary/priority/due) or full, and detailExpanded says which.
+   It is a PREFERENCE, not per-jot state: someone who works in the full form wants the full form on
+   the next jot too, and having to click "More details" on every single open was the complaint.
+   Persisted alongside the palette so the choice also survives a reload. detailForceTodo stays
+   per-jot and still resets on a change of detailOpenedKey - "I turned THIS one into a TODO" is
+   exactly the thing that must not leak to the next unrelated click. */
 let detailExpanded=false,detailOpenedKey=null,detailForceTodo=false;
+try{detailExpanded=localStorage.getItem('loom-detail-expanded')==='1';}catch(e){}
+
+/* A jot touched inside this window gets a highlight border wherever it renders (.mcard.fresh,
+   .ov-arow.fresh). One tunable number in one place: the highlight answers "what moved since I
+   last looked", and how long that stays worth flagging is pure taste, not a rule. */
+const FRESH_MS=6*3600*1000;
+const isFresh=j=>(Date.now()-(j.updated||j.id)/1000)<FRESH_MS;
 
 /* undoFn turns a toast into a brief "in case that was a mistake" window - the checkmark on a
    TODO row, or a drag between priority columns, are both one accidental click/slip away from
@@ -1482,6 +1571,59 @@ const NAV_ICONS={
 const VIEWS=[['dashboard','Dashboard'],['search','Search'],['tags','Tags'],
              ['history','History'],['health','Health']];
 let navTabEls=[];
+/* The Clear control sits next to the search field because that is where someone looks when the
+   result list is smaller than they expected - so it clears BOTH halves of "why am I seeing this":
+   the typed query and the tag selection. Clearing only the chips left the box still narrowing the
+   results and the button still lit, which looked broken.
+   Hidden rather than disabled while nothing is filtered: a permanently greyed button beside the
+   search box on Health or Tags is furniture. Reads the live input value as well as lastQ, because
+   lastQ only catches up after the 160ms debounce and the button has to appear as you type.
+   Called from drawNav() (which every path that can set activeTags already runs), from drawChips()
+   and from the field's own oninput, so no two of them can disagree about whether a filter is on. */
+function syncClearTags(){
+  const b=$('#cleartags-btn');if(!b)return;
+  const ni=$('#navsearch-input');
+  b.hidden=!(activeTags.size||lastQ||(ni&&ni.value));
+}
+
+/* Leaving Search drops the query rather than parking it in a box that still displays it: the
+   field is global, so text left behind after a tab switch reads as a live filter on a view that
+   isn't filtered by it at all. Tag filters deliberately survive - the Clear button next to the
+   field says they are on, so they are never silently in effect the way orphaned text was. */
+function clearQuery(){
+  const ni=$('#navsearch-input');
+  if(ni)ni.value='';
+  lastQ='';
+  syncClearTags();
+}
+
+/* "Show completed" sits in the topbar beside Clear rather than in the TODO panel's own header: a
+   panel heading should say what the panel is, not carry the switches that change it, and the two
+   controls that decide WHAT YOU ARE LOOKING AT now live together.
+   It governs the TODO panel and nothing else - the Search view has its own filters and is not
+   quietly re-scoped by a control that never mentions it. Which is also why it only shows on the
+   Dashboard: a switch with no visible effect, next to a count nothing on screen is refreshing, is
+   worse than no switch. */
+function syncDoneOpt(){
+  const o=$('#showdone-opt');
+  if(o)o.hidden=(view!=='dashboard');
+}
+/* The count belongs to the TODO panel's data but the label belongs to the topbar, so the panel
+   pushes it over on every build. Reset to the bare label when there is nothing completed, rather
+   than parking a stale figure there. */
+function setDoneCount(n){
+  const s=$('#showdone-label');
+  if(s)s.textContent=n?'Show '+n+' completed':'Show completed';
+}
+(function(){
+  const cb=$('#showdone-cb');
+  cb.checked=!hideDoneTodos;
+  cb.onchange=function(){
+    hideDoneTodos=!cb.checked;
+    try{localStorage.setItem('loom-hide-done',hideDoneTodos?'1':'0');}catch(e){}
+    render();
+  };
+})();
 function drawNav(){
   const N=$('#nav');N.innerHTML='';
   navTabEls=[];
@@ -1491,7 +1633,9 @@ function drawNav(){
     b.append(document.createTextNode(v[1]));
     if(v[0]==='tags'&&stats.tags!==undefined)b.append(el('span','pill',stats.tags));
     if(v[0]==='dashboard'&&stats.jots!==undefined)b.append(el('span','pill',stats.jots));
-    b.onclick=function(){view=v[0];drawNav();render();};
+    /* See clearQuery(): a query only means anything on Search, so it doesn't outlive the trip
+       to any other tab. Arriving AT Search obviously keeps whatever is typed. */
+    b.onclick=function(){if(v[0]!=='search')clearQuery();view=v[0];drawNav();render();};
     b.dataset.view=v[0];
     navTabEls.push(b);
     N.append(b);
@@ -1500,7 +1644,14 @@ function drawNav(){
      while it has focus, or a periodic refreshStats() would yank the caret mid-word. */
   const ni=$('#navsearch-input');
   if(ni&&document.activeElement!==ni&&ni.value!==lastQ)ni.value=lastQ;
+  syncClearTags();
 }
+
+$('#cleartags-btn').addEventListener('click',function(){
+  activeTags=new Set();
+  clearQuery();
+  render();
+});
 
 /* Search is static markup in the topbar, wired exactly once - it is reachable from every view, and
    typing in it switches to Search and runs the query. It deliberately does NOT live inside
@@ -1510,6 +1661,9 @@ function drawNav(){
   const ni=$('#navsearch-input');
   let nt;
   ni.oninput=function(){
+    /* Outside the debounce: Clear has to appear on the first keystroke, not 160ms after the last
+       one, or the way out of a query shows up only once the query has already run. */
+    syncClearTags();
     clearTimeout(nt);
     nt=setTimeout(function(){
       lastQ=ni.value;
@@ -1665,7 +1819,8 @@ function jotCard(j,maxScore,terms){
   const isMem=!!j.name;
   const cat=catColorOf(j.tags);
   const done=isDone(j);
-  const c=el('div','mcard'+(sel&&sel.id===j.id?' sel':'')+(done?' done':''));
+  const c=el('div','mcard'+(sel&&sel.id===j.id?' sel':'')+(done?' done':'')+
+              (isFresh(j)?' fresh':''));
   c.style.setProperty('--cat','var('+cat.cssVar+')');
 
   /* Reserved tags (type:x, status:x) and the editor stay out of the card face entirely - they're
@@ -1786,22 +1941,30 @@ async function viewSearch(target){
     c.onclick=function(){on?activeTags.delete(tag):activeTags.add(tag);drawChips();run();};
     return c;
   }
+  /* Chips keep the vocabulary's own order and are marked on/off in place. They used to be drawn
+     actives-first, which meant clicking a chip teleported it to the front of the row and slid every
+     tag after it one slot left - under a cursor that had not moved, so the next click landed on
+     something nobody aimed at. Order is now independent of what is selected.
+     CHIP_CAP bounds the row, but an active tag is never what it drops: a filter with no chip on
+     screen is a filter with no way off. The cap is charged per rendered chip either way, so
+     toggling one cannot change WHICH tags are visible. */
+  const CHIP_CAP=18;
   function drawChips(){
     chips.innerHTML='';
     const counts={};allTags.forEach(function(t){counts[t.tag]=t.count;});
-    activeTags.forEach(t=>chips.append(chipFor(t,counts[t],true)));
-    let room=18-activeTags.size;
-    for(let i=0;i<allTags.length&&room>0;i++){
-      if(activeTags.has(allTags[i].tag))continue;
-      chips.append(chipFor(allTags[i].tag,allTags[i].count,false));room--;
-    }
-    if(activeTags.size){
-      const clr=el('span','chip clearall','Clear filters');
-      clr.title='Remove all tag filters';
-      clr.onclick=function(){activeTags=new Set();drawChips();run();};
-      chips.append(clr);
-    }
+    const shown=new Set();
+    let room=CHIP_CAP;
+    allTags.forEach(function(t){
+      const on=activeTags.has(t.tag);
+      if(!on&&room<=0)return;
+      room--;shown.add(t.tag);
+      chips.append(chipFor(t.tag,t.count,on));
+    });
+    /* Actives that /tags never returns (reserved tags, or one set by a Top Tags pill) have no row
+       entry to mark, so they trail the vocabulary rather than being invisible. */
+    activeTags.forEach(function(t){if(!shown.has(t))chips.append(chipFor(t,counts[t],true));});
     chips.style.display=chips.childElementCount?'':'none';
+    syncClearTags();
   }
   drawChips();
 
@@ -2143,7 +2306,10 @@ async function viewDashboard(target){
        Sits above the stat cards on purpose - open work is the thing to act on next, everything
        else below is context for deciding what to do about it. Pulled from the same brief=1 fetch
        as activity/distribution, so it inherits the same newest-200 cap rather than a second call. */
-    const todos=recent.jots.filter(j=>!isDone(j)&&isTodo(j));
+    const allTodos=recent.jots.filter(isTodo);
+    const doneCount=allTodos.filter(isDone).length;
+    const openCount=allTodos.length-doneCount;
+    const todos=hideDoneTodos?allTodos.filter(j=>!isDone(j)):allTodos;
     /* Same brief=1/newest-200 fetch, same reasoning as todos above: cheap enough that a second
        request buys nothing. Caps at 200 like everything else fed by `recent` - a backlog past
        that is already a "go look at Search" problem, not a dashboard-card one. */
@@ -2153,13 +2319,21 @@ async function viewDashboard(target){
     const badge=el('div','ov-todobadge');badge.innerHTML=OV_ICONS.flag;th.append(badge);
     const th1=el('div','pheadmain');
     th1.append(el('div','eyebrow','TODOS & REMINDERS'));
-    th1.append(el('h3',null,todos.length?todos.length+' open':'Nothing outstanding'));
+    /* Always the OPEN count, never the row count - with completed ones showing, a heading that
+       counted what is on screen would announce finished work as outstanding. */
+    th1.append(el('h3',null,openCount?openCount+' open':'Nothing outstanding'));
     th.append(th1);
+    /* The switch itself lives in the topbar (see #showdone-opt); this hands it the only number it
+       cannot work out for itself. Every complete/reopen ends in render(), and render() rebuilds
+       this panel, so the label stays live without the topbar having to watch anything. */
+    setDoneCount(doneCount);
     th.append(el('a',null,'Open in Search'));
     th.lastChild.onclick=function(){view='search';activeTags=new Set(['todo']);drawNav();render();};
     todoP.append(th);
     if(!todos.length){
-      todoP.append(el('div','empty','Nothing tagged todo, warning, or error, and nothing due. Clear.'));
+      todoP.append(el('div','empty',doneCount&&hideDoneTodos?
+        'Nothing open. '+doneCount+' completed - "Show completed" up by the search box.':
+        'Nothing tagged todo, warning, or error, and nothing due. Clear.'));
     }else{
       /* Split by priority rather than one flat list - high-priority work should never be scrolled
          past to find it. Due date breaks ties within a column, soonest (or most overdue) first;
@@ -2178,7 +2352,11 @@ async function viewDashboard(target){
         const col=el('div','ov-todocol pr-'+p);cols.append(col);
         const ch=el('div','ov-todocolhead');
         ch.append(el('span','ptitle',p));
-        ch.append(el('span','pcount',String(list.length)));
+        /* No count on an empty column. It rendered a lone right-aligned "0" under the panel
+           header - and on the rightmost column that landed directly beneath the header's own
+           link, where it read as a stray digit belonging to nothing. The body below already
+           says "Nothing here." in words. */
+        if(list.length)ch.append(el('span','pcount',String(list.length)));
         col.append(ch);
         const body=el('div','ov-todobody');col.append(body);
         /* Drag a card from one column to another to reprioritize it - a click-through to the full
@@ -2208,7 +2386,10 @@ async function viewDashboard(target){
         list.slice(0,6).forEach(function(j){
           const due=dueOf(j);
           const cat=catColorOf(j.tags);
-          const r=el('div','ov-trow');
+          /* Only reachable while the header switch is showing completed work - but once it is,
+             the row has to say so and its button has to reopen rather than re-complete. */
+          const jdone=isDone(j);
+          const r=el('div','ov-trow'+(jdone?' done':''));
           r.style.setProperty('--cat','var('+cat.cssVar+')');
           r.draggable=true;
           r.addEventListener('dragstart',function(e){
@@ -2279,11 +2460,12 @@ async function viewDashboard(target){
                 render();
               }catch(e){toast(e.message,'err');}
             });
-          acts.append(completeBtn(false,async function(){
+          acts.append(completeBtn(jdone,async function(){
             try{
-              const updated=await toggleDone(j,true);
-              toast('Marked completed','ok',async function(){
-                try{await toggleDone(updated,false);toast('Restored');render();}
+              const updated=await toggleDone(j,!jdone);
+              toast(jdone?'Reopened':'Marked completed','ok',async function(){
+                try{await toggleDone(updated,jdone);
+                    toast(jdone?'Marked completed':'Restored');render();}
                 catch(err){toast(err.message,'err');}
               });
               render();
@@ -2297,7 +2479,53 @@ async function viewDashboard(target){
           };
           body.append(r);
         });
-        if(list.length>6)col.append(el('div','note','+'+(list.length-6)+' more — open Search.'));
+        /* The whole card is the target, not a phrase inside it: it already looked like a card you
+           could press everywhere, and only was in one place. The trailing "open Search" went with
+           it - a card that behaves like a button doesn't need to narrate where it goes.
+           tabIndex/Enter/Space mirror the stat cards, the other clickable cards on this view. */
+        if(list.length>6){
+          const more=el('div','note morecard','+'+(list.length-6)+' more');
+          const go=function(){view='search';activeTags=new Set(['todo']);drawNav();render();};
+          more.onclick=go;more.tabIndex=0;
+          more.title='Open these in Search';
+          more.onkeydown=function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();go();}};
+          col.append(more);
+        }
+      });
+    }
+
+    /* ---- activity ----
+       Directly under the TODO panel, and above the stat cards, because "what changed" is the other
+       half of "what is open" - the two questions asked on arrival. One column, not two: a
+       chronology read left-to-right-then-down isn't a chronology, and pairing rows side by side
+       made the 4th most recent jot sit above the 2nd.
+       Sorted by `updated` rather than trusting the fetch's order=newest, which orders by id, i.e.
+       by CREATION - an old jot edited a minute ago belongs at the top of an activity list. */
+    const actP=el('div','ov-panel');L.append(actP);
+    const ah=el('div','phead');const ah1=el('div');
+    ah1.append(el('div','eyebrow','ACTIVITY'));ah1.append(el('h3',null,'Recently changed'));
+    ah.append(ah1);actP.append(ah);
+    if(!recent.jots.length){
+      actP.append(el('div','empty','No jots yet. Write one from Search.'));
+    }else{
+      const list=el('div','ov-activity');actP.append(list);
+      const byTouch=recent.jots.slice()
+        .sort((a,b)=>(b.updated||b.id)-(a.updated||a.id));
+      byTouch.slice(0,8).forEach(function(j){
+        const cat=catColorOf(j.tags);
+        const r=el('div','ov-arow'+(isFresh(j)?' fresh':''));
+        r.style.setProperty('--cat','var('+cat.cssVar+')');
+        r.append(el('i','ov-adot'));
+        const mid=el('div','ov-amid');
+        mid.append(el('div','ov-atitle',j.name||(j.summary||'').slice(0,80)||'(untitled)'));
+        mid.append(el('div','ov-asub',cat.name+' · '+(j.editor||'user')));
+        r.append(mid);
+        r.append(el('span','ov-awhen',ago(j.updated||j.id)));
+        r.onclick=async function(){
+          try{sel=await api('/jots/'+j.id);render();}
+          catch(e){toast(e.message,'err');}
+        };
+        list.append(r);
       });
     }
 
@@ -2368,35 +2596,8 @@ async function viewDashboard(target){
       sigP.append(wrap);
     }
 
-    /* ---- activity + store health ---- */
-    const row2=el('div','ov-row');L.append(row2);
-
-    const actP=el('div','ov-panel');row2.append(actP);
-    const ah=el('div','phead');const ah1=el('div');
-    ah1.append(el('div','eyebrow','ACTIVITY'));ah1.append(el('h3',null,'Recently changed'));
-    ah.append(ah1);actP.append(ah);
-    if(!recent.jots.length){
-      actP.append(el('div','empty','No jots yet. Write one from Search.'));
-    }else{
-      const list=el('div','ov-activity');actP.append(list);
-      recent.jots.slice(0,8).forEach(function(j){
-        const cat=catColorOf(j.tags);
-        const r=el('div','ov-arow');r.style.setProperty('--cat','var('+cat.cssVar+')');
-        r.append(el('i','ov-adot'));
-        const mid=el('div','ov-amid');
-        mid.append(el('div','ov-atitle',j.name||(j.summary||'').slice(0,80)||'(untitled)'));
-        mid.append(el('div','ov-asub',cat.name+' · '+(j.editor||'user')));
-        r.append(mid);
-        r.append(el('span','ov-awhen',ago(j.updated||j.id)));
-        r.onclick=async function(){
-          try{sel=await api('/jots/'+j.id);render();}
-          catch(e){toast(e.message,'err');}
-        };
-        list.append(r);
-      });
-    }
-
-    const healthP=el('div','ov-panel ov-health');row2.append(healthP);
+    /* ---- store health ---- */
+    const healthP=el('div','ov-panel ov-health');L.append(healthP);
     const hh=el('div','phead');const hh1=el('div');
     hh1.append(el('div','eyebrow','STORE HEALTH'));
     hh1.append(el('h3',null,p.enabled?'Persisted to disk':'RAM only'));
@@ -2719,11 +2920,12 @@ function renderDetail(){
   const isNew=!!sel.__new;
   const W=el('div','dwrap');P.append(W);
 
-  /* Expanded/force-todo state remembers across re-renders of the SAME jot (e.g. after Save) but
-     resets the moment a different jot is opened - carrying "I had it expanded" or "I turned this
-     into a TODO" over to the next unrelated click would defeat the point of both. */
+  /* Force-todo resets the moment a different jot is opened - carrying "I turned this into a TODO"
+     over to the next unrelated click would quietly tag something nobody asked to be a task.
+     detailExpanded deliberately does NOT reset here: it is a remembered preference, see its
+     declaration. */
   const key=isNew?'__new':sel.id;
-  if(key!==detailOpenedKey){detailExpanded=false;detailForceTodo=false;detailOpenedKey=key;}
+  if(key!==detailOpenedKey){detailForceTodo=false;detailOpenedKey=key;}
 
   /* ---- header: slug reads as the title on the left, id sits quietly at the right ---- */
   const h=el('div','dhead');
@@ -2839,7 +3041,9 @@ function renderDetail(){
 
   const mkToggle=function(host,label){
     const b=el('button','btn tiny ghost',label);b.type='button';
-    b.onclick=function(){detailExpanded=!detailExpanded;applyExpanded();};
+    b.onclick=function(){detailExpanded=!detailExpanded;
+      try{localStorage.setItem('loom-detail-expanded',detailExpanded?'1':'0');}catch(e){}
+      applyExpanded();};
     host.append(b);return b;
   };
   mkToggle(sumFoot,'More details ▾');
@@ -2994,6 +3198,13 @@ function renderDetail(){
   P.onkeydown=function(e){
     if((e.metaKey||e.ctrlKey)&&e.key==='Enter'){e.preventDefault();save.click();}
   };
+
+  /* A blank jot exists to be typed into, so the caret starts in the summary box rather than
+     making the first action after "+ New Jot" a click into the only field on screen. Only for a
+     new one: opening an EXISTING jot is usually a read, and grabbing the caret there would put a
+     stray keystroke into a record that was never meant to be edited. renderDetail() re-runs on
+     every save/toggle, so this is guarded on the field not already holding focus. */
+  if(isNew&&f.summary&&document.activeElement!==f.summary)f.summary.focus();
 }
 
 /* ---------- shell ---------- */
@@ -3005,6 +3216,9 @@ function renderDetail(){
    scroll offset after switching views would be its own kind of glitch. */
 let lastRenderedView=null;
 async function render(){
+  /* Here rather than in drawNav(): the topbar's own input switches views without going through
+     the nav buttons, and render() is the one call every view change funnels into. */
+  syncDoneOpt();
   const D=el('div');
   if(view==='dashboard')await viewDashboard(D);
   else if(view==='search')await viewSearch(D);
@@ -3175,26 +3389,32 @@ $('#acl-addme').addEventListener('click',function(){
 });
 $('#acl-dialog').addEventListener('click',function(e){if(e.target===this)this.close();});
 
-$('#about-btn').addEventListener('click',()=>$('#about').showModal());
+/* dialog#about IS its own scroll container, and a <dialog> keeps whatever scroll offset it had
+   when it was closed. Reset it after showModal() so a reopen starts at the top - the autofocus in
+   the markup stops the browser scrolling it down in the first place, this keeps a reopen honest. */
+$('#about-btn').addEventListener('click',function(){
+  const d=$('#about');d.showModal();d.scrollTop=0;
+});
 $('#about-close').addEventListener('click',()=>$('#about').close());
 $('#about').addEventListener('click',function(e){if(e.target===this)this.close();});
 
 /* Both open the same new-jot editor - a TODO is just a jot with task fields showing. New TODO
    pre-arms detailOpenedKey/detailForceTodo the way clicking "Make this a TODO" inside the dialog
    does, so those fields are already open on first paint instead of a second click to reveal them.
-   Each states the mode it wants rather than leaving it to renderDetail's reset, because that reset
-   fires on a change of KEY and every new jot has the same one ('__new'). New TODO followed by New
-   jot is therefore not a change of key, and the plain jot used to inherit TODO mode - visibly, as
-   priority/due controls with no "Make this a TODO" button, and since the save handler learned to
-   write the tag, as a `todo` on a jot nobody asked to be one. */
+   Each states the TODO mode it wants rather than leaving it to renderDetail's reset, because that
+   reset fires on a change of KEY and every new jot has the same one ('__new'). New TODO followed
+   by New jot is therefore not a change of key, and the plain jot used to inherit TODO mode -
+   visibly, as priority/due controls with no "Make this a TODO" button, and since the save handler
+   learned to write the tag, as a `todo` on a jot nobody asked to be one.
+   Neither touches detailExpanded: that one is the remembered preference, not a per-open mode. */
 $('#new-jot-btn').addEventListener('click',function(){
   sel={__new:true};
-  detailExpanded=false;detailForceTodo=false;detailOpenedKey='__new';
+  detailForceTodo=false;detailOpenedKey='__new';
   render();
 });
 $('#new-todo-btn').addEventListener('click',function(){
   sel={__new:true};
-  detailExpanded=false;detailForceTodo=true;detailOpenedKey='__new';
+  detailForceTodo=true;detailOpenedKey='__new';
   render();
 });
 
