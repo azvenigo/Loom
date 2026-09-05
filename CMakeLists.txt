@@ -73,6 +73,7 @@ add_library(loomcore STATIC
     persist/Purge.cpp
     persist/Snapshot.cpp
     persist/Importer.cpp
+    persist/WatchList.cpp
     mcp/McpHandler.cpp
 
     core/FairSharedMutex.h
@@ -81,7 +82,7 @@ add_library(loomcore STATIC
     core/TagRegistry.h core/Tokenizer.h
     codec/JotJson.h
     persist/History.h persist/Journal.h persist/Purge.h persist/Snapshot.h
-    persist/Importer.h
+    persist/Importer.h persist/WatchList.h
     persist/DataLock.h persist/SinkFanout.h
     mcp/McpHandler.h
 )
@@ -97,6 +98,7 @@ set_source_files_properties(
     codec/JotJson.cpp persist/History.cpp persist/Journal.cpp persist/Purge.cpp
     persist/Snapshot.cpp
     persist/Importer.cpp
+    persist/WatchList.cpp
     mcp/McpHandler.cpp
     PROPERTIES COMPILE_OPTIONS "$<IF:$<CXX_COMPILER_ID:MSVC>,/W3;/WX-,-w>")
 

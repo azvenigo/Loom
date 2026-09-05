@@ -420,13 +420,23 @@ dialog#attention-dialog .body{padding:18px 20px 20px}
 dialog#attention-dialog h2{font:600 16px var(--sans);color:var(--ink);margin:0 0 6px}
 dialog#attention-dialog p{margin:0 0 14px;color:var(--dim);font-size:13.5px;line-height:1.55}
 dialog#attention-dialog .promptbox{max-height:min(40vh,340px);overflow-y:auto}
-#attention-list{max-height:min(30vh,260px);overflow-y:auto;border:1px solid var(--line);
-  border-radius:8px;padding:2px 12px;margin-bottom:14px;background:var(--sunk)}
-#attention-list .ov-arow{padding:8px 0}
-#attention-list .ov-arow:last-child{border-bottom:0}
+#attention-list, #attention-files{max-height:min(30vh,260px);overflow-y:auto;
+  border:1px solid var(--line);border-radius:8px;padding:2px 12px;margin-bottom:14px;
+  background:var(--sunk)}
+#attention-files:empty{display:none}
+#attention-list .ov-arow, #attention-files .ov-arow{padding:8px 0}
+#attention-list .ov-arow:last-child, #attention-files .ov-arow:last-child{border-bottom:0}
 .attn-dismiss{flex:none;background:none;border:1px solid var(--line);border-radius:6px;
   color:var(--faint);font-size:11px;padding:3px 8px;cursor:pointer}
 .attn-dismiss:hover{color:var(--bad);border-color:var(--bad-line)}
+/* Ingest is the affirmative action a pending file gets, so it earns the accent rather than the
+   neutral-until-hovered treatment Dismiss uses - there is no "harmless default" reading of this
+   one the way there is for dropping a triage flag. */
+.attn-ingest{flex:none;background:none;border:1px solid var(--accent-line,var(--line));
+  color:var(--accent-ink);font-size:11px;padding:3px 8px;border-radius:6px;cursor:pointer;
+  font-weight:600}
+.attn-ingest:hover{background:var(--accent-wash)}
+.attn-ingest:disabled{opacity:.5;cursor:default}
 
 /* ---------- history ----------
    A change is a row, not a card: you scan history looking for one moment, so the shape that helps
@@ -471,12 +481,14 @@ dialog#purge-dialog p{margin:0 0 12px;color:var(--dim);font-size:13.5px;line-hei
   overflow-y:auto;margin-bottom:12px}
 
 /* ---------- access list ---------- */
-dialog#acl-dialog{border:1px solid var(--line);border-radius:var(--r);padding:0;
+/* watch-dialog (edit the watched-paths list) shares every one of these base rules - same sizing,
+   same chrome - rather than repeating them for a dialog that's really the same shape. */
+dialog#acl-dialog, dialog#watch-dialog{border:1px solid var(--line);border-radius:var(--r);padding:0;
   width:min(560px,92vw);background:var(--panel);color:var(--body);overflow:hidden}
-dialog#acl-dialog::backdrop{background:rgba(0,0,0,.45)}
-dialog#acl-dialog .body{padding:18px 20px 20px}
-dialog#acl-dialog h2{font:600 16px var(--sans);color:var(--ink);margin:0 0 6px}
-dialog#acl-dialog p{margin:0 0 14px;color:var(--dim);font-size:13.5px;line-height:1.55}
+dialog#acl-dialog::backdrop, dialog#watch-dialog::backdrop{background:rgba(0,0,0,.45)}
+dialog#acl-dialog .body, dialog#watch-dialog .body{padding:18px 20px 20px}
+dialog#acl-dialog h2, dialog#watch-dialog h2{font:600 16px var(--sans);color:var(--ink);margin:0 0 6px}
+dialog#acl-dialog p, dialog#watch-dialog p{margin:0 0 14px;color:var(--dim);font-size:13.5px;line-height:1.55}
 .aclswitch{display:flex;align-items:center;gap:10px;padding:11px 13px;border-radius:8px;
   background:var(--sunk);margin-bottom:14px}
 .aclswitch input{width:auto;margin:0;flex:none}
@@ -1223,6 +1235,12 @@ label u{text-decoration:none;color:var(--accent-ink);text-transform:none;letter-
     <div class="side-foot">
       <div class="footrow">
         <div id="live-slot"></div>
+        <button type="button" class="shieldbtn" id="watch-btn" title="Watched source files">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"
+               stroke-linecap="round" stroke-linejoin="round">
+            <path d="M2 4.5h5l1.3 1.5H14v6a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1v-6.5a1 1 0 0 1 1-1Z"/>
+          </svg>
+        </button>
         <button type="button" class="shieldbtn" id="acl-btn" title="Access list">
           <svg id="acl-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor"
                stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></svg>
@@ -1359,10 +1377,12 @@ label u{text-decoration:none;color:var(--accent-ink);text-transform:none;letter-
 <dialog id="attention-dialog">
   <div class="body">
     <h2>Needs attention</h2>
-    <p><b id="attention-count"></b> came in without a summary and haven't been triaged. Dismiss any
-       that don't actually need work, or copy the prompt below into an agent session to have it
-       process the rest: write a summary, tag it, and fold it into existing memories where it
-       belongs.</p>
+    <p>A watched source file below has new content since it was last ingested - click Ingest to
+       pull it in. <b id="attention-count"></b> came in without a summary and haven't been
+       triaged: dismiss any that don't actually need work, or copy the prompt below into an agent
+       session to have it process the rest: write a summary, tag it, and fold it into existing
+       memories where it belongs.</p>
+    <div id="attention-files"></div>
     <div id="attention-list"></div>
     <div class="promptbox open" id="attention-prompt-text"></div>
     <div class="row" style="margin-top:12px">
@@ -1430,6 +1450,26 @@ label u{text-decoration:none;color:var(--accent-ink);text-transform:none;letter-
     <div class="row">
       <button type="button" class="btn primary" id="acl-save">Save</button>
       <button type="button" class="btn ghost" id="acl-cancel">Cancel</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="watch-dialog">
+  <div class="body">
+    <h2>Watched source files</h2>
+    <p>Loom checks these paths for new content whenever the dashboard asks, not in the
+       background - see the Needs Attention card. A file needs attention once its size AND its
+       modified time have both moved since it was last ingested.</p>
+    <div id="watch-err"></div>
+    <div class="aclrules" id="watch-rules"></div>
+    <div class="row" style="margin-bottom:14px">
+      <input type="text" id="watch-input" placeholder="C:\Users\you\OneDrive\docs\jots\jots.log"
+             style="flex:1;min-width:120px">
+      <button type="button" class="btn" id="watch-add">Add</button>
+    </div>
+    <div class="row">
+      <button type="button" class="btn primary" id="watch-save">Save</button>
+      <button type="button" class="btn ghost" id="watch-cancel">Cancel</button>
     </div>
   </div>
 </dialog>
@@ -2308,13 +2348,50 @@ function attentionPrompt(list){
 "to categorize it - ask rather than guessing."
   ].join("\n");
 }
-/* list is a snapshot, not the live store - see attentionPrompt. Rows read from it directly rather
-   than re-fetching, so Dismiss (which DOES write) has to update this closure's copy too or a
-   second dismiss in the same dialog session would re-send an id already cleared. */
-function openAttention(list){
-  list=list.slice();
+const fmtBytes=n=>n<1024?n+' B':n<1048576?(n/1024).toFixed(1)+' KB':(n/1048576).toFixed(1)+' MB';
+
+/* list and files are both snapshots, not the live store - see attentionPrompt. Rows read from
+   them directly rather than re-fetching on every redraw, so Dismiss and Ingest (which DO write)
+   have to update this closure's own copies too, or a second click in the same dialog session
+   would re-send something already cleared. */
+function openAttention(list,files){
+  list=(list||[]).slice();
+  files=(files||[]).slice();
   const redraw=function(){
     $('#attention-count').textContent=list.length+' jot'+(list.length===1?'':'s');
+
+    const fbody=$('#attention-files');fbody.innerHTML='';
+    files.slice().sort((a,b)=>a.path.localeCompare(b.path)).forEach(function(f){
+      const r=el('div','ov-arow');
+      r.append(el('i','ov-adot'));
+      const mid=el('div','ov-amid');
+      mid.append(el('div','ov-atitle',f.path));
+      mid.append(el('div','ov-asub',fmtBytes(f.size)+' · changed '+ago(f.mtimeUS)));
+      r.append(mid);
+      const ingest=el('button','attn-ingest','Ingest');
+      ingest.type='button';
+      ingest.title='Import this file\'s new content now';
+      ingest.onclick=async function(e){
+        e.stopPropagation();
+        ingest.disabled=true;
+        try{
+          const stats=await api('/watch/ingest',{method:'POST',
+            headers:{'Content-Type':'application/json'},body:JSON.stringify({path:f.path})});
+          files=files.filter(x=>x.path!==f.path);
+          toast(stats.imported+' imported'+
+            (stats.malformed?', '+stats.malformed+' malformed':'')+
+            (stats.skipped?', '+stats.skipped+' already there':''),'ok');
+          // Whatever ingest just created needs the same triage the rest of this dialog offers -
+          // re-query rather than guess at ids, same reasoning as attentionPrompt below.
+          const fresh=await api('/jots?tags=status:unprocessed&brief=1&limit=200');
+          list=fresh.jots;
+          redraw();
+        }catch(err){ingest.disabled=false;toast(err.message,'err');}
+      };
+      r.append(ingest);
+      fbody.append(r);
+    });
+
     const body=$('#attention-list');body.innerHTML='';
     if(!list.length){
       body.append(el('div','ov-colempty','Nothing left to process.'));
@@ -2379,9 +2456,9 @@ const OV_ICONS={
 async function viewDashboard(target){
   const L=target;
   try{
-    const [tags,sim,recent,health]=await Promise.all([
+    const [tags,sim,recent,health,watch]=await Promise.all([
       api('/tags'), api('/tags/similar'),
-      api('/jots?order=newest&limit=200&brief=1'), api('/stats')
+      api('/jots?order=newest&limit=200&brief=1'), api('/stats'), api('/watch')
     ]);
     const topTags=tags.tags.slice().sort((a,b)=>b.count-a.count);
     const p=health.persistence||{};
@@ -2398,6 +2475,10 @@ async function viewDashboard(target){
        request buys nothing. Caps at 200 like everything else fed by `recent` - a backlog past
        that is already a "go look at Search" problem, not a dashboard-card one. */
     const unprocessed=recent.jots.filter(isUnprocessed);
+    /* Watched source files (see persist/WatchList.h) whose size AND mtime have both moved since
+       they were last ingested - the other half of Needs Attention, alongside the unprocessed jots
+       above. No polling here either: /watch stats each configured path fresh on every call. */
+    const pendingFiles=(watch.files||[]).filter(f=>f.pending);
     const todoP=el('div','ov-panel ov-todo');L.append(todoP);
     const th=el('div','phead');
     const badge=el('div','ov-todobadge');badge.innerHTML=OV_ICONS.flag;th.append(badge);
@@ -2632,11 +2713,14 @@ async function viewDashboard(target){
     card('','hash','Tags in use',health.tags??'—','Including structural tags');
     /* Unprocessed rather than tag-drift: drift already has a permanent home (the Tags tab shows
        the same sim.clusters at the top of its own page), and it never had a click-through here
-       anyway. What actually needs a human is a jot that came in with no summary - the whole point
-       of `status:unprocessed`, see the attention-dialog below. */
-    card(unprocessed.length?'warn':'','flag','Needs attention',unprocessed.length,
-      unprocessed.length?'Imported without a summary - click to process':'Nothing waiting',
-      unprocessed.length?function(){openAttention(unprocessed);}:null);
+       anyway. What actually needs a human is a jot that came in with no summary, or a watched
+       source file with new content sitting in it - see the attention-dialog below. */
+    const needsAttention=unprocessed.length+pendingFiles.length;
+    card(needsAttention?'warn':'','flag','Needs attention',needsAttention,
+      needsAttention?[pendingFiles.length&&pendingFiles.length+' file'+(pendingFiles.length===1?'':'s')+' to ingest',
+                      unprocessed.length&&unprocessed.length+' to process'].filter(Boolean).join(', '):
+      'Nothing waiting',
+      needsAttention?function(){openAttention(unprocessed,pendingFiles);}:null);
 
     /* ---- distribution + signals ---- */
     const row1=el('div','ov-row');L.append(row1);
@@ -3472,6 +3556,72 @@ $('#acl-addme').addEventListener('click',function(){
   aclAdd(aclNow.caller,'this machine');
 });
 $('#acl-dialog').addEventListener('click',function(e){if(e.target===this)this.close();});
+
+/* Same shape as the ACL editor above (openAcl/renderAclRules/saveAcl): a draft array edited in
+   the dialog, saved whole with PUT on Save. No "am I locking myself out" guard here - unlike the
+   access list, a bad watch-list entry just never shows anything pending, which is a much smaller
+   way to be wrong. */
+let watchDraft=[];
+
+function renderWatchRules(){
+  const R=$('#watch-rules');R.innerHTML='';
+  if(!watchDraft.length){
+    R.append(el('div','aclempty','Nothing watched yet.'));
+  }
+  watchDraft.forEach(function(sPath,i){
+    const row=el('div','aclrule');
+    row.append(el('span','r',sPath));
+    const x=el('button',null,'×');
+    x.title='Remove';
+    x.onclick=function(){watchDraft.splice(i,1);renderWatchRules();};
+    row.append(x);
+    R.append(row);
+  });
+}
+
+function watchAdd(sPath){
+  const p=(sPath||'').trim();
+  if(!p)return;
+  if(watchDraft.includes(p)){toast('already listed','warn');return;}
+  watchDraft.push(p);
+  renderWatchRules();
+}
+
+async function openWatch(){
+  try{
+    const cur=await api('/watch');
+    watchDraft=(cur.paths||[]).slice();
+  }catch(e){toast('could not read the watch list: '+e.message,'bad');return;}
+  $('#watch-err').innerHTML='';
+  $('#watch-input').value='';
+  renderWatchRules();
+  $('#watch-dialog').showModal();
+}
+
+async function saveWatch(){
+  $('#watch-err').innerHTML='';
+  try{
+    await api('/watch',{method:'PUT',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({paths:watchDraft})});
+    $('#watch-dialog').close();
+    if(view==='dashboard')render();
+  }catch(e){
+    const box=el('div','aclerr');box.append(el('div',null,e.message));
+    $('#watch-err').innerHTML='';$('#watch-err').append(box);
+  }
+}
+
+$('#watch-btn').addEventListener('click',openWatch);
+$('#watch-cancel').addEventListener('click',()=>$('#watch-dialog').close());
+$('#watch-save').addEventListener('click',saveWatch);
+$('#watch-add').addEventListener('click',function(){
+  watchAdd($('#watch-input').value);
+  $('#watch-input').value='';$('#watch-input').focus();
+});
+$('#watch-input').addEventListener('keydown',function(e){
+  if(e.key==='Enter'){e.preventDefault();$('#watch-add').click();}
+});
+$('#watch-dialog').addEventListener('click',function(e){if(e.target===this)this.close();});
 
 /* dialog#about IS its own scroll container, and a <dialog> keeps whatever scroll offset it had
    when it was closed. Reset it after showModal() so a reopen starts at the top - the autofocus in

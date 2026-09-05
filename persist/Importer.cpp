@@ -128,6 +128,9 @@ namespace IMPORT
             flat.mID      = nUS;
             flat.msText   = sEntry;
             flat.msEditor = sEditor;   // empty resolves to "user"
+            // This format carries no summary, so every line it produces needs triage - see
+            // web/Dashboard.h's isUnprocessed/attention-dialog, which is what actually surfaces it.
+            flat.mTags    = { "status:unprocessed" };
 
             if (outStats.mnOldestUS == 0 || nUS < outStats.mnOldestUS) outStats.mnOldestUS = nUS;
             if (nUS > outStats.mnNewestUS)                             outStats.mnNewestUS = nUS;

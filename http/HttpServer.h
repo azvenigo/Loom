@@ -6,6 +6,7 @@
 #include "persist/History.h"
 #include "persist/Journal.h"
 #include "persist/Snapshot.h"
+#include "persist/WatchList.h"
 
 #include <cstdint>
 #include <memory>
@@ -54,9 +55,12 @@ public:
     //
     // pHistory may be null, in which case /history and the purge routes report themselves
     // unavailable rather than pretending to work.
+    //
+    // watch is taken by reference and outlives the server, same as acl: GET/PUT /watch edit it
+    // directly, and POST /watch/ingest reads the current file off disk and imports it into store.
     HttpServer(Ops& ops, JotStore& store, const HttpConfig& config,
                Journal* pJournal, const SnapshotConfig& snapConfig, IpAcl& acl,
-               History* pHistory);
+               History* pHistory, WatchList& watch);
     ~HttpServer();
 
     HttpServer(const HttpServer&)            = delete;

@@ -5,8 +5,17 @@
 #include <string>
 
 #ifdef _WIN32
+  // Quarantined the same way vendor/crow and vendor/json.hpp are (CMakeLists.txt): the SDK headers
+  // pulled in here are not Loom's code and do not survive /Wall. WIN32_LEAN_AND_MEAN (defined
+  // project-wide) trims most of it, but winbase.h/wingdi.h/winuser.h are declared regardless and
+  // still emit /Wall-only diagnostics - NOTE push(0) does NOT suppress these: several off-by-
+  // default warnings /Wall enables ignore the warning-LEVEL pragma and need an explicit disable.
+  #pragma warning(push)
+  #pragma warning(disable : 5039)   // extern "C" callback ptr "potentially throwing" (TpSetCallbackCleanupGroup et al)
+  #pragma warning(disable : 4865)   // enum underlying type will change under /Zc:enumTypes (DISPLAYCONFIG_*, etc.)
   #include <io.h>
   #include <windows.h>
+  #pragma warning(pop)
 #else
   #include <fcntl.h>
   #include <unistd.h>

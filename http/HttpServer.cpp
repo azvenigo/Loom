@@ -11,6 +11,7 @@
 #include "core/LoomTime.h"
 #include "codec/JotJson.h"
 #include "mcp/McpHandler.h"
+#include "persist/Importer.h"
 #include "persist/Purge.h"
 #include "web/Dashboard.h"
 #include "web/IconAssets.h"
@@ -258,6 +259,7 @@ struct HttpServer::Impl
     Journal*             mpJournal = nullptr;
     IpAcl&               mAcl;
     History*             mpHistory = nullptr;
+    WatchList&           mWatch;
     McpHandler           mMcp;
     SnapshotConfig       mSnapConfig;
     crow::App<AclGuard>  mApp;
@@ -267,9 +269,10 @@ struct HttpServer::Impl
     std::string          msOrigin;
 
     Impl(Ops& ops, JotStore& store, const HttpConfig& config,
-         Journal* pJournal, const SnapshotConfig& snapConfig, IpAcl& acl, History* pHistory)
+         Journal* pJournal, const SnapshotConfig& snapConfig, IpAcl& acl, History* pHistory,
+         WatchList& watch)
         : mOps(ops), mStore(store), mConfig(config), mpJournal(pJournal), mAcl(acl),
-          mpHistory(pHistory), mMcp(ops, store), mSnapConfig(snapConfig),
+          mpHistory(pHistory), mWatch(watch), mMcp(ops, store), mSnapConfig(snapConfig),
           msOrigin(ResolveAdvertisedOrigin(config))
     {
         // The middleware instance is owned by the app, so it is wired here rather than constructed
@@ -720,6 +723,119 @@ struct HttpServer::Impl
         });
 
         //------------------------------------------------------------------------------------
+        // Watched sources
+        //
+        // No background thread anywhere in here - GET /watch stats every configured path right
+        // now, on the calling thread, which is what lets "has this changed" stay a cheap on-demand
+        // question instead of a filesystem watcher with debounce logic. See persist/WatchList.h.
+        //------------------------------------------------------------------------------------
+
+        CROW_ROUTE(mApp, "/watch").methods(crow::HTTPMethod::Get)
+        ([this](const crow::request& req)
+        {
+            if (!Authorized(req)) return Fail(401, "missing or invalid bearer token");
+
+            std::vector<std::string> vPaths;
+            mWatch.Get(vPaths);
+
+            crow::json::wvalue out;
+            out["paths"] = vPaths;
+
+            std::vector<crow::json::wvalue> vFiles;
+            for (const WatchStatus& s : mWatch.Resolve())
+            {
+                crow::json::wvalue f;
+                f["path"]         = s.msPath;
+                f["exists"]       = s.mbExists;
+                f["size"]         = s.mnSizeBytes;
+                f["mtimeUS"]      = s.mnMtimeUS;
+                f["pending"]      = s.mbPending;
+                f["lastIngestUS"] = s.mnLastIngestUS;
+                vFiles.push_back(std::move(f));
+            }
+            out["files"] = std::move(vFiles);
+            return Ok(out.dump());
+        });
+
+        CROW_ROUTE(mApp, "/watch").methods(crow::HTTPMethod::Put)
+        ([this](const crow::request& req)
+        {
+            if (!Authorized(req)) return Fail(401, "missing or invalid bearer token");
+
+            auto body = crow::json::load(req.body);
+            if (!body || !body.has("paths") || body["paths"].t() != crow::json::type::List)
+                return Fail(400, "expected {\"paths\":[\"...\"]}");
+
+            std::vector<std::string> vPaths;
+            for (const auto& p : body["paths"])
+            {
+                if (p.t() != crow::json::type::String)
+                    return Fail(400, "each entry in 'paths' must be a string");
+                vPaths.push_back(p.s());
+            }
+
+            std::string sError;
+            if (std::error_code ec = mWatch.Set(vPaths, sError))
+                return Fail(500, sError.empty() ? ec.message() : sError);
+
+            std::vector<std::string> vNow;
+            mWatch.Get(vNow);
+            return Ok("{\"count\":" + std::to_string(vNow.size()) + "}");
+        });
+
+        CROW_ROUTE(mApp, "/watch/ingest").methods(crow::HTTPMethod::Post)
+        ([this](const crow::request& req)
+        {
+            if (!Authorized(req)) return Fail(401, "missing or invalid bearer token");
+
+            auto body = crow::json::load(req.body);
+            if (!body || !body.has("path") || body["path"].t() != crow::json::type::String)
+                return Fail(400, "expected {\"path\":\"...\"}");
+            const std::string sPath = body["path"].s();
+
+            // Only a path already on the watch list can be ingested here - this route is a
+            // trigger for a configured source, not a general "read any file on this machine"
+            // endpoint.
+            std::vector<std::string> vConfigured;
+            mWatch.Get(vConfigured);
+            bool bWatched = false;
+            for (const std::string& s : vConfigured)
+            {
+                if (s == sPath) { bWatched = true; break; }
+            }
+            if (!bWatched)
+                return Fail(400, "'" + sPath + "' is not on the watch list");
+
+            ImportStats st;
+            if (std::error_code ec = IMPORT::JotsLog(sPath, mStore, "user", st))
+                return Fail(400, "import failed: " + ec.message());
+
+            // Reuse Resolve()'s stat rather than re-implementing it here - whatever it reports as
+            // current right now is exactly what "ingested as of" should record.
+            for (const WatchStatus& s : mWatch.Resolve())
+            {
+                if (s.msPath == sPath && s.mbExists)
+                {
+                    mWatch.MarkIngested(sPath, s.mnSizeBytes, s.mnMtimeUS);
+                    break;
+                }
+            }
+
+            crow::json::wvalue out;
+            out["lines"]     = st.mnLines;
+            out["imported"]  = st.mnImported;
+            out["skipped"]   = st.mnSkipped;
+            out["malformed"] = st.mnMalformed;
+            out["bumped"]    = st.mnBumped;
+            if (st.mnImported)
+            {
+                out["oldestUS"] = st.mnOldestUS;
+                out["newestUS"] = st.mnNewestUS;
+            }
+            return Ok(out.dump());
+        });
+
+        //------------------------------------------------------------------------------------
         // History, restore and purge
         //------------------------------------------------------------------------------------
 
@@ -953,8 +1069,8 @@ struct HttpServer::Impl
 
 HttpServer::HttpServer(Ops& ops, JotStore& store, const HttpConfig& config,
                        Journal* pJournal, const SnapshotConfig& snapConfig, IpAcl& acl,
-                       History* pHistory)
-    : mpImpl(std::make_unique<Impl>(ops, store, config, pJournal, snapConfig, acl, pHistory))
+                       History* pHistory, WatchList& watch)
+    : mpImpl(std::make_unique<Impl>(ops, store, config, pJournal, snapConfig, acl, pHistory, watch))
 {
     mpImpl->Routes();
 }

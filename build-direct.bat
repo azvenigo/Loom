@@ -26,16 +26,16 @@ cl /c %STRICT% "%L%core\JotStore.cpp" "%L%core\Ops.cpp" "%L%core\TagRegistry.cpp
 if errorlevel 1 exit /b 1
 
 echo [2/4] codec, persist, mcp, http (vendored headers, relaxed)
-cl /c %LOOSE% "%L%codec\JotJson.cpp" "%L%persist\Journal.cpp" "%L%persist\Importer.cpp" "%L%persist\Snapshot.cpp" "%L%mcp\McpHandler.cpp" "%L%http\HttpServer.cpp" "%L%main.cpp"
+cl /c %LOOSE% "%L%core\IpAcl.cpp" "%L%codec\JotJson.cpp" "%L%persist\History.cpp" "%L%persist\Journal.cpp" "%L%persist\Purge.cpp" "%L%persist\Importer.cpp" "%L%persist\WatchList.cpp" "%L%persist\Snapshot.cpp" "%L%mcp\McpHandler.cpp" "%L%http\HttpServer.cpp" "%L%main.cpp"
 if errorlevel 1 exit /b 1
 
 echo [3/4] loom.exe
-link /nologo /OUT:loom.exe JotStore.obj Ops.obj TagRegistry.obj Tokenizer.obj LoomTime.obj JotJson.obj Journal.obj Importer.obj Snapshot.obj McpHandler.obj HttpServer.obj main.obj ws2_32.lib mswsock.lib
+link /nologo /OUT:loom.exe JotStore.obj Ops.obj TagRegistry.obj Tokenizer.obj LoomTime.obj IpAcl.obj JotJson.obj History.obj Journal.obj Purge.obj Importer.obj WatchList.obj Snapshot.obj McpHandler.obj HttpServer.obj main.obj ws2_32.lib mswsock.lib
 if errorlevel 1 exit /b 1
 
 echo [4/4] tests and benchmark
 set CORELIB=JotStore.obj Ops.obj TagRegistry.obj Tokenizer.obj LoomTime.obj
-cl %STRICT% "%L%test\coretest\main.cpp" %CORELIB% /Fe:coretest.exe
+cl %STRICT% "%L%test\coretest\main.cpp" %CORELIB% IpAcl.obj WatchList.obj /Fe:coretest.exe
 if errorlevel 1 exit /b 1
 cl %LOOSE% "%L%test\persisttest\main.cpp" %CORELIB% JotJson.obj Journal.obj Importer.obj Snapshot.obj /Fe:persisttest.exe
 if errorlevel 1 exit /b 1

@@ -22,11 +22,13 @@
 #include "core/Ops.h"
 #include "core/TagRegistry.h"
 #include "core/Tokenizer.h"
+#include "persist/WatchList.h"
 
 #include <algorithm>
 #include <cstring>
 #include <atomic>
 #include <cstdio>
+#include <filesystem>
 #include <set>
 #include <string>
 #include <thread>
@@ -885,6 +887,82 @@ namespace
         Check(!acl.Set(false, v2, sBad), "disabling succeeds");
         Check(Allowed(acl, "8.8.8.8"),   "everything is allowed again once disabled");
     }
+
+    void TestWatchList()
+    {
+        Section("watch list");
+
+        namespace fs = std::filesystem;
+        const fs::path dir = fs::temp_directory_path() / "loom-coretest-watch";
+        std::error_code ecIgnored;
+        fs::create_directories(dir, ecIgnored);
+        const fs::path filePath   = dir / "probe.log";
+        const std::string sConfig = (dir / "watch.json").string();
+        const std::string sState  = (dir / "watch-state.json").string();
+        fs::remove(sConfig, ecIgnored);
+        fs::remove(sState, ecIgnored);
+        fs::remove(filePath, ecIgnored);
+
+        {
+            WatchList w;
+            std::string sWarn;
+            Check(!w.Load(sConfig, sState, sWarn), "load with neither file on disk succeeds");
+            Check(sWarn.empty(),                   "and carries no warning - a first run, not an error");
+        }
+
+        {
+            FILE* f = std::fopen(filePath.string().c_str(), "wb");
+            std::fputs("line one\n", f);
+            std::fclose(f);
+        }
+
+        WatchList w;
+        std::string sWarn, sErr;
+        w.Load(sConfig, sState, sWarn);
+        Check(!w.Set({ filePath.string(), "  ", filePath.string() }, sErr),
+              "Set accepts a path, ignoring blanks and a duplicate");
+
+        std::vector<std::string> vPaths;
+        w.Get(vPaths);
+        Check(vPaths.size() == 1, "the blank and the duplicate did not become two entries");
+
+        std::vector<WatchStatus> vStatus = w.Resolve();
+        Check(vStatus.size() == 1,     "one configured path resolves to one status");
+        Check(vStatus[0].mbExists,     "the file exists");
+        Check(vStatus[0].mbPending,    "a never-ingested file is pending");
+
+        w.MarkIngested(filePath.string(), vStatus[0].mnSizeBytes, vStatus[0].mnMtimeUS);
+        Check(!w.Resolve()[0].mbPending, "freshly marked ingested is no longer pending");
+
+        // A touch that changes mtime but not size must not read as new content.
+        const auto mtimeBefore = fs::last_write_time(filePath);
+        fs::last_write_time(filePath, mtimeBefore + std::chrono::seconds(5));
+        Check(!w.Resolve()[0].mbPending,
+              "mtime moving alone does not count - size must move too");
+
+        // Appending moves both size and mtime, which is the real signal.
+        {
+            FILE* f = std::fopen(filePath.string().c_str(), "ab");
+            std::fputs("line two\n", f);
+            std::fclose(f);
+        }
+        Check(w.Resolve()[0].mbPending, "appending new content is pending again");
+
+        fs::remove(filePath, ecIgnored);
+        const WatchStatus removed = w.Resolve()[0];
+        Check(!removed.mbExists, "a deleted file reports as not existing");
+        Check(!removed.mbPending, "and is not reported pending - there is nothing to ingest");
+
+        // The config (which paths) survives a reload; losing the state file (bookkeeping only)
+        // is not fatal - see persist/WatchList.h.
+        WatchList w2;
+        std::string sWarn2;
+        w2.Load(sConfig, sState, sWarn2);
+        std::vector<std::string> vPaths2;
+        w2.Get(vPaths2);
+        Check(vPaths2.size() == 1 && vPaths2[0] == filePath.string(),
+              "the watch list itself persists across a reload");
+    }
 }
 
 int main()
@@ -905,6 +983,7 @@ int main()
     TestNoOpUpdates();
     TestIpAclParsing();
     TestIpAclMatching();
+    TestWatchList();
     // LAST on purpose: this one is known to hang (4 spinning readers starve both writers on
     // JotStore's shared_mutex), so anything sequenced after it never runs.
     TestConcurrentReadWrite();

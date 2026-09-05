@@ -20,6 +20,7 @@
 #include "persist/Purge.h"
 #include "persist/SinkFanout.h"
 #include "persist/Snapshot.h"
+#include "persist/WatchList.h"
 
 #include <atomic>
 #include <cstdio>
@@ -220,6 +221,12 @@ int main(int argc, char** argv)
             "  (shield icon, bottom left) or over PUT /acl. Loopback is always allowed, so a bad\n"
             "  list can always be repaired from the machine itself.\n"
             "\n"
+            "  DIR/loom.watch.json lists files Loom watches for new content (edited from the\n"
+            "  dashboard or over PUT /watch). A file whose size and mtime have both changed since\n"
+            "  it was last pulled in shows up on the dashboard's Needs Attention card; POST\n"
+            "  /watch/ingest actually imports it. Nothing is watched in the background - this is\n"
+            "  only checked when asked.\n"
+            "\n"
             "  Every change is also appended to DIR/loom.history, which - unlike the WAL - is never\n"
             "  truncated by a snapshot. That is what GET /history and the dashboard's History view\n"
             "  read, and what a restore re-applies.\n"
@@ -253,6 +260,7 @@ int main(int argc, char** argv)
     History    history;
     SinkFanout sinks;
     IpAcl      acl;
+    WatchList  watch;
 
     const bool bPersist = !ArgFlag(argc, argv, "--no-persist");
 
@@ -284,6 +292,11 @@ int main(int argc, char** argv)
         acl.Load(sDir + "/loom.acl.json", sAclWarning);
         if (!sAclWarning.empty())
             std::printf("  %s\n", sAclWarning.c_str());
+
+        std::string sWatchWarning;
+        watch.Load(sDir + "/loom.watch.json", sDir + "/loom.watch-state.json", sWatchWarning);
+        if (!sWatchWarning.empty())
+            std::printf("  %s\n", sWatchWarning.c_str());
 
         // Load BEFORE opening the journal. Replaying with the sink already attached would re-log
         // every record it just read, doubling the WAL on each restart.
@@ -358,9 +371,14 @@ int main(int argc, char** argv)
     }
 
     HttpServer server(ops, store, config, bPersist ? &journal : nullptr, snapConfig, acl,
-                      &history);
+                      &history, watch);
     gpServer = &server;
+    // C5039 ("potentially throwing function passed to an extern C API") is /Wall noise on every
+    // signal handler ever registered this way, not a real hazard here - OnSignal only flips an
+    // atomic and cannot throw. Suppressed for exactly these two lines rather than project-wide.
+    #pragma warning(suppress : 5039)
     std::signal(SIGINT,  OnSignal);
+    #pragma warning(suppress : 5039)
     std::signal(SIGTERM, OnSignal);
 
     std::printf("loom listening on http://%s:%u  (%zu jots, %s)\n",
