@@ -50,15 +50,32 @@ namespace JOTJSON
     // untouched fields alone rather than clearing them.
     bool ParseInput(const std::string& sBody, JotInput& outInput, std::string& outError);
 
+    // The accepted spellings of a `created` value, in one place so REST and MCP cannot drift into
+    // taking different ones. A JSON number is passed through as its decimal text, so the same
+    // parser handles both forms: raw microseconds, "2025-08-14", "2025-08-14 09:12:00", or a
+    // relative age like "30d" meaning that long ago. False means nothing parsed.
+    //
+    // This deliberately does NOT range-check; Ops::ValidateCreatedUS owns that, so a bad date is
+    // refused by the same rule whichever door it arrives at.
+    bool ParseCreatedSpec(const std::string& sSpec, int64_t& outUS);
+
     //--------------------------------------------------------------------------------------------
     // Responses
     //--------------------------------------------------------------------------------------------
 
-    std::string SearchToJson(const SearchResultSet& results, const NameTables& names, bool bVerbose);
+    // bBrief drops `text` from every entry (replaced with `has_text:true` when there was some),
+    // for a cheap topic skim - loom_get/GET-by-id fetches the body once something looks relevant.
+    // Independent of bVerbose, which is about materializing defaults, not trimming content.
+    std::string SearchToJson(const SearchResultSet& results, const NameTables& names, bool bVerbose,
+                              bool bBrief = false);
     std::string JotListToJson(const std::vector<Jot>& vJots, const NameTables& names, bool bVerbose);
     std::string TagsToJson(const std::vector<TagStat>& vTags);
     std::string ClustersToJson(const std::vector<TagCluster>& vClusters);
-    std::string StatsToJson(const StoreStats& stats, const PersistStats& persist);
+    // sOrigin is the address a remote machine should use to reach this server; empty leaves the
+    // "server" block out entirely. It is here rather than in StoreStats because it is a fact about
+    // the process, not the store - the same store answers on a different origin on every machine.
+    std::string StatsToJson(const StoreStats& stats, const PersistStats& persist,
+                            const std::string& sOrigin = {}, bool bAuthRequired = false);
 
     // The write response: the record, plus any non-fatal tag warnings. The warnings ride with the
     // result rather than arriving out of band, because an agent that has to make a second call to

@@ -1,7 +1,9 @@
 #pragma once
 // Copyright (c) 2026 Alexander Zvenigorodsky. MIT License. See LICENSE.
 
+#include "core/IpAcl.h"
 #include "core/Ops.h"
+#include "persist/History.h"
 #include "persist/Journal.h"
 #include "persist/Snapshot.h"
 
@@ -44,8 +46,17 @@ class HttpServer
 {
 public:
     // pJournal may be null (RAM-only). snapConfig is only read when pJournal is non-null.
+    //
+    // acl is taken by reference and outlives the server: it is enforced in a crow middleware rather
+    // than at the top of each handler, which is the difference between a control that covers every
+    // route and one that covers every route somebody remembered. A route added later is gated
+    // whether or not its author knew the list existed.
+    //
+    // pHistory may be null, in which case /history and the purge routes report themselves
+    // unavailable rather than pretending to work.
     HttpServer(Ops& ops, JotStore& store, const HttpConfig& config,
-               Journal* pJournal, const SnapshotConfig& snapConfig);
+               Journal* pJournal, const SnapshotConfig& snapConfig, IpAcl& acl,
+               History* pHistory);
     ~HttpServer();
 
     HttpServer(const HttpServer&)            = delete;
@@ -56,6 +67,13 @@ public:
 
     // Safe to call from a signal handler context or another thread.
     void Stop();
+
+    // "http://<addr>:<port>" as a machine ACROSS THE NETWORK should type it, resolved once at
+    // construction. With a concrete --bind this is just that address; with a wildcard bind it is
+    // the interface this machine would route out of, because "0.0.0.0" is not something anyone
+    // can be handed. Served on /stats so the dashboard can put a reachable address in the agent
+    // brief instead of the localhost the browser happens to be pointed at.
+    const std::string& AdvertisedOrigin() const;
 
 private:
     struct Impl;

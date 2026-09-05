@@ -60,6 +60,7 @@ endif()
 #####################################################################################################
 
 add_library(loomcore STATIC
+    core/IpAcl.cpp
     core/JotStore.cpp
     core/LoomTime.cpp
     core/Ops.cpp
@@ -67,16 +68,21 @@ add_library(loomcore STATIC
     core/Tokenizer.cpp
 
     codec/JotJson.cpp
+    persist/History.cpp
     persist/Journal.cpp
+    persist/Purge.cpp
     persist/Snapshot.cpp
     persist/Importer.cpp
     mcp/McpHandler.cpp
 
-    core/FlatJot.h  core/Interner.h  core/Jot.h      core/JotStore.h
+    core/FairSharedMutex.h
+    core/FlatJot.h  core/Interner.h  core/IpAcl.h    core/Jot.h      core/JotStore.h
     core/LoomError.h core/LoomTime.h core/Ops.h      core/Query.h
     core/TagRegistry.h core/Tokenizer.h
     codec/JotJson.h
-    persist/Journal.h persist/Snapshot.h persist/Importer.h
+    persist/History.h persist/Journal.h persist/Purge.h persist/Snapshot.h
+    persist/Importer.h
+    persist/DataLock.h persist/SinkFanout.h
     mcp/McpHandler.h
 )
 
@@ -87,7 +93,10 @@ target_link_libraries(loomcore PUBLIC Threads::Threads)
 
 # These four include vendored nlohmann, which does not survive /Wall /WX.
 set_source_files_properties(
-    codec/JotJson.cpp persist/Journal.cpp persist/Snapshot.cpp persist/Importer.cpp
+    core/IpAcl.cpp
+    codec/JotJson.cpp persist/History.cpp persist/Journal.cpp persist/Purge.cpp
+    persist/Snapshot.cpp
+    persist/Importer.cpp
     mcp/McpHandler.cpp
     PROPERTIES COMPILE_OPTIONS "$<IF:$<CXX_COMPILER_ID:MSVC>,/W3;/WX-,-w>")
 
@@ -98,7 +107,7 @@ set_source_files_properties(
 add_executable(loom main.cpp http/HttpServer.cpp http/HttpServer.h web/Dashboard.h)
 target_link_libraries(loom PRIVATE loomcore)
 
-target_include_directories(loom PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/vendor/asio)
+target_include_directories(loom PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/vendor/asio ${CMAKE_CURRENT_SOURCE_DIR}/vendor/crow)
 target_compile_definitions(loom PRIVATE ASIO_STANDALONE CROW_DISABLE_STATIC_DIR)
 
 if(WIN32)
@@ -134,3 +143,8 @@ enable_testing()
 add_test(NAME core    COMMAND coretest)
 add_test(NAME persist COMMAND persisttest)
 add_test(NAME mcp     COMMAND mcptest)
+
+# All three finish in about two seconds. The cap is here because a deadlock or a starved writer
+# does not fail a test - it wedges the run until somebody notices, which is exactly how the bug
+# FairSharedMutex now prevents used to present.
+set_tests_properties(core persist mcp PROPERTIES TIMEOUT 120)

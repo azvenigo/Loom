@@ -1,6 +1,7 @@
 #pragma once
 // Copyright (c) 2026 Alexander Zvenigorodsky. MIT License. See LICENSE.
 
+#include "FairSharedMutex.h"
 #include "Interner.h"
 #include "FlatJot.h"
 #include "Jot.h"
@@ -10,6 +11,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <mutex>
 #include <shared_mutex>
 #include <string>
 #include <unordered_map>
@@ -18,7 +20,7 @@
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // JotStore - every jot in RAM, plus the indexes that make queries microseconds instead of a scan.
 //
-// CONCURRENCY: one std::shared_mutex over the whole store. Readers take a shared_lock, writers a
+// CONCURRENCY: one FairSharedMutex over the whole store. Readers take a shared_lock, writers a
 // unique_lock. That is a deliberate choice, not a placeholder:
 //
 //   - A query is single-digit microseconds and writers are rare, so a single reader-writer lock is
@@ -27,6 +29,10 @@
 //     jot the tag index does not.
 //   - Sharding is NOT the obvious next step it looks like. A term's posting list spans every
 //     shard, so the text index cannot be partitioned by jot id without turning one lookup into N.
+//
+//   It is FairSharedMutex rather than std::shared_mutex because the plain one lets a busy enough
+//   reader stream starve writes outright on glibc - see that header. Rare writers make the cost of
+//   fairness nil and the cost of missing it unbounded.
 //
 //   If the benchmark ever shows real contention, the documented escape hatch is copy-on-write:
 //   writers build a new immutable index and publish it through an atomic shared_ptr so readers
@@ -153,6 +159,11 @@ struct MutationResult
     Jot                        mJot;
     std::vector<TagSuggestion> mSuggestions;
     bool                       mbCreated = false;
+
+    // True when the patch resolved to the record that was already there. Not an error - the caller
+    // asked for a state and got it - but nothing was written: no `updated` bump, no WAL line, no
+    // history entry. See JotStore::Update for why that matters.
+    bool                       mbNoChange = false;
 };
 
 
@@ -231,6 +242,12 @@ public:
     // Resolves one record's interned ids into strings. Takes the shared lock.
     bool Flatten(tJotID id, FlatJot& outFlat) const;
 
+    // Content equality between two flattened records, for callers holding a record that came from
+    // outside RAM - the history log's restore path. This is the FlatJot twin of the no-op check
+    // Update applies internally, and the two are defined next to each other in the .cpp so that a
+    // field added to one is visibly missing from the other.
+    static bool SameContent(const FlatJot& a, const FlatJot& b);
+
     // Every live record, flattened, oldest first. This is the snapshot writer's view - taken under
     // a single lock so the file is a coherent point in time rather than a smear across writes.
     void FlattenAll(std::vector<FlatJot>& outFlat) const;
@@ -268,6 +285,10 @@ private:
 
     tJotID Locked_NextID();
 
+    // The id for a jot whose creation time the caller supplied: that timestamp, moved forward past
+    // any id already in use. Keeps the allocator ahead of whatever it hands out.
+    tJotID Locked_ClaimID(int64_t nCreatedUS);
+
     // Index maintenance for one jot. These are exact inverses; an edit is Unindex then Index.
     // Index takes a non-const reference because it writes back the derived term-count fields.
     void Locked_IndexJot(Jot& jot);
@@ -294,6 +315,11 @@ private:
 
     void Locked_Flatten(const Jot& jot, FlatJot& outFlat) const;
     void Locked_JournalPut(const Jot& jot);
+
+    // Content equality over the fields a patch can touch - everything except id, updated, slot and
+    // the derived index lengths. An exact comparison rather than a hash: "these are the same
+    // record" has to be exactly right, and the strings are already in cache from applying them.
+    static bool Locked_SameContent(const Jot& a, const Jot& b);
     std::error_code Locked_LoadBatch(std::vector<Jot>& vJots, size_t& outLoaded, bool bJournal);
 
     std::error_code Locked_Validate(const JotInput& input) const;
@@ -315,7 +341,7 @@ private:
 
     //----------------------------------------------------------------------------------------
 
-    mutable std::shared_mutex mLock;
+    mutable FairSharedMutex mLock;
 
     IJournalSink*             mpJournal = nullptr;
 

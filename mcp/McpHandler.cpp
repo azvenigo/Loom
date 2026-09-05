@@ -101,8 +101,11 @@ namespace
         tools.push_back(Tool("loom_search",
             "Search the shared memory. Ranked by relevance when 'query' is given, newest-first "
             "otherwise. A match in a jot's summary counts far more than the same words in its body, "
-            "so short specific queries work better than long ones. Returns whole records, so a "
-            "search is usually all you need - do not follow up with loom_get on every hit.",
+            "so short specific queries work better than long ones. Brief by default - each hit "
+            "comes back as id/name/summary/tags only, with has_text set if a body exists, so N "
+            "results cost a fraction of the tokens of pulling whole records. loom_get (or a "
+            "one-off brief:false) the specific hits whose summary alone isn't enough - do not "
+            "flip brief:false to fetch a whole result set 'just in case'.",
             json{
                 {"query",    Str("Free text. Leave empty to browse by filter alone.")},
                 {"tags",     StrArray("Every tag listed must be present.")},
@@ -112,7 +115,11 @@ namespace
                 {"until",    Str("Upper time bound, same forms as 'since'.")},
                 {"order",    Str("relevance | newest | oldest. Defaults to relevance when there is "
                                  "a query, newest otherwise.")},
-                {"limit",    json{{"type","integer"},{"description","Max results (default 20)."}}}
+                {"limit",    json{{"type","integer"},{"description","Max results (default 20)."}}},
+                {"brief",    json{{"type","boolean"},
+                             {"description","Drop each hit's body (default true - this is the "
+                                            "normal way to search). Set false only once you know "
+                                            "you need full bodies for every hit, not just some."}}}
             }, json::array()));
 
         tools.push_back(Tool("loom_get",
@@ -140,7 +147,13 @@ namespace
                                      "Structural tags use a prefix, e.g. 'type:project'.")},
                 {"links",   StrArray("Jot ids or slugs. A slug that does not exist yet is kept as a "
                                      "pending link and connects itself when that jot is written.")},
-                {"editor",  Str("Who is writing. Defaults to user; set it to your own name.")}
+                {"editor",  Str("Who is writing. Defaults to user; set it to your own name.")},
+                {"created", Str("When this was ACTUALLY created, if that is not now - for content "
+                                "carried in from somewhere else that has its own date. "
+                                "'YYYY-MM-DD', 'YYYY-MM-DD HH:MM:SS', microseconds since the "
+                                "epoch, or a relative age like '30d'. Omit for anything you are "
+                                "writing now. Cannot be in the future, and cannot be changed "
+                                "afterwards.")}
             }, json::array({"text"})));
 
         tools.push_back(Tool("loom_upsert",
@@ -156,6 +169,10 @@ namespace
                 {"tags",           StrArray("Tags to set. Replaces the existing set.")},
                 {"links",          StrArray("Jot ids or slugs.")},
                 {"editor",         Str("Who is writing.")},
+                {"created",        Str("When this was ACTUALLY created, for content carried in "
+                                       "from elsewhere. Applies ONLY if this call creates the jot; "
+                                       "if the slug already exists its original date is kept. "
+                                       "'YYYY-MM-DD', microseconds, or a relative age like '30d'.")},
                 {"expect_updated", json{{"type","integer"},
                     {"description","The 'updated' (or 'id' if never edited) you last saw. "
                                    "Mismatch returns a conflict instead of overwriting."}}}
@@ -206,7 +223,7 @@ namespace
             "Groups of tags that look like variants of each other - typos, plurals, and "
             "abbreviations like infra/infrastructure. This is what surfaces a vocabulary quietly "
             "splitting in two. Report what you find rather than merging unprompted.",
-            json{}, json::array()));
+            json::object(), json::array()));
 
         tools.push_back(Tool("loom_merge_tags",
             "Rewrite every jot carrying any tag in 'from' to carry 'to' instead. DESTRUCTIVE and "
@@ -220,7 +237,7 @@ namespace
         tools.push_back(Tool("loom_stats",
             "Store size, tag and term counts, and durability state. Useful for a health check or "
             "to see whether persistence is actually on.",
-            json{}, json::array()));
+            json::object(), json::array()));
 
         return tools;
     }
@@ -261,6 +278,11 @@ namespace
         return nDefault;
     }
 
+    bool ReadBool(const json& args, const char* pKey, bool bDefault)
+    {
+        return (args.contains(pKey) && args[pKey].is_boolean()) ? args[pKey].get<bool>() : bDefault;
+    }
+
     // Builds a JotInput, engaging ONLY the fields actually present. That is what makes
     // loom_update a genuine patch instead of a full replace that silently blanks what you omitted.
     JotInput ReadJotInput(const json& args)
@@ -272,7 +294,29 @@ namespace
         if (args.contains("editor")  && args["editor"].is_string())  in.msEditor  = args["editor"].get<std::string>();
         if (args.contains("tags")    && args["tags"].is_array())     in.mTags     = ReadStrArray(args, "tags");
         if (args.contains("links")   && args["links"].is_array())    in.mLinks    = ReadStrArray(args, "links");
+
+        // Same accepted spellings as the REST body - see JOTJSON::ParseCreatedSpec. A value that
+        // does not parse is dropped rather than rejected here, and CallTool reports it; models pass
+        // dates in whatever shape they please, so the message has to say what was wanted.
+        if (args.contains("created"))
+        {
+            std::string sSpec;
+            if (args["created"].is_string())               sSpec = args["created"].get<std::string>();
+            else if (args["created"].is_number_integer())  sSpec = std::to_string(args["created"].get<int64_t>());
+
+            int64_t nCreatedUS = 0;
+            if (!sSpec.empty() && JOTJSON::ParseCreatedSpec(sSpec, nCreatedUS))
+                in.mnCreatedUS = nCreatedUS;
+        }
         return in;
+    }
+
+    // True when the caller supplied a 'created' the parser could not make sense of - so the tool
+    // can say so instead of silently stamping the jot with today's date, which is the one outcome
+    // somebody passing a creation time would never want.
+    bool CreatedWasUnusable(const json& args, const JotInput& in)
+    {
+        return args.contains("created") && !in.mnCreatedUS;
     }
 }
 
@@ -305,6 +349,7 @@ namespace
             spec.msUntil  = ReadStr(args, "until");
             spec.msOrder  = ReadStr(args, "order");
             spec.mnLimit  = static_cast<size_t>(ReadInt(args, "limit", 20));
+            const bool bBrief = ReadBool(args, "brief", true);
 
             Query query;
             if (std::error_code ec = ops.BuildQuery(spec, query))
@@ -317,7 +362,7 @@ namespace
             if (results.mJots.empty())
                 return ToolText("No matches.");
 
-            return ToolText(JOTJSON::SearchToJson(results, names, false));
+            return ToolText(JOTJSON::SearchToJson(results, names, false, bBrief));
         }
 
         if (sName == "loom_get")
@@ -377,6 +422,11 @@ namespace
             const JotInput in = ReadJotInput(args);
             AddResult result;
             std::error_code ec;
+
+            if (CreatedWasUnusable(args, in))
+                return ToolFailure("'created' is not a recognizable time. Use 'YYYY-MM-DD', "
+                                   "'YYYY-MM-DD HH:MM:SS', microseconds since the epoch, or a "
+                                   "relative age like '30d'.");
 
             if (sName == "loom_add")
             {
@@ -479,7 +529,13 @@ namespace
                 "Loom is a shared memory that several agents and a human write to at once.\n"
                 "Search before writing - the thing you are about to record may already be here.\n"
                 "Check loom_tags before inventing a tag.\n"
-                "When editing, pass expect_updated so a concurrent write is reported rather than lost.";
+                "When editing, pass expect_updated so a concurrent write is reported rather than lost.\n"
+                "Tag actionable open work `todo`. When it is finished, ADD `status:done` and KEEP\n"
+                "`todo` - do not remove it. The pair is the record that the work happened; removing\n"
+                "`todo` erases it. Open work is todo minus status:done.\n"
+                "loom_search is brief by default - summaries only. Skim brief, then loom_get (or a\n"
+                "one-off brief:false) only the specific jots the task actually needs; do not pull\n"
+                "whole records to browse.";
             return RpcResult(id, result);
         }
 

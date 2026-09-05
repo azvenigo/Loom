@@ -16,6 +16,7 @@
 // Exit code 0 means everything passed. Anything else means read the output.
 //////////////////////////////////////////////////////////////////////////////////////////////////
 
+#include "core/IpAcl.h"
 #include "core/JotStore.h"
 #include "core/LoomTime.h"
 #include "core/Ops.h"
@@ -23,6 +24,7 @@
 #include "core/Tokenizer.h"
 
 #include <algorithm>
+#include <cstring>
 #include <atomic>
 #include <cstdio>
 #include <set>
@@ -184,6 +186,63 @@ namespace
         // unique and the CAS in NextID is what saves it.
         Check(allIDs.size() == nTotal, "ids unique across threads despite same-microsecond writes");
         Check(store.Size() == nTotal, "store holds them all");
+    }
+
+    void TestBackdating()
+    {
+        Section("backdating");
+
+        JotStore store;
+        Ops ops(store);
+
+        const int64_t nPast = 1700000000000000LL;   // 2023-11-14, well in the past
+
+        JotInput in = Text("migrated note");
+        in.mnCreatedUS = nPast;
+        AddResult r1;
+        Check(!ops.Add(in, r1), "backdated add accepted");
+        Check(r1.mJot.mID == nPast, "id equals the supplied time");
+
+        AddResult r2;
+        Check(!ops.Add(in, r2), "a second jot at the same instant is accepted");
+        Check(r2.mJot.mID == nPast + 1, "collision resolved by walking forward");
+
+        AddResult rNow;
+        Check(!ops.Add(Text("today"), rNow), "an ordinary add still works afterwards");
+        Check(rNow.mJot.mID > nPast + 1, "the allocator stayed ahead of the backdated ids");
+
+        // A future date is refused outright - see ValidateCreatedUS.
+        JotInput future = Text("from tomorrow");
+        future.mnCreatedUS = LOOMTIME::NowMicros() + 3600LL * 1000000LL;
+        AddResult rFuture;
+        Check(ops.Add(future, rFuture) == MakeLoomError(eLoomErr::kInvalidArgument),
+              "a future creation time is rejected");
+
+        // Update never moves an id, so mnCreatedUS on a patch is simply not a thing to honour -
+        // and a patch carrying only it has nothing else to do.
+        JotInput patch;
+        patch.mnCreatedUS = nPast - 1000;
+        Check(ops.Update(r1.mJot.mID, patch, 0, rNow) == MakeLoomError(eLoomErr::kInvalidArgument),
+              "a patch that only sets created is an empty patch");
+
+        // Upsert only honours the date on the branch that actually creates.
+        const int64_t nUpsertPast = 1650000000000000LL;   // unclaimed by anything above
+
+        JotInput up;
+        up.msName      = "migrated-slug";
+        up.msText      = "first import";
+        up.mnCreatedUS = nUpsertPast;
+        AddResult rUp1;
+        Check(!ops.Upsert(up, 0, rUp1), "named backdated upsert creates");
+        Check(rUp1.mJot.mID == nUpsertPast, "and takes the supplied id");
+
+        JotInput up2;
+        up2.msName      = "migrated-slug";
+        up2.msText      = "re-imported with new content";
+        up2.mnCreatedUS = nUpsertPast + 999999;   // a different date - must be ignored on update
+        AddResult rUp2;
+        Check(!ops.Upsert(up2, 0, rUp2), "re-running the import updates instead of creating");
+        Check(rUp2.mJot.mID == nUpsertPast, "the original id/date survives a re-import");
     }
 
     void TestNamesAndUpsert()
@@ -616,8 +675,217 @@ namespace
         Check(SearchIDs(ops, spec) == vBefore,
               "indexes still agree with a clean rebuild after concurrent mutation");
     }
-}
 
+
+    //--------------------------------------------------------------------------------------------
+    // IpAcl. The matcher is a security control, so the cases that matter are the ones where a bug
+    // fails OPEN: a rule that accidentally matches everything, or an address spelling that slips
+    // past a list that should have caught it.
+    //--------------------------------------------------------------------------------------------
+    bool Allowed(IpAcl& acl, const char* pAddr)
+    {
+        return acl.Allows(pAddr);
+    }
+
+    //--------------------------------------------------------------------------------------------
+    // A patch that resolves to the record already stored must not be a mutation. Front ends send
+    // whole records and whole tag arrays rather than diffs, so re-asserting an unchanged state is
+    // the COMMON case, not an edge one - and treating it as a write bumps `updated` (invalidating
+    // everyone else's expect_updated for nothing), appends to the WAL, and puts a meaningless point
+    // in the history log.
+    //--------------------------------------------------------------------------------------------
+    void TestNoOpUpdates()
+    {
+        Section("no-op updates");
+
+        JotStore store;
+        Ops      ops(store);
+
+        JotInput in;
+        in.msText    = "Backups run nightly at 02:00.";
+        in.msName    = "backup-policy";
+        in.msSummary = "how backups run";
+        in.mTags     = std::vector<std::string>{ "infra", "priority:high" };
+        AddResult created;
+        Check(!ops.Add(in, created), "created a jot to patch");
+
+        const int64_t nFirstUpdated = created.mJot.EffectiveUpdatedUS();
+
+        // Byte-for-byte the same content, sent as a full record the way Save does.
+        JotInput same;
+        same.msText    = "Backups run nightly at 02:00.";
+        same.msName    = "backup-policy";
+        same.msSummary = "how backups run";
+        same.mTags     = std::vector<std::string>{ "infra", "priority:high" };
+
+        AddResult noop;
+        Check(!ops.Update(created.mJot.mID, same, 0, noop), "an identical patch succeeds");
+        Check(noop.mbNoChange,                              "and reports itself as no change");
+        Check(noop.mJot.EffectiveUpdatedUS() == nFirstUpdated,
+              "updated is NOT bumped, so other agents' expect_updated stays valid");
+
+        // Tag order must not matter - the store keeps them sorted, and a client that sends them
+        // back the other way round has still changed nothing.
+        JotInput reordered;
+        reordered.mTags = std::vector<std::string>{ "priority:high", "infra" };
+        AddResult noop2;
+        Check(!ops.Update(created.mJot.mID, reordered, 0, noop2), "reordered tags succeed");
+        Check(noop2.mbNoChange, "and are recognized as the same set");
+
+        // A real change still writes.
+        JotInput real;
+        real.msText = "Backups run nightly at 02:00 and are checksummed.";
+        AddResult changed;
+        Check(!ops.Update(created.mJot.mID, real, 0, changed), "a real edit succeeds");
+        Check(!changed.mbNoChange, "and is not reported as a no change");
+        Check(changed.mJot.EffectiveUpdatedUS() > nFirstUpdated, "and does bump updated");
+
+        // Clearing a field is a change, not a no-op - an engaged-but-empty value means "clear".
+        JotInput clear;
+        clear.msSummary = std::string();
+        AddResult cleared;
+        Check(!ops.Update(created.mJot.mID, clear, 0, cleared), "clearing the summary succeeds");
+        Check(!cleared.mbNoChange, "and counts as a change");
+        Check(cleared.mJot.msSummary.empty(), "and actually cleared it");
+
+        // The journal must see exactly the writes that changed something.
+        struct CountingSink : public IJournalSink
+        {
+            int nPuts = 0;
+            void OnPut(const FlatJot&) override { ++nPuts; }
+            void OnDelete(tJotID) override {}
+        };
+        CountingSink sink;
+        store.SetJournalSink(&sink);
+
+        // Built from what is stored RIGHT NOW - the record has been edited twice since `same` was
+        // written, so re-sending that would be a real change and would prove nothing.
+        Jot current;
+        Check(store.Get(created.mJot.mID, current), "read the current record back");
+        NameTables names;
+        store.SnapshotNames(names);
+        const FlatJot flatNow = Flatten(current, names);
+
+        JotInput echo;
+        echo.msText    = flatNow.msText;
+        echo.msName    = flatNow.msName;
+        echo.msSummary = flatNow.msSummary;
+        echo.mTags     = flatNow.mTags;
+
+        AddResult r;
+        ops.Update(created.mJot.mID, echo, 0, r);
+        Check(r.mbNoChange, "echoing the stored record back is a no change");
+        Check(sink.nPuts == 0, "no-op patches put nothing in the journal");
+
+        JotInput another;
+        another.msText = "Backups run nightly and are verified before rotation.";
+        ops.Update(created.mJot.mID, another, 0, r);
+        Check(sink.nPuts == 1, "and a real edit puts exactly one");
+
+        store.SetJournalSink(nullptr);
+    }
+
+    void TestIpAclParsing()
+    {
+        Section("ip acl - parsing");
+
+        AclRule rule;
+        Check(IpAcl::ParseRule("192.168.1.5", rule),        "plain v4 address parses");
+        Check(rule.mnPrefixBits == 128,                     "a bare address is an exact match");
+        Check(IpAcl::ParseRule("192.168.1.0/24", rule),     "v4 cidr parses");
+        Check(rule.mnPrefixBits == 120,                     "v4 /24 becomes 120 bits of the mapped form");
+        Check(IpAcl::ParseRule("2001:db8::/32", rule),      "v6 cidr parses");
+        Check(rule.mnPrefixBits == 32,                      "v6 prefix is taken as written");
+        Check(IpAcl::ParseRule("::1", rule),                "compressed v6 parses");
+        Check(IpAcl::ParseRule("::ffff:192.168.1.1", rule), "v4-mapped v6 literal parses");
+
+        Check(!IpAcl::ParseRule("", rule),                  "empty rule rejected");
+        Check(!IpAcl::ParseRule("192.168.1", rule),         "short v4 rejected");
+        Check(!IpAcl::ParseRule("192.168.1.256", rule),     "out-of-range octet rejected");
+        Check(!IpAcl::ParseRule("192.168.01.1", rule),      "leading-zero octet rejected as ambiguous");
+        Check(!IpAcl::ParseRule("192.168.1.0/33", rule),    "v4 prefix over 32 rejected");
+        Check(!IpAcl::ParseRule("2001:db8::/129", rule),    "v6 prefix over 128 rejected");
+        Check(!IpAcl::ParseRule("1::2::3", rule),           "double compression rejected");
+        Check(!IpAcl::ParseRule("not an address", rule),    "garbage rejected");
+
+        // Host bits must be discarded or two spellings of one network stop agreeing.
+        AclRule a, b;
+        Check(IpAcl::ParseRule("192.168.1.5/24", a) && IpAcl::ParseRule("192.168.1.0/24", b) &&
+              std::memcmp(a.mBytes, b.mBytes, 16) == 0,
+              "host bits are zeroed so /24 spellings normalize to the same network");
+
+        Check(IpAcl::IsLoopback("127.0.0.1"),               "127.0.0.1 is loopback");
+        Check(IpAcl::IsLoopback("127.1.2.3"),               "all of 127/8 is loopback");
+        Check(IpAcl::IsLoopback("::1"),                     "::1 is loopback");
+        Check(IpAcl::IsLoopback("::ffff:127.0.0.1"),        "mapped loopback is loopback");
+        Check(!IpAcl::IsLoopback("192.168.1.1"),            "a lan address is not loopback");
+        Check(!IpAcl::IsLoopback("128.0.0.1"),              "128.0.0.1 is not loopback");
+    }
+
+    void TestIpAclMatching()
+    {
+        Section("ip acl - matching");
+
+        IpAcl acl;
+        std::string sWarn;
+
+        // Disabled is the shipped default and must allow everything, or an upgrade locks the
+        // operator out of a service that was working a minute ago.
+        Check(Allowed(acl, "8.8.8.8"),   "a disabled list allows any address");
+        Check(!acl.Enabled(),            "a fresh list is disabled");
+
+        std::string sBad;
+        std::vector<AclEntry> v;
+        v.push_back({ "192.168.1.0/24", "home lan" });
+        Check(!acl.Set(true, v, sBad),   "enabling with one rule succeeds");
+        Check(acl.Enabled(),             "list reports enabled");
+
+        Check(Allowed(acl, "192.168.1.112"),  "an address inside the range is allowed");
+        Check(Allowed(acl, "192.168.1.0"),    "the network address itself is allowed");
+        Check(Allowed(acl, "192.168.1.255"),  "the broadcast address is allowed");
+        Check(!Allowed(acl, "192.168.2.1"),   "an address outside the range is refused");
+        Check(!Allowed(acl, "8.8.8.8"),       "an internet address is refused");
+
+        // THE ONE THAT ACTUALLY BITES. A dual-stack listener may report a v4 caller in the mapped
+        // form, and a list written in v4 has to catch it either way.
+        Check(Allowed(acl, "::ffff:192.168.1.112"),
+              "a v4 rule matches the v4-mapped spelling of the same caller");
+        Check(!Allowed(acl, "::ffff:192.168.2.1"),
+              "and still refuses a mapped address outside the range");
+
+        // Loopback is the floor, and it holds even though no rule mentions it.
+        Check(Allowed(acl, "127.0.0.1"), "loopback is allowed with no rule for it");
+        Check(Allowed(acl, "::1"),       "v6 loopback is allowed with no rule for it");
+
+        // An unparseable caller address must fail CLOSED once the list is on.
+        Check(!Allowed(acl, "garbage"),  "an unparseable remote address is refused");
+        Check(!Allowed(acl, ""),         "an empty remote address is refused");
+
+        // A rejected edit must leave the running list untouched, not half-applied.
+        std::vector<AclEntry> vBad;
+        vBad.push_back({ "10.0.0.0/8", "" });
+        vBad.push_back({ "nonsense", "" });
+        Check(static_cast<bool>(acl.Set(true, vBad, sBad)),
+              "a list containing a bad rule is rejected");
+        Check(sBad == "nonsense",        "the offending rule is named");
+        Check(Allowed(acl, "192.168.1.112") && !Allowed(acl, "10.1.2.3"),
+              "the previous list is still in force after a rejected edit");
+
+        // Exact host rules, and v6.
+        std::vector<AclEntry> v2;
+        v2.push_back({ "10.0.0.7", "" });
+        v2.push_back({ "2001:db8::/32", "" });
+        Check(!acl.Set(true, v2, sBad),      "replacing the list succeeds");
+        Check(Allowed(acl, "10.0.0.7"),      "an exact host rule matches");
+        Check(!Allowed(acl, "10.0.0.8"),     "and matches nothing adjacent");
+        Check(Allowed(acl, "2001:db8:1::9"), "a v6 prefix matches inside itself");
+        Check(!Allowed(acl, "2001:db9::1"),  "and refuses outside itself");
+
+        // Turning it off is the way back for someone who is already in.
+        Check(!acl.Set(false, v2, sBad), "disabling succeeds");
+        Check(Allowed(acl, "8.8.8.8"),   "everything is allowed again once disabled");
+    }
+}
 
 int main()
 {
@@ -627,12 +895,18 @@ int main()
     TestTagNormalization();
     TestBareJotShape();
     TestIDMonotonicity();
+    TestBackdating();
     TestNamesAndUpsert();
     TestOptimisticConcurrency();
     TestPendingLinks();
     TestTagSuggestions();
     TestSearch();
     TestIndexCoherence();
+    TestNoOpUpdates();
+    TestIpAclParsing();
+    TestIpAclMatching();
+    // LAST on purpose: this one is known to hang (4 spinning readers starve both writers on
+    // JotStore's shared_mutex), so anything sequenced after it never runs.
     TestConcurrentReadWrite();
 
     std::printf("\n%d checks, %d failed\n", gnChecks, gnFailed);

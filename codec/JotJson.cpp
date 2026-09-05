@@ -10,11 +10,23 @@ using json = nlohmann::json;
 namespace
 {
     // The omit-empty rule, in one place. Everything else in this file defers to it.
-    json FlatToObject(const FlatJot& jot, bool bVerbose)
+    json FlatToObject(const FlatJot& jot, bool bVerbose, bool bBrief = false)
     {
         json j;
-        j["id"]   = jot.mID;
-        j["text"] = jot.msText;
+        j["id"] = jot.mID;
+
+        if (bBrief)
+        {
+            // Skim mode: the point is to fit many jots in one response, so the body - usually the
+            // largest field by far - is dropped. `has_text` says whether there was more to fetch,
+            // since a name+summary-only jot and a jot with a long body otherwise look identical.
+            if (!jot.msText.empty())
+                j["has_text"] = true;
+        }
+        else
+        {
+            j["text"] = jot.msText;
+        }
 
         if (bVerbose || !jot.msName.empty())
             j["name"] = jot.msName;
@@ -136,6 +148,11 @@ namespace JOTJSON
         return true;
     }
 
+    bool ParseCreatedSpec(const std::string& sSpec, int64_t& outUS)
+    {
+        return LOOMTIME::ParseTimeSpec(sSpec, LOOMTIME::NowMicros(), outUS);
+    }
+
     bool ParseInput(const std::string& sBody, JotInput& outInput, std::string& outError)
     {
         outInput = JotInput();
@@ -189,11 +206,36 @@ namespace JOTJSON
                 return false;
             outInput.mLinks = std::move(vLinks);
         }
+        if (j.contains("created"))
+        {
+            // A number is handed to the same parser as its decimal text, so there is one definition
+            // of what a creation time may look like rather than one per JSON type.
+            std::string sSpec;
+            if (j["created"].is_string())
+                sSpec = j["created"].get<std::string>();
+            else if (j["created"].is_number_integer())
+                sSpec = std::to_string(j["created"].get<int64_t>());
+            else
+            {
+                outError = "created must be a string or an integer";
+                return false;
+            }
+
+            int64_t nCreatedUS = 0;
+            if (!ParseCreatedSpec(sSpec, nCreatedUS))
+            {
+                outError = "created is not a recognizable time: use microseconds, "
+                           "'YYYY-MM-DD', 'YYYY-MM-DD HH:MM:SS', or a relative age like '30d'";
+                return false;
+            }
+            outInput.mnCreatedUS = nCreatedUS;
+        }
 
         return true;
     }
 
-    std::string SearchToJson(const SearchResultSet& results, const NameTables& names, bool bVerbose)
+    std::string SearchToJson(const SearchResultSet& results, const NameTables& names, bool bVerbose,
+                              bool bBrief)
     {
         json out;
         out["matched"]   = results.mnMatched;
@@ -203,7 +245,7 @@ namespace JOTJSON
         json arr = json::array();
         for (size_t i = 0; i < results.mJots.size(); ++i)
         {
-            json entry = FlatToObject(Flatten(results.mJots[i], names), bVerbose);
+            json entry = FlatToObject(Flatten(results.mJots[i], names), bVerbose, bBrief);
             // Only meaningful for a ranked query; a filter-only query scores everything zero and
             // printing that column would imply a relevance that was never computed.
             if (i < results.mScores.size() && results.mScores[i] != 0.0f)
@@ -260,7 +302,8 @@ namespace JOTJSON
         return out.dump();
     }
 
-    std::string StatsToJson(const StoreStats& stats, const PersistStats& persist)
+    std::string StatsToJson(const StoreStats& stats, const PersistStats& persist,
+                            const std::string& sOrigin, bool bAuthRequired)
     {
         json out;
         out["jots"]          = stats.mnJots;
@@ -289,6 +332,17 @@ namespace JOTJSON
             p["last_snapshot_at"] = LOOMTIME::FormatUS(persist.mnLastSnapshotUS);
         out["persistence"] = std::move(p);
 
+        // Where this server is, told by the only party that knows. Omitted rather than guessed
+        // when the caller did not supply one, so the dashboard falls back to its own origin
+        // instead of printing something confidently wrong into an agent brief.
+        if (!sOrigin.empty())
+        {
+            json server;
+            server["origin"] = sOrigin;
+            server["auth"]   = bAuthRequired;
+            out["server"]    = std::move(server);
+        }
+
         return out.dump();
     }
 
@@ -296,6 +350,11 @@ namespace JOTJSON
     {
         json out = FlatToObject(Flatten(result.mJot, names), bVerbose);
         out["created"] = result.mbCreated;
+
+        // Emitted only when true, per the omit-empty rule - a write that changed something says
+        // nothing, which is the common case and the uninteresting one.
+        if (result.mbNoChange)
+            out["no_change"] = true;
 
         if (!result.mWarnings.Empty())
             out["warnings"] = result.mWarnings.mMessages;

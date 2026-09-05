@@ -108,6 +108,19 @@ struct JotInput
     std::optional<std::vector<std::string>> mLinks;    // decimal ids or slugs
     std::optional<std::string>              msEditor;  // empty/absent resolves to "user"
 
+    // When this jot was actually created, in microseconds since the epoch. Absent means now, which
+    // is the ordinary case; it exists so content migrated in from somewhere else keeps its real
+    // date instead of being stamped with the moment of the migration.
+    //
+    // THIS BECOMES THE ID, because the id is not merely derived from the creation time - it IS the
+    // creation time, and the store has no second field to put this in. See "BACKDATING" in
+    // JotStore::Add for why that is the right answer rather than the expedient one, and what it
+    // costs. CREATE ONLY: an existing jot's id cannot move without breaking every link that points
+    // at it, so Update ignores this and Upsert honours it only when it actually creates.
+    std::optional<int64_t>                  mnCreatedUS;
+
+    // Deliberately NOT counting mnCreatedUS: it is ignored on the patch path, so a patch carrying
+    // only a creation time still changes nothing and must still be rejected as empty.
     bool Empty() const
     {
         return !msName && !msSummary && !msText && !mTags && !mLinks && !msEditor;

@@ -19,7 +19,7 @@
 // output rides back with the new id as a non-fatal warning. Nothing is ever rejected; agents
 // self-correct on the next write because they were told, at the moment it mattered.
 //
-// RESERVED TAGS. A tag containing ':' is structural, not vocabulary - "type:user", "cluster:infra",
+// RESERVED TAGS. A tag containing ':' is structural, not vocabulary - "type:user", "status:done",
 // "asserted:2026-08-18" carry memory-store frontmatter that has nowhere better to live. They are
 // excluded from similarity clustering and from the vocabulary budget, because otherwise every
 // asserted: date would look like a near-duplicate of every other one and drown the real signal.
