@@ -3,6 +3,8 @@
 
 #include "codec/JotJson.h"
 #include "core/LoomTime.h"
+#include "persist/History.h"
+#include "persist/Undo.h"
 
 #include "vendor/json.hpp"
 
@@ -138,7 +140,13 @@ namespace
             "thought needs neither. The summary is what search matches against most strongly, so "
             "write it as the sentence you would want to see when looking for this again.\n\n"
             "The response may carry 'warnings' about tags that look like near-duplicates of "
-            "existing ones. The write still succeeded - but prefer the established tag next time.",
+            "existing ones. The write still succeeded - but prefer the established tag next time.\n\n"
+            "It may also carry 'duplicate_candidates': existing memories whose name and summary "
+            "score close to the one you just wrote. THIS IS THE 'search before writing' RULE BEING "
+            "CHECKED FOR YOU, after the fact. The write is not in question - you may well have meant "
+            "to record something distinct - but read those jots before writing more, and if one of "
+            "them is really the same fact, fold yours into it with loom_update and loom_delete the "
+            "duplicate rather than leaving two.",
             json{
                 {"text",    Str("The content. Required.")},
                 {"name",    Str("Optional stable slug for a durable memory, e.g. 'homelab-network'.")},
@@ -159,7 +167,9 @@ namespace
         tools.push_back(Tool("loom_upsert",
             "Create a jot, or replace one that already has this slug. Requires 'name'. This is the "
             "tool for maintaining a durable memory whose content changes over time.\n\n"
-            "Pass 'expect_updated' (from a prior read) to be told about a concurrent edit instead "
+            "'expect_updated' is OPTIONAL here, unlike loom_update: upsert addresses a jot by slug "
+            "and is meant for writers that have not read the record and may be creating it. Pass it "
+            "(from a prior read) to be told about a concurrent edit instead "
             "of silently overwriting it. Without it, the last writer wins - which is usually wrong "
             "in a store several agents share.",
             json{
@@ -181,8 +191,11 @@ namespace
         tools.push_back(Tool("loom_update",
             "Edit an existing jot by id. Only the fields you pass change; anything omitted is left "
             "alone, so you can add a tag without resending the text.\n\n"
-            "Pass 'expect_updated' from your last read. If someone else edited the jot since, you "
-            "get a conflict rather than quietly destroying their write - re-read, merge, retry.",
+            "REQUIRES 'expect_updated' - the 'updated' value from your last read of this jot. Loom "
+            "is written to by several agents and a human at once, so an edit built on a copy you "
+            "read some minutes ago may be about to erase somebody's work. If the jot changed since "
+            "you read it you get a conflict instead: re-read, merge, retry. If you do not have an "
+            "'updated' to hand, you have not read the jot, and you should loom_get it first.",
             json{
                 {"id",             json{{"type","integer"},{"description","Jot id. Required."}}},
                 {"text",           Str("Replacement text.")},
@@ -192,8 +205,9 @@ namespace
                 {"links",          StrArray("Replaces the whole link set.")},
                 {"editor",         Str("Who is editing.")},
                 {"expect_updated", json{{"type","integer"},
-                    {"description","The 'updated' (or 'id') you last saw."}}}
-            }, json::array({"id"})));
+                    {"description","REQUIRED. The 'updated' you last saw on this jot. Get it from "
+                                   "loom_get or loom_search."}}}
+            }, json::array({"id","expect_updated"})));
 
         tools.push_back(Tool("loom_delete",
             "Permanently remove a jot. There is no undo and no tombstone. Anything linking to it "
@@ -226,9 +240,12 @@ namespace
             json::object(), json::array()));
 
         tools.push_back(Tool("loom_merge_tags",
-            "Rewrite every jot carrying any tag in 'from' to carry 'to' instead. DESTRUCTIVE and "
-            "not reversible - it edits many records at once. Ask before running it unless you were "
-            "told to clean up a specific pair.",
+            "Rewrite every jot carrying any tag in 'from' to carry 'to' instead. DESTRUCTIVE - it "
+            "edits many records at once. Ask before running it unless you were told to clean up a "
+            "specific pair.\n\n"
+            "It IS reversible, as one act: the response carries a 'txn' naming the whole rewrite, "
+            "and loom_restore with that 'txn' and undo:true puts every jot it touched back the way "
+            "it was. Keep the number if there is any chance the merge was wrong.",
             json{
                 {"from", StrArray("Tags to retire.")},
                 {"to",   Str("Tag that survives.")}
@@ -238,6 +255,53 @@ namespace
             "Store size, tag and term counts, and durability state. Useful for a health check or "
             "to see whether persistence is actually on.",
             json::object(), json::array()));
+
+        tools.push_back(Tool("loom_history",
+            "Every change ever made, newest first - who wrote it, when, and to which jot. Pass 'id' "
+            "to get one jot's history instead of the whole store's.\n\n"
+            "This is how you find out what a write actually did, and how you get the 'seq' that "
+            "loom_restore takes. A run of edits to one jot by one editor within a few minutes is "
+            "listed as ONE row carrying the run's newest state, with 'edits' saying how many "
+            "mutations it stands for - so restoring the row below it undoes that whole editing "
+            "session, which is almost always what was meant.",
+            json{
+                {"id",     json{{"type","integer"},
+                    {"description","Only this jot's changes. Omit for the whole store."}}},
+                {"limit",  json{{"type","integer"},{"description","Max rows (default 60)."}}},
+                {"offset", json{{"type","integer"},{"description","Rows to skip, for paging."}}}
+            }, json::array()));
+
+        tools.push_back(Tool("loom_restore",
+            "Put a logged version of a jot back, undoing everything done to it since. Takes a 'seq' "
+            "from loom_history.\n\n"
+            "USE THIS WHEN YOU HAVE JUST WRITTEN SOMETHING WRONG. You do not need a human to undo "
+            "your own bad write. Restoring a 'del' row brings the jot back with its id intact, so "
+            "links to it reconnect.\n\n"
+            "The jot keeps its id and its 'updated' is stamped now, because the restore is itself a "
+            "change and it happened now. Pass 'expect_updated' for the same reason loom_update "
+            "requires it: a restore is a whole-record overwrite, so without it you may be discarding "
+            "an edit somebody made while you were deciding.\n\n"
+            "TO REVERSE A TAG MERGE, pass 'txn' instead of 'seq' - the number loom_merge_tags "
+            "returned - with undo:true. That puts every jot the merge touched back as it was before "
+            "it, in one call, and reports each one separately so you can see which were already "
+            "edited since. Without undo:true a 'txn' RE-APPLIES that operation instead, which on a "
+            "merge nobody has touched since changes nothing.",
+            json{
+                {"seq",            json{{"type","integer"},
+                    {"description","History sequence number to restore. Required unless 'txn' is "
+                                   "given."}}},
+                {"txn",            json{{"type","integer"},
+                    {"description","A multi-record operation id, from loom_merge_tags or the 'txn' "
+                                   "on a loom_history row. Restores every jot it touched."}}},
+                {"undo",           json{{"type","boolean"},
+                    {"description","With 'txn': put the jots back as they were BEFORE that "
+                                   "operation, rather than as it left them. This is what undoing a "
+                                   "merge means. Default false."}}},
+                {"expect_updated", json{{"type","integer"},
+                    {"description","The 'updated' you last saw on the target jot. Omit only when "
+                                   "restoring a jot that is currently deleted. Not used with "
+                                   "'txn' - a group restore has no single revision to check."}}}
+            }, json::array()));
 
         return tools;
     }
@@ -323,8 +387,8 @@ namespace
 
 //====================================================================================================
 
-McpHandler::McpHandler(Ops& ops, JotStore& store)
-    : mOps(ops), mStore(store)
+McpHandler::McpHandler(Ops& ops, JotStore& store, History* pHistory)
+    : mOps(ops), mStore(store), mpHistory(pHistory)
 {
 }
 
@@ -332,7 +396,8 @@ namespace
 {
     // One tool invocation. Returns the MCP tool-result object; failures come back as isError:true
     // results rather than as protocol errors, so the model can see and act on them.
-    json CallTool(Ops& ops, JotStore& store, const std::string& sName, const json& args)
+    json CallTool(Ops& ops, JotStore& store, History* pHistory, const std::string& sOrigin,
+                  const std::string& sName, const json& args)
     {
         NameTables names;
         store.SnapshotNames(names);
@@ -419,7 +484,12 @@ namespace
         //-- writes --------------------------------------------------------------------------
         if (sName == "loom_add" || sName == "loom_upsert" || sName == "loom_update")
         {
-            const JotInput in = ReadJotInput(args);
+            JotInput in = ReadJotInput(args);
+            // Server-stamped, never read from the arguments - the tool schemas have no 'origin'
+            // field and an agent cannot invent one. See Jot::msOrigin.
+            if (!sOrigin.empty())
+                in.msOrigin = sOrigin;
+
             AddResult result;
             std::error_code ec;
 
@@ -443,6 +513,23 @@ namespace
                 const tJotID id = ReadInt(args, "id", 0);
                 if (id == 0)
                     return ToolFailure("loom_update requires 'id'.");
+
+                // THE CONFLICT GUARD IS NOT OPTIONAL HERE. The store takes 0 to mean "skip the
+                // check", which REST, the importer and the replay path all rely on - so leaving
+                // this defaulted made every agent that simply omitted the field a last-writer-wins
+                // client, in the one store whose whole premise is that several agents and a human
+                // write to it at once. The schema marks it required; this is the half that holds
+                // when a client ignores the schema, which they do.
+                //
+                // Refused rather than defaulted, because there is no safe value to pick: guessing
+                // would either skip the check or invent a revision the caller never read.
+                if (!args.contains("expect_updated"))
+                    return ToolFailure("loom_update requires 'expect_updated' - the 'updated' value "
+                                       "from your last read of jot " + std::to_string(id) + ". "
+                                       "Without it this edit would silently overwrite anything "
+                                       "changed since. Call loom_get first and pass the 'updated' "
+                                       "it returns.");
+
                 ec = ops.Update(id, in, ReadInt(args, "expect_updated", 0), result);
             }
 
@@ -481,16 +568,157 @@ namespace
             if (vFrom.empty() || sTo.empty())
                 return ToolFailure("loom_merge_tags requires 'from' (array) and 'to' (string).");
 
-            size_t nChanged = 0;
-            if (std::error_code ec = ops.MergeTags(vFrom, sTo, nChanged))
+            size_t   nChanged = 0;
+            uint64_t nTxnID   = 0;
+            if (std::error_code ec = ops.MergeTags(vFrom, sTo, nChanged, nTxnID))
                 return ToolFailure(ec.message());
-            return ToolText("{\"changed\":" + std::to_string(nChanged) + "}");
+
+            json out;
+            out["changed"] = nChanged;
+            // The handle that undoes the whole rewrite. Emitted only when there is a history log to
+            // undo it from, so an agent never gets a transaction id that nothing will honour.
+            if (nTxnID != 0)
+                out["txn"] = nTxnID;
+            return ToolText(out.dump());
+        }
+
+        //-- history -------------------------------------------------------------------------
+        if (sName == "loom_history" || sName == "loom_restore")
+        {
+            // Same answer the REST routes give as a 403, in the shape the model can read.
+            if (!pHistory)
+                return ToolFailure("This loom is running without persistence, so there is no "
+                                   "history log and nothing to restore from.");
+
+            if (sName == "loom_history")
+            {
+                std::vector<HistoryEntry> vEntries;
+                size_t nTotal = 0;
+                pHistory->List(static_cast<tJotID>(ReadInt(args, "id", kInvalidJotID)),
+                               static_cast<size_t>(ReadInt(args, "limit", 60)),
+                               static_cast<size_t>(ReadInt(args, "offset", 0)),
+                               vEntries, nTotal);
+
+                json out;
+                out["entries"] = json::array();
+                for (const HistoryEntry& e : vEntries)
+                {
+                    // msRecord - the full FlatJot the restore replays - is deliberately NOT here.
+                    // A history listing is for finding the seq you want; handing back every version
+                    // of every jot would make the cheapest browsing call the most expensive one.
+                    json row{
+                        {"seq",     e.mnSeq},
+                        {"at",      e.mnAtUS},
+                        {"op",      e.mbDelete ? "del" : "put"},
+                        {"id",      e.mID},
+                        {"name",    e.msName},
+                        {"editor",  e.msEditor},
+                        {"summary", e.msSummary},
+                        {"edits",   e.mnCoalesced}
+                    };
+                    if (!e.msOrigin.empty())
+                        row["origin"] = e.msOrigin;
+                    // Present when this row was part of one act that touched several jots - a tag
+                    // merge. Pass it to loom_restore with undo:true to reverse the whole thing.
+                    if (e.mnTxnID != 0)
+                        row["txn"] = e.mnTxnID;
+                    out["entries"].push_back(std::move(row));
+                }
+
+                const HistoryStats st = pHistory->Stats();
+                out["total"]    = nTotal;
+                out["recorded"] = st.mnEntries;
+                return ToolText(out.dump());
+            }
+
+            // A whole multi-record operation, which is a different request from a single version -
+            // see persist/Undo.h - so it is answered before any sequence number is read.
+            if (args.contains("txn"))
+            {
+                const uint64_t nTxnID = static_cast<uint64_t>(ReadInt(args, "txn", 0));
+                const bool bUndo = args.contains("undo") && args["undo"].is_boolean()
+                                && args["undo"].get<bool>();
+
+                UndoReport report;
+                std::string sUndoError;
+                if (UNDO::ByTransaction(ops, *pHistory, nTxnID, bUndo, sOrigin, report, sUndoError))
+                    return ToolFailure(sUndoError);
+
+                json out;
+                out["txn"]       = nTxnID;
+                out["undo"]      = bUndo;
+                out["restored"]  = report.mnRestored;
+                out["unchanged"] = report.mnUnchanged;
+                out["failed"]    = report.mnFailed;
+                out["jots"]      = json::array();
+                for (const UndoItem& item : report.mItems)
+                {
+                    json j{ {"id", item.mID}, {"name", item.msName},
+                            {"restored", item.mbRestored}, {"no_change", item.mbNoChange} };
+                    if (item.mnFromSeq != 0)   j["from_seq"] = item.mnFromSeq;
+                    if (!item.msError.empty()) j["error"]    = item.msError;
+                    out["jots"].push_back(std::move(j));
+                }
+                return ToolText(out.dump());
+            }
+
+            if (!args.contains("seq"))
+                return ToolFailure("loom_restore requires 'seq' - a sequence number from "
+                                   "loom_history - or 'txn' for a whole multi-record operation.");
+            const uint64_t nSeq = static_cast<uint64_t>(ReadInt(args, "seq", 0));
+
+            HistoryEntry entry;
+            if (!pHistory->Get(nSeq, entry))
+                return ToolFailure("No history entry " + std::to_string(nSeq) + ". It may have aged "
+                                   "out of the log - call loom_history for what is still there.");
+
+            // A `del` row restores what was in force immediately BEFORE it, because "undo this
+            // delete" is the only thing anybody means by restoring a deletion.
+            HistoryEntry target = entry;
+            if (entry.mbDelete && !pHistory->Previous(nSeq, target))
+                return ToolFailure("Nothing to restore: that entry is a delete, and no earlier "
+                                   "version of the jot is still in the log.");
+
+            FlatJot record;
+            std::string sError;
+            if (target.msRecord.empty() || !JOTJSON::ParseFlat(target.msRecord, record, sError))
+                return ToolFailure("That history entry is unreadable: " + sError);
+
+            // A restore is a write, and it is happening now, from here - so it is attributed here
+            // rather than to whoever wrote the version being put back.
+            if (!sOrigin.empty())
+                record.msOrigin = sOrigin;
+
+            tJotID    conflictID = kInvalidJotID;
+            AddResult result;
+            if (std::error_code ec = ops.Restore(record, ReadInt(args, "expect_updated", 0),
+                                                 conflictID, result))
+            {
+                if (conflictID != kInvalidJotID)
+                    return ToolFailure("The name '" + record.msName + "' now belongs to jot " +
+                                       std::to_string(conflictID) + ". Restoring would leave two "
+                                       "jots claiming one slug - rename or remove that one first.");
+                if (LoomErrorOf(ec) == eLoomErr::kConflict)
+                    return ToolFailure("Conflict: this jot changed since the revision you passed. "
+                                       "Re-read it and decide again whether you still want this "
+                                       "version back.");
+                return ToolFailure(ec.message());
+            }
+
+            store.SnapshotNames(names);
+            json out = json::parse(JOTJSON::MutationToJson(result, names, false), nullptr, false);
+            if (out.is_discarded())
+                out = json::object();
+            out["restored"] = true;
+            out["from_seq"] = target.mnSeq;
+            return ToolText(out.dump());
         }
 
         return ToolFailure("Unknown tool: " + sName);
     }
 
-    json HandleOne(Ops& ops, JotStore& store, const json& msg, bool& outbIsNotification)
+    json HandleOne(Ops& ops, JotStore& store, History* pHistory, const std::string& sOrigin,
+                   const json& msg, bool& outbIsNotification)
     {
         outbIsNotification = false;
 
@@ -528,8 +756,12 @@ namespace
             result["instructions"] =
                 "Loom is a shared memory that several agents and a human write to at once.\n"
                 "Search before writing - the thing you are about to record may already be here.\n"
+                "loom_add checks that for you and answers with duplicate_candidates when it finds\n"
+                "one; read them rather than leaving two records of the same fact.\n"
                 "Check loom_tags before inventing a tag.\n"
-                "When editing, pass expect_updated so a concurrent write is reported rather than lost.\n"
+                "loom_update REQUIRES expect_updated from your last read, so a concurrent write is\n"
+                "reported rather than lost. If you wrote something wrong, loom_history then\n"
+                "loom_restore undoes it - you do not need a human for that.\n"
                 "Tag actionable open work `todo`. When it is finished, ADD `status:done` and KEEP\n"
                 "`todo` - do not remove it. The pair is the record that the work happened; removing\n"
                 "`todo` erases it. Open work is todo minus status:done.\n"
@@ -557,7 +789,8 @@ namespace
             const json args = (params.contains("arguments") && params["arguments"].is_object())
                             ? params["arguments"] : json::object();
 
-            return RpcResult(id, CallTool(ops, store, params["name"].get<std::string>(), args));
+            return RpcResult(id, CallTool(ops, store, pHistory, sOrigin,
+                                         params["name"].get<std::string>(), args));
         }
 
         // Loom exposes tools only. Answering these with empty lists rather than "method not found"
@@ -571,7 +804,7 @@ namespace
     }
 }
 
-std::string McpHandler::Handle(const std::string& sRequestJson)
+std::string McpHandler::Handle(const std::string& sRequestJson, const std::string& sOrigin)
 {
     json msg = json::parse(sRequestJson, nullptr, false);
     if (msg.is_discarded())
@@ -585,7 +818,7 @@ std::string McpHandler::Handle(const std::string& sRequestJson)
         for (const json& one : msg)
         {
             bool bNotification = false;
-            json r = HandleOne(mOps, mStore, one, bNotification);
+            json r = HandleOne(mOps, mStore, mpHistory, sOrigin, one, bNotification);
             if (!bNotification)
                 out.push_back(std::move(r));
         }
@@ -593,6 +826,6 @@ std::string McpHandler::Handle(const std::string& sRequestJson)
     }
 
     bool bNotification = false;
-    json r = HandleOne(mOps, mStore, msg, bNotification);
+    json r = HandleOne(mOps, mStore, mpHistory, sOrigin, msg, bNotification);
     return bNotification ? std::string() : r.dump();
 }

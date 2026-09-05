@@ -55,6 +55,17 @@ struct Jot
     int64_t             mnUpdatedUS = 0;              // 0 == never edited
     tEditorID           mEditor     = kDefaultEditor; // 0 == "user"
 
+    // Where the last write came from, as the front door saw it - NOT something a caller can set.
+    // mEditor is a declared identity and anything can claim to be anyone; this is the address the
+    // connection actually arrived on, so "claude wrote this, from 192.168.1.30" is the record
+    // rather than only its unverifiable first half.
+    //
+    // A PLAIN STRING RATHER THAN AN INTERNED ID, unlike mEditor and mTags. Those are interned
+    // because they have posting lists - a query filters on them. Nothing filters on an origin, so
+    // interning it would buy a few bytes a jot and cost a third name table threaded through
+    // NameTables and every Flatten call site.
+    std::string         msOrigin;
+
     std::string         msName;         // optional stable slug; empty for plain jots
     std::string         msSummary;      // optional; weighted above body when ranking
     std::string         msText;
@@ -108,6 +119,13 @@ struct JotInput
     std::optional<std::vector<std::string>> mLinks;    // decimal ids or slugs
     std::optional<std::string>              msEditor;  // empty/absent resolves to "user"
 
+    // STAMPED BY THE FRONT DOOR, never parsed from a request body - see Jot::msOrigin. The codec
+    // deliberately does not read an "origin" key, so a caller cannot forge one; HttpServer sets
+    // this from the connection's remote address after parsing, and nothing else writes it.
+    // nullopt leaves whatever the jot already carries alone, which is what the replay, import and
+    // benchmark paths want - they have no connection to attribute a write to.
+    std::optional<std::string>              msOrigin;
+
     // When this jot was actually created, in microseconds since the epoch. Absent means now, which
     // is the ordinary case; it exists so content migrated in from somewhere else keeps its real
     // date instead of being stamped with the moment of the migration.
@@ -119,8 +137,11 @@ struct JotInput
     // at it, so Update ignores this and Upsert honours it only when it actually creates.
     std::optional<int64_t>                  mnCreatedUS;
 
-    // Deliberately NOT counting mnCreatedUS: it is ignored on the patch path, so a patch carrying
-    // only a creation time still changes nothing and must still be rejected as empty.
+    // Deliberately NOT counting mnCreatedUS or msOrigin. Both are ignored on the patch path as
+    // content - one because a jot's id cannot move, the other because the server stamps it on every
+    // request whether or not the caller asked for anything - so a patch carrying only those still
+    // changes nothing a caller asked for and must still be rejected as empty. Were msOrigin counted,
+    // every empty PATCH would become a legal write once HttpServer started stamping it.
     bool Empty() const
     {
         return !msName && !msSummary && !msText && !mTags && !mLinks && !msEditor;

@@ -7,6 +7,28 @@
 #include <algorithm>
 #include <cstdlib>
 
+namespace
+{
+    // First line, clipped - a caption for a jot that has no summary of its own. The history log
+    // does the same thing to the same field for the same reason; this one is local because Ops has
+    // no business depending on persist/ for a substring.
+    std::string ClipLine(const std::string& s, size_t nMax)
+    {
+        size_t nEnd = s.find('\n');
+        if (nEnd == std::string::npos)
+            nEnd = s.size();
+        if (nEnd > nMax)
+            nEnd = nMax;
+
+        std::string sOut = s.substr(0, nEnd);
+        while (!sOut.empty() && (sOut.back() == ' ' || sOut.back() == '\r'))
+            sOut.pop_back();
+        if (nEnd < s.size())
+            sOut += "...";
+        return sOut;
+    }
+}
+
 Ops::Ops(JotStore& store, const OpsConfig& config)
     : mStore(store)
     , mConfig(config)
@@ -34,6 +56,92 @@ void Ops::CollectWarnings(const std::vector<TagSuggestion>& vSuggestions, OpWarn
             "tag vocabulary is " + std::to_string(nVocab) + " tags, over the "
             + std::to_string(mConfig.mnMaxTags) + " you asked to be warned at - consider /tags/similar");
     }
+}
+
+void Ops::CollectDuplicates(const Jot& created, AddResult& outResult) const
+{
+    if (mConfig.mnDuplicateCandidates == 0)
+        return;
+
+    // NAME AND SUMMARY ONLY, never the body. Those are the fields a memory is recognized by - the
+    // slug and the one-line description recall matches against - and they are what a person or an
+    // agent would have searched for before writing. Including the body would make every long jot
+    // that happens to mention the same technology look like a duplicate of every other, and it
+    // would put a full-text probe on the hot path of ZHotkey's bare-jot writes, which have neither
+    // field and are skipped here entirely.
+    std::string sProbe = created.msName;
+    if (!created.msSummary.empty())
+    {
+        if (!sProbe.empty())
+            sProbe += ' ';
+        sProbe += created.msSummary;
+    }
+    if (sProbe.empty())
+        return;
+
+    Query query;
+    query.msText = sProbe;
+    query.mOrder = eOrder::kRelevance;
+    // Room for the new jot itself plus a few that may outrank it - it is not guaranteed to come
+    // back first, and if it falls outside this window there is no denominator and the check
+    // silently reports nothing, which is the right way for advice to fail.
+    query.mnLimit = mConfig.mnDuplicateCandidates + 5;
+
+    SearchResults hits;
+    mStore.Search(query, hits);
+
+    float fSelf = 0.0f;
+    for (const SearchHit& hit : hits.mHits)
+    {
+        if (hit.mID == created.mID)
+        {
+            fSelf = hit.mfScore;
+            break;
+        }
+    }
+    if (fSelf <= 0.0f)
+        return;
+
+    std::vector<std::string> vNames;
+    for (const SearchHit& hit : hits.mHits)
+    {
+        if (hit.mID == created.mID)
+            continue;
+        // Hits are ordered by descending score, so the first one under the bar ends the list.
+        if (hit.mfScore < fSelf * mConfig.mfDuplicateRatio)
+            break;
+        if (outResult.mDuplicates.size() >= mConfig.mnDuplicateCandidates)
+            break;
+
+        Jot other;
+        if (!mStore.Get(hit.mID, other))
+            continue;
+
+        DuplicateCandidate candidate;
+        candidate.mID          = other.mID;
+        candidate.msName       = other.msName;
+        candidate.msSummary    = other.msSummary.empty() ? ClipLine(other.msText, 110)
+                                                         : other.msSummary;
+        candidate.mfSimilarity = hit.mfScore / fSelf;
+        vNames.push_back(other.msName.empty() ? std::to_string(other.mID)
+                                              : "'" + other.msName + "'");
+        outResult.mDuplicates.push_back(std::move(candidate));
+    }
+
+    if (vNames.empty())
+        return;
+
+    // Also said as a warning, because that is the field every existing client already reads. The
+    // structured list is for anything that wants to act on it; this line is for the agent that only
+    // ever looks at `warnings` and would otherwise never learn it had just written a second copy.
+    std::string sMsg = "this may already be here: ";
+    for (size_t i = 0; i < vNames.size(); ++i)
+    {
+        if (i) sMsg += ", ";
+        sMsg += vNames[i];
+    }
+    sMsg += " - the write succeeded, but read them before writing more";
+    outResult.mWarnings.mMessages.push_back(std::move(sMsg));
 }
 
 //====================================================================================================
@@ -78,6 +186,12 @@ std::error_code Ops::Add(const JotInput& input, AddResult& outResult)
     CollectWarnings(result.mSuggestions, outResult.mWarnings);
     outResult.mJot      = std::move(result.mJot);
     outResult.mbCreated = true;
+
+    // AFTER the write, not before, and that is deliberate on two counts: a probe run first would be
+    // wasted work whenever the create is refused, and searching once the record is in the index is
+    // what gives the check its own score to measure the others against. The new jot is filtered out
+    // of its own results by id.
+    CollectDuplicates(outResult.mJot, outResult);
     return LoomOK();
 }
 
@@ -221,9 +335,9 @@ std::error_code Ops::Restore(const FlatJot& record, int64_t nExpectUpdatedUS, tJ
 }
 
 std::error_code Ops::MergeTags(const std::vector<std::string>& vFrom, const std::string& sTo,
-                               size_t& outJotsChanged)
+                               size_t& outJotsChanged, uint64_t& outTxnID)
 {
-    return mStore.MergeTags(vFrom, sTo, outJotsChanged);
+    return mStore.MergeTags(vFrom, sTo, outJotsChanged, outTxnID);
 }
 
 //====================================================================================================

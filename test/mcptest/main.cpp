@@ -17,10 +17,12 @@
 #include "core/JotStore.h"
 #include "core/Ops.h"
 #include "mcp/McpHandler.h"
+#include "persist/History.h"
 
 #include "vendor/json.hpp"
 
 #include <cstdio>
+#include <filesystem>
 #include <string>
 
 using json = nlohmann::json;
@@ -125,6 +127,23 @@ int main()
         Check(bAllDescribed, "every tool carries a substantive description");
         Check(bAllSchemas, "every tool carries an object inputSchema");
 
+        // Undo has to be IN THE CATALOG. History and restore existed over REST for a while, which
+        // meant the dashboard could undo a bad write and the agent that made it could not.
+        bool bHistory = false, bRestore = false, bUpdateRequiresGuard = false;
+        for (const json& t : tools)
+        {
+            const std::string sName = t.value("name", std::string());
+            if (sName == "loom_history") bHistory = true;
+            if (sName == "loom_restore") bRestore = true;
+            if (sName == "loom_update")
+            {
+                for (const json& req : t["inputSchema"]["required"])
+                    if (req == "expect_updated") bUpdateRequiresGuard = true;
+            }
+        }
+        Check(bHistory && bRestore, "loom_history and loom_restore are advertised, not REST-only");
+        Check(bUpdateRequiresGuard, "loom_update's schema marks expect_updated required");
+
         Check(json::parse(Rpc(mcp,"resources/list",json(nullptr),json(4)))["result"]
                 .contains("resources"),
               "resources/list answers empty rather than method-not-found");
@@ -197,13 +216,107 @@ int main()
                  {"tags",json::array({"keep"})}}, bErr);
         const int64_t nID = j.value("id",(int64_t)0);
 
-        // Only tags supplied: everything else must survive untouched.
+        // Only tags supplied: everything else must survive untouched. expect_updated is the id
+        // here because a jot that has never been edited has updated == id.
         json patched = Call(mcp, "loom_update",
-            json{{"id",nID},{"tags",json::array({"changed"})}}, bErr);
+            json{{"id",nID},{"tags",json::array({"changed"})},{"expect_updated",nID}}, bErr);
         Check(!bErr, "a partial update succeeds");
         Check(patched.value("summary","") == "the summary",
               "omitting a field leaves it alone rather than clearing it");
         Check(patched.value("text","") == "body text", "text untouched too");
+    }
+
+    Section("the conflict guard is mandatory on update");
+    {
+        bool bErr = false;
+        json j = Call(mcp, "loom_add", json{{"text","guarded"}}, bErr);
+        const int64_t nID = j.value("id",(int64_t)0);
+
+        // The schema marks expect_updated required; this is the half that holds when a client
+        // ignores the schema, which is the case that actually happens.
+        json refused = Call(mcp, "loom_update",
+            json{{"id",nID},{"text","no guard passed"}}, bErr);
+        Check(bErr, "an update with no expect_updated is REFUSED, not silently forced through");
+        Check(refused.value("raw","").find("loom_get") != std::string::npos,
+              "and the message says how to get one, rather than just naming the field");
+
+        // The write must not have happened.
+        json unchanged = Call(mcp, "loom_get", json{{"id",nID}}, bErr);
+        Check(unchanged.value("text","") == "guarded", "and the refused write changed nothing");
+
+        // Upsert is deliberately still permissive - it addresses by slug and may be creating.
+        Call(mcp, "loom_upsert", json{{"name","unguarded-upsert"},{"text","v1"}}, bErr);
+        Check(!bErr, "loom_upsert still accepts a write with no expect_updated");
+    }
+
+    Section("history and restore over MCP");
+    {
+        bool bErr = false;
+
+        // Without persistence there is no log, and the tools must say so rather than crash.
+        Call(mcp, "loom_history", json::object(), bErr);
+        Check(bErr, "loom_history on a store with no history log is a clean tool error");
+
+        // A second store, wired to a real history log, for the rest of this section.
+        const std::string sDir = "mcptest-data";
+        std::error_code fsec;
+        std::filesystem::remove_all(sDir, fsec);
+        std::filesystem::create_directories(sDir, fsec);
+
+        HistoryConfig hc;
+        hc.msPath = sDir + "/loom.history";
+        History history;
+        Check(!history.Open(hc), "the history log opens");
+
+        JotStore   hstore;
+        hstore.SetJournalSink(&history);
+        Ops        hops(hstore);
+        McpHandler hmcp(hops, hstore, &history);
+
+        json made = Call(hmcp, "loom_add",
+            json{{"text","the original"},{"summary","first"},{"editor","claude"}}, bErr);
+        const int64_t nID = made.value("id",(int64_t)0);
+
+        // A DIFFERENT editor, deliberately. History folds a run of edits to one jot by ONE editor
+        // into a single listed row carrying the run's newest state - so had both writes been
+        // 'claude' there would be one row, nothing below it, and nothing to undo to. Two agents
+        // stepping on each other is the case this whole tool exists for, and it is also the case
+        // that produces two rows.
+        json wrecked = Call(hmcp, "loom_update",
+            json{{"id",nID},{"text","clobbered"},{"editor","codex"},{"expect_updated",nID}}, bErr);
+        Check(!bErr && wrecked.value("text","") == "clobbered", "a bad write lands");
+
+        json log = Call(hmcp, "loom_history", json{{"id",nID}}, bErr);
+        Check(!bErr && log.contains("entries"), "loom_history lists that jot's changes");
+        Check(log["entries"].size() == 2, "both writes are listed, newest first");
+        Check(log["entries"][0].value("editor","") == "codex",
+              "and each row names who made that change");
+        // The listing must stay cheap: it is for finding a seq, not for pulling every version.
+        Check(!log["entries"][0].contains("record"),
+              "a listing carries no record bodies");
+
+        // Newest first, so the ORIGINAL is the older row - which is what undoing means.
+        uint64_t nOriginalSeq = 0;
+        for (const json& e : log["entries"])
+            nOriginalSeq = e.value("seq",(uint64_t)0);   // last one seen is the oldest
+
+        json back = Call(hmcp, "loom_restore", json{{"seq",nOriginalSeq}}, bErr);
+        Check(!bErr, "loom_restore accepts a seq from that listing");
+        Check(back.value("restored",false), "and says it restored something");
+
+        json now = Call(hmcp, "loom_get", json{{"id",nID}}, bErr);
+        Check(now.value("text","") == "the original",
+              "the agent undid its own bad write with no human involved");
+        Check(now.value("id",(int64_t)0) == nID, "and the jot kept its id, so links survive");
+
+        Call(hmcp, "loom_restore", json{{"seq",(uint64_t)999999}}, bErr);
+        Check(bErr, "an unknown seq is a tool error, not a crash");
+
+        Call(hmcp, "loom_restore", json::object(), bErr);
+        Check(bErr, "loom_restore with no seq is refused");
+
+        history.Close();
+        std::filesystem::remove_all(sDir, fsec);
     }
 
     Section("malformed input");

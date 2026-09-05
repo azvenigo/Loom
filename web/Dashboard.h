@@ -451,6 +451,18 @@ dialog#attention-dialog .promptbox{max-height:min(40vh,340px);overflow-y:auto}
 .hop.put{background:var(--accent-wash);color:var(--accent-ink)}
 .hop.new{background:var(--good-wash);color:var(--good)}
 .hop.del{background:var(--bad-wash);color:var(--bad)}
+/* One act that rewrote many jots - a tag merge. It gets its own color because the thing you can do
+   with it is different: undo the OPERATION, not this one version of one record. */
+.hop.txn{background:var(--warn-wash);color:var(--warn)}
+.hrow.txnrow{border-color:var(--warn-line)}
+.htxn-toggle{flex:none;background:none;border:0;color:var(--faint);cursor:pointer;font:11px var(--mono);
+  padding:2px 4px}
+.htxn-toggle:hover{color:var(--ink)}
+/* The members of a group, indented under it and quieter than it - the group is the act, these are
+   just what it touched. */
+.htxn-members{margin:-2px 0 8px 34px;border-left:2px solid var(--line);padding-left:10px}
+.htxn-members .hrow{margin-bottom:4px;background:var(--sunk)}
+.horigin{opacity:.75}
 .hmain{flex:1;min-width:0}
 .hname{font-size:13px;font-weight:600;color:var(--ink);overflow:hidden;text-overflow:ellipsis;
   white-space:nowrap}
@@ -458,6 +470,9 @@ dialog#attention-dialog .promptbox{max-height:min(40vh,340px);overflow-y:auto}
 .hsum{font-size:11.5px;color:var(--faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .hmeta{flex:none;font:10.5px var(--mono);color:var(--faint);text-align:right;min-width:104px}
 .hmeta b{display:block;color:var(--dim);font-weight:400}
+/* Sits where the Restore button would be, on the one row per jot where clicking it would write
+   back exactly what's already there. */
+.hcurrent{font:11px var(--sans);color:var(--faint);font-style:italic;padding:5px 2px}
 .hacts{flex:none;display:flex;align-items:center;gap:6px}
 .hacts input[type=checkbox]{width:auto;margin:0}
 .hseq{font:10px var(--mono);color:var(--faint);flex:none;min-width:34px;text-align:right}
@@ -779,12 +794,12 @@ button.btn:active{box-shadow:inset 0 2px 4px rgba(0,0,0,.14)}
    plain declared tokens, because a var() that fails to substitute inside `background` does not
    fall back to the previous declaration - it unsets the property, and an invisible Save button is
    a far worse failure than a missing shadow. */
-button.primary,button.warnfill,button.badfill,.chip.on,.completebtn:not(.on),.prio label.on{
+button.primary,button.warnfill,button.badfill,.chip.on,.prio label.on{
   color:var(--panel);border-style:solid;border-width:1px;
   box-shadow:0 1px 2px rgba(0,0,0,.16),inset 0 1px 0 rgba(255,255,255,.22)}
-button.primary:hover,button.warnfill:hover,button.badfill:hover,.completebtn:not(.on):hover{
+button.primary:hover,button.warnfill:hover,button.badfill:hover{
   box-shadow:0 3px 12px rgba(0,0,0,.22),inset 0 1px 0 rgba(255,255,255,.3)}
-button.primary:active,button.warnfill:active,button.badfill:active,.completebtn:not(.on):active{
+button.primary:active,button.warnfill:active,button.badfill:active{
   filter:brightness(.96);box-shadow:inset 0 2px 5px rgba(0,0,0,.3)}
 
 button.primary,.chip.on,.prio label.on{
@@ -809,8 +824,6 @@ button.badfill:hover{filter:brightness(1.05) saturate(1.08);border-color:var(--b
   button.warnfill:hover{box-shadow:0 3px 14px color-mix(in srgb,var(--cta-b) 45%,transparent),
     inset 0 1px 0 rgba(255,255,255,.3)}
   button.badfill:hover{box-shadow:0 3px 14px color-mix(in srgb,var(--bad) 45%,transparent),
-    inset 0 1px 0 rgba(255,255,255,.3)}
-  .completebtn:not(.on):hover{box-shadow:0 3px 14px color-mix(in srgb,var(--good) 45%,transparent),
     inset 0 1px 0 rgba(255,255,255,.3)}
 }
 
@@ -1072,13 +1085,13 @@ mark{background:var(--mark);color:inherit;border-radius:2px;padding:0 1px}
    and on the card it sits at the far end, away from Edit/Snooze on something you may be dragging. */
 .completebtn{margin-left:auto;display:inline-flex;align-items:center;gap:6px;cursor:pointer;
   font:12px var(--sans);font-weight:600;border-radius:6px;padding:5px 11px;
-  background:linear-gradient(170deg,var(--good2),var(--good));border-color:var(--good)}
-.completebtn:hover{filter:brightness(1.05) saturate(1.08);border-color:var(--good)}
+  color:var(--dim);background:var(--sunk);border:1px solid var(--line);box-shadow:none}
+.completebtn:hover{color:var(--ink);border-color:var(--dim)}
 .completebtn svg{width:13px;height:13px;flex:none}
-/* Already completed: the box reads as ticked, and the button becomes the way back. */
-.completebtn.on{color:var(--dim);background:var(--sunk);border:1px solid var(--line);
-  font-weight:400;box-shadow:none}
-.completebtn.on:hover{color:var(--ink);background:var(--sunk);border-color:var(--dim)}
+/* Already completed: the box reads as ticked (see completeBtn()'s icon swap), same grey button -
+   only the glyph and the word change, so completing something never reads as a bigger action than
+   reopening it. */
+.completebtn.on{font-weight:400}
 .ov-tacts .completebtn{font-size:11.5px;padding:3px 9px}
 .ov-tacts .completebtn svg{width:12px;height:12px}
 .ov-colempty{color:var(--faint);font-size:12px;padding:8px 0}
@@ -1873,14 +1886,19 @@ async function toggleDone(j,markDone){
     {method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({tags})});
 }
 /* The check-in-a-box, defined once. Both Complete buttons draw from here so they can't drift
-   apart the way two hand-written copies of an icon do. */
+   apart the way two hand-written copies of an icon do. Empty box = not done yet, the same box with
+   a tick = done - that swap, plus the word, is the ENTIRE difference between the two states now
+   that the button itself no longer changes color. */
+const CHECKBOX_EMPTY_SVG='<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" '+
+  'stroke-linecap="round" stroke-linejoin="round"><rect x="2.3" y="2.3" width="11.4" '+
+  'height="11.4" rx="2.6"/></svg>';
 const CHECKBOX_SVG='<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" '+
   'stroke-linecap="round" stroke-linejoin="round"><rect x="2.3" y="2.3" width="11.4" '+
   'height="11.4" rx="2.6"/><path d="M5 8.2l2.1 2.1L11.2 6"/></svg>';
 function completeBtn(bDone,fn){
   const b=el('button','completebtn'+(bDone?' on':''));
   b.type='button';b.draggable=false;
-  b.innerHTML=CHECKBOX_SVG;
+  b.innerHTML=bDone?CHECKBOX_SVG:CHECKBOX_EMPTY_SVG;
   b.append(document.createTextNode(bDone?'Completed':'Complete'));
   b.title=bDone?'Reopen this TODO':'Mark this TODO completed';
   b.onclick=function(e){e.stopPropagation();e.preventDefault();fn();};
@@ -2900,6 +2918,135 @@ function histOpClass(e,bFirstForJot){
   return bFirstForJot?'new':'put';
 }
 
+/* Who wrote it and from where. The editor is what the writer CALLED itself and the origin is the
+   address the server actually saw - both, side by side, because either alone is misleading: the
+   name is unverifiable, and the address cannot tell claude from codex on one machine. */
+function histWho(e){
+  const meta=el('div','hmeta');
+  meta.append(el('b',null,e.editor||'user'));
+  if(e.origin)meta.append(el('div','horigin',e.origin));
+  meta.append(document.createTextNode(ago(e.at)));
+  return meta;
+}
+
+function histRow(e,firstSeq,bMember,latestSeq){
+  const row=el('div','hrow'+(purgeSel.has(e.id)?' sel':''));
+  const cls=histOpClass(e,firstSeq.has(e.seq));
+  row.append(el('div','hop '+cls,cls==='del'?'deleted':(cls==='new'?'created':'edited')));
+
+  const main=el('div','hmain');
+  /* The summary is what a human recognizes the jot by; the slug (e.name) is an address, not a
+     caption, so it rides underneath as a secondary line and only when the jot actually has one -
+     most todos don't, and printing "(unnamed)" as the headline for every one of them was the bug. */
+  main.append(el('div','hname'+(e.op==='del'?' gone':''),e.summary||e.name||'(unnamed)'));
+  const subBits=[];
+  if(e.name&&e.name!==e.summary)subBits.push(e.name);
+  /* A row can stand for a run of edits folded together - say so, or the caption reads as the only
+     thing that happened when it is really the net effect of several saves. */
+  if(e.edits>1)subBits.push(e.edits+' edits');
+  if(subBits.length)main.append(el('div','hsum',subBits.join('  ·  ')));
+  /* Clicking the row filters to that jot - "what else happened to this one" is the question you
+     always have next. */
+  main.style.cursor='pointer';
+  main.onclick=function(){histFilterID=e.id;render();};
+  row.append(main);
+  row.append(histWho(e));
+
+  const acts=el('div','hacts');
+  /* Restore is a no-op on the entry that IS the jot's current state - it would write back exactly
+     what is already there. A delete is the one exception: that current state is "gone", and putting
+     it back is the entire point of the row, so Undo delete stays regardless. */
+  const isCurrent=e.op!=='del'&&latestSeq&&latestSeq.has(e.seq);
+  if(isCurrent){
+    acts.append(el('div','hcurrent','current version'));
+  }else{
+    const rb=el('button','btn tiny',e.op==='del'?'Undo delete':'Restore');
+    rb.title=e.op==='del'
+      ?'Put this jot back as it was immediately before the delete'
+      :'Make this jot look like it did at this point';
+    rb.onclick=async function(){
+      rb.disabled=true;
+      try{
+        const r=await api('/history/restore',
+          {method:'POST',headers:{'Content-Type':'application/json'},
+           body:JSON.stringify({seq:e.seq})});
+        toast(r.no_change?'already at that version'
+             :r.undid_delete?'restored '+(r.jot.name||'the jot')
+                            :'restored '+(r.jot.name||'the jot')+' to that version');
+        render();
+      }catch(err){toast(err.message,'bad');rb.disabled=false;}
+    };
+    acts.append(rb);
+  }
+
+  /* Purge is per JOT, so it stays on the individual rows even inside a group - marking "the merge"
+     for purging would mean nothing, and marking the wrong jot would mean far too much. */
+  const cb=el('input');cb.type='checkbox';cb.checked=purgeSel.has(e.id);
+  cb.title='Mark this jot for purging';
+  cb.onchange=function(){
+    if(cb.checked)purgeSel.add(e.id);else purgeSel.delete(e.id);
+    render();
+  };
+  acts.append(cb);
+  row.append(acts);
+  if(bMember)row.classList.add('member');
+  return row;
+}
+
+/* One multi-record operation as a single row that expands. The action it offers is UNDO THE WHOLE
+   THING, which is the only thing anybody wants from a tag merge that turned out wrong - and until
+   transaction ids existed it took one restore per affected jot to get there. */
+function histTxnRow(g,firstSeq,latestSeq){
+  const wrap=el('div');
+  const head=g.members[0];
+  const row=el('div','hrow txnrow');
+  row.append(el('div','hop txn','merged'));
+
+  const main=el('div','hmain');
+  main.append(el('div','hname',g.members.length+' jot'+(g.members.length===1?'':'s')+
+    ' changed in one operation'));
+  main.append(el('div','hsum',(head.summary||'')+'  ·  operation '+g.txn));
+  row.append(main);
+  row.append(histWho(head));
+
+  const acts=el('div','hacts');
+  const members=el('div','htxn-members');members.hidden=true;
+  g.members.forEach(function(e){members.append(histRow(e,firstSeq,true,latestSeq));});
+
+  const toggle=el('button','htxn-toggle','▸ '+g.members.length);
+  toggle.title='Show the jots this changed';
+  toggle.onclick=function(){
+    members.hidden=!members.hidden;
+    toggle.textContent=(members.hidden?'▸ ':'▾ ')+g.members.length;
+  };
+  acts.append(toggle);
+
+  const ub=el('button','btn tiny danger','Undo operation');
+  ub.title='Put every jot this touched back the way it was immediately before';
+  ub.onclick=async function(){
+    ub.disabled=true;
+    try{
+      const r=await api('/history/restore',
+        {method:'POST',headers:{'Content-Type':'application/json'},
+         body:JSON.stringify({txn:g.txn,undo:true})});
+      /* Partial success is a real outcome here - a jot edited or deleted since the merge is refused
+         on its own rather than failing the whole undo - so the count that was NOT put back is the
+         part worth saying out loud. */
+      toast(r.failed
+        ?'put back '+r.restored+' of '+(r.restored+r.unchanged+r.failed)+' - '+r.failed+
+         ' could not be, they changed since'
+        :'put back '+(r.restored||r.unchanged)+' jot'+((r.restored||r.unchanged)===1?'':'s'),
+        r.failed?'bad':'');
+      render();
+    }catch(err){toast(err.message,'bad');ub.disabled=false;}
+  };
+  acts.append(ub);
+  row.append(acts);
+
+  wrap.append(row,members);
+  return wrap;
+}
+
 async function viewHistory(target){
   const L=target;
 
@@ -2958,64 +3105,32 @@ async function viewHistory(target){
     const e=data.entries[i];
     if(e.op!=='del'&&!seen.has(e.id)){seen.add(e.id);firstSeq.add(e.seq);}
   }
+  const seenLatest=new Set();
+  const latestSeq=new Set();
+  for(let i=0;i<data.entries.length;i++){
+    const e=data.entries[i];
+    if(!seenLatest.has(e.id)){seenLatest.add(e.id);latestSeq.add(e.seq);}
+  }
+
+  /* Rows carrying the same 'txn' were ONE act - a tag merge rewriting every jot that held a tag.
+     They arrive adjacent because the store holds its write lock for the whole operation, so folding
+     a run of them keeps the day bars and the ordering exactly as they were. The GROUP is the thing
+     you undo; its members are collapsed because forty rows all reading "+loom, -looom" is not
+     history, it is noise - and restoring one of them is almost never what anybody meant. */
+  const groups=[];
+  data.entries.forEach(function(e){
+    const last=groups.length?groups[groups.length-1]:null;
+    if(e.txn&&last&&last.txn===e.txn){last.members.push(e);return;}
+    groups.push(e.txn?{txn:e.txn,members:[e]}:{one:e});
+  });
 
   let lastDay='';
-  data.entries.forEach(function(e){
-    const day=dayKey(e.at);
-    if(day!==lastDay){lastDay=day;L.append(el('div','daybar',dayLabel(e.at)));}
-
-    const row=el('div','hrow'+(purgeSel.has(e.id)?' sel':''));
-    const cls=histOpClass(e,firstSeq.has(e.seq));
-    row.append(el('div','hop '+cls,cls==='del'?'deleted':(cls==='new'?'created':'edited')));
-
-    const main=el('div','hmain');
-    const name=el('div','hname'+(e.op==='del'?' gone':''),e.name||'(unnamed)');
-    main.append(name);
-    /* A row can stand for a run of edits folded together - say so, or the caption reads as the only
-       thing that happened when it is really the net effect of several saves. */
-    if(e.summary)main.append(el('div','hsum',e.summary+(e.edits>1?'  ·  '+e.edits+' edits':'')));
-    /* Clicking the row filters to that jot - "what else happened to this one" is the question you
-       always have next. */
-    main.style.cursor='pointer';
-    main.onclick=function(){histFilterID=e.id;render();};
-    row.append(main);
-
-    const meta=el('div','hmeta');
-    meta.append(el('b',null,e.editor||'user'));
-    meta.append(document.createTextNode(ago(e.at)));
-    row.append(meta);
-
-    const acts=el('div','hacts');
-    const rb=el('button','btn tiny',e.op==='del'?'Undo delete':'Restore');
-    rb.title=e.op==='del'
-      ?'Put this jot back as it was immediately before the delete'
-      :'Make this jot look like it did at this point';
-    rb.onclick=async function(){
-      rb.disabled=true;
-      try{
-        const r=await api('/history/restore',
-          {method:'POST',headers:{'Content-Type':'application/json'},
-           body:JSON.stringify({seq:e.seq})});
-        /* Restore sits on every row including the newest, and the newest row is the version the jot
-           is already on - so "nothing to do" is a normal outcome here, not a failure. Saying so
-           beats a success message for a write that correctly never happened. */
-        toast(r.no_change?'already at that version'
-             :r.undid_delete?'restored '+(r.jot.name||'the jot')
-                            :'restored '+(r.jot.name||'the jot')+' to that version');
-        render();
-      }catch(err){toast(err.message,'bad');rb.disabled=false;}
-    };
-    acts.append(rb);
-
-    const cb=el('input');cb.type='checkbox';cb.checked=purgeSel.has(e.id);
-    cb.title='Mark this jot for purging';
-    cb.onchange=function(){
-      if(cb.checked)purgeSel.add(e.id);else purgeSel.delete(e.id);
-      render();
-    };
-    acts.append(cb);
-    row.append(acts);
-    L.append(row);
+  groups.forEach(function(g){
+    const head=g.one||g.members[0];
+    const day=dayKey(head.at);
+    if(day!==lastDay){lastDay=day;L.append(el('div','daybar',dayLabel(head.at)));}
+    if(g.one){L.append(histRow(g.one,firstSeq,false,latestSeq));return;}
+    L.append(histTxnRow(g,firstSeq,latestSeq));
   });
 
   if(data.total>data.entries.length)

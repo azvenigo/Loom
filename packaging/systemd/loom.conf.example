@@ -1,0 +1,18 @@
+# Loom service configuration. Read by the systemd unit as an EnvironmentFile.
+#
+# THIS FILE SURVIVES UPDATES. packaging/update.sh replaces the binary and the unit and never
+# touches this, which is the point of having it: the settings live in one place that the update
+# path is not allowed to write.
+
+# Interface to listen on. 127.0.0.1 keeps Loom on this machine; 0.0.0.0 opens it to the network,
+# and if you do that, set LOOM_TOKEN below or configure the address allow list from the dashboard.
+LOOM_BIND=127.0.0.1
+
+LOOM_PORT=7700
+
+# Snapshot, WAL, history log, ACL and data lock all live here.
+LOOM_DATA=/var/lib/loom
+
+# Anything else you would pass on the command line: --token=SECRET, --sync=always, --threads=N.
+# Kept as one opaque string so a new flag needs no change to the unit file.
+LOOM_EXTRA=

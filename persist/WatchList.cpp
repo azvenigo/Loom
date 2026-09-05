@@ -6,6 +6,7 @@
 #include <chrono>
 #include <cstdio>
 #include <filesystem>
+#include <mutex>
 
 using json = nlohmann::json;
 

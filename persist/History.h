@@ -49,8 +49,24 @@ struct HistoryEntry
     tJotID      mID     = kInvalidJotID;
     std::string msName;             // slug at the time; for a delete, the last one seen
     std::string msEditor;
+    // Where the write came from, as the server saw it. Empty for anything logged before origins
+    // existed, and for writes with no connection behind them - the importer and a replay. For a put
+    // this is read straight back out of the record; a delete carries only an id, so it reuses the
+    // last origin seen for that jot, exactly as it does for the editor and the caption.
+    std::string msOrigin;
     std::string msSummary;          // summary, else a clipped first line - for the list only
     std::string msRecord;           // the complete FlatJot JSON. Empty for a delete.
+
+    // The multi-record operation this entry belonged to, or 0 for an ordinary single write. Every
+    // entry a tag merge produces carries the same value, which is what makes "undo that merge" one
+    // act instead of forty restores. See IJournalSink::BeginTransaction.
+    //
+    // THE ID IS THE SEQ OF THE GROUP'S FIRST ENTRY. That needs no counter, no second id space and
+    // no extra durability: seq is already unique, already ordered and already recovered from the
+    // file on restart. It also means a group is a CONTIGUOUS run of sequence numbers starting at
+    // its own id - the store holds its write lock for the whole operation, so nothing else can log
+    // anything in between - and that is what lets a lookup stop as soon as the run ends.
+    uint64_t    mnTxnID = 0;
 
     // How many logged mutations this row stands for. List() folds a run of edits to one jot into a
     // single row - see the coalescing note in HistoryConfig - and this is the size of that run. 1
@@ -109,6 +125,13 @@ public:
     void OnPut(const FlatJot& jot) override;
     void OnDelete(tJotID id) override;
 
+    // Brackets a multi-record operation so every entry it logs carries one transaction id.
+    // BeginTransaction is idempotent-ish rather than nestable: a second Begin without an End simply
+    // starts a new group, because the alternative - a depth counter - would let one unbalanced
+    // caller swallow every later write into a group that never closes.
+    void     BeginTransaction() override;
+    uint64_t EndTransaction() override;
+
     // Newest first. idFilter of kInvalidJotID means every jot.
     void List(tJotID idFilter, size_t nLimit, size_t nOffset,
               std::vector<HistoryEntry>& outEntries, size_t& outTotal) const;
@@ -119,6 +142,14 @@ public:
     // The put that was in force immediately BEFORE nSeq for the same jot - i.e. what "undo this
     // change" means. False when nSeq is the jot's first appearance and there is nothing behind it.
     bool Previous(uint64_t nSeq, HistoryEntry& outEntry) const;
+
+    // Every entry belonging to one multi-record operation, OLDEST FIRST. Empty means no such group
+    // survives - either it never existed or it has aged out of both generations of the log.
+    //
+    // Because a group is a contiguous run of seqs beginning at nTxnID, finding its first entry in
+    // memory proves the whole group is in memory; only when that first entry is missing does this
+    // fall back to the file, and then a group that old is certainly flushed.
+    void ListTransaction(uint64_t nTxnID, std::vector<HistoryEntry>& outEntries) const;
 
     HistoryStats Stats() const;
 
@@ -136,7 +167,12 @@ public:
 private:
     void CommitterLoop();
     void Append(const HistoryEntry& entry, const std::string& sLine);
+    // Returns the transaction id an entry with this seq should carry, adopting the seq as the
+    // group's id when it is the first entry in an open group. 0 outside a transaction. Called with
+    // mMutex held, from the two sink methods, immediately after the seq is allocated.
+    uint64_t Locked_StampTransaction(uint64_t nSeq);
     bool ScanFileFor(uint64_t nSeq, HistoryEntry& outEntry) const;
+    void ScanFileForTransaction(uint64_t nTxnID, std::vector<HistoryEntry>& outEntries) const;
     bool ScanFileForPrevious(uint64_t nSeq, tJotID id, HistoryEntry& outEntry) const;
     static bool ParseLine(const std::string& sLine, HistoryEntry& outEntry);
     // Reads just the last line of a log file - O(length of that line), not O(file) - so Open() can
@@ -155,7 +191,7 @@ private:
     // length, which is why these are two fields and not one.
     struct LastSeen
     {
-        std::string              msName, msEditor, msSummary, msCaption;
+        std::string              msName, msEditor, msSummary, msCaption, msOrigin;
         std::vector<std::string> mTags;
         size_t                   mnTextLen = 0;
     };
@@ -177,6 +213,12 @@ private:
     std::deque<std::string>   mQueue;     // lines awaiting the disk
     std::deque<HistoryEntry>  mRecent;    // bounded, newest at the back
     uint64_t                  mnNextSeq   = 1;
+
+    // The group currently open, and the id it was given. mnOpenTxnID is 0 until the group's first
+    // entry is logged, because the id IS that entry's seq and it does not exist before then - which
+    // also means a transaction that logs nothing consumes no id at all.
+    bool                      mbInTxn     = false;
+    uint64_t                  mnOpenTxnID = 0;
     uint64_t                  mnEntries   = 0;
     uint64_t                  mnBytes     = 0;
     bool                      mbRunning   = false;

@@ -397,8 +397,12 @@ namespace
         Check(!vTags.empty() && vTags[0].msTag == "meds" && vTags[0].mnCount == 5,
               "listing is count-ordered with correct refcounts");
 
-        size_t nChanged = 0;
-        Check(!ops.MergeTags({ "medz", "med" }, "meds", nChanged), "merge succeeds");
+        size_t   nChanged = 0;
+        uint64_t nTxnID   = 0;
+        Check(!ops.MergeTags({ "medz", "med" }, "meds", nChanged, nTxnID), "merge succeeds");
+        // No journal sink in this fixture, so nothing assigns transaction ids - 0 is the honest
+        // answer and the front ends must treat it as "no group to undo", not as a valid handle.
+        Check(nTxnID == 0, "merge without a history log reports no transaction");
         Check(nChanged == 2, "both variant jots rewritten");
 
         ops.ListTags(vTags, false);

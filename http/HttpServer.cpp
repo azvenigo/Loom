@@ -13,6 +13,7 @@
 #include "mcp/McpHandler.h"
 #include "persist/Importer.h"
 #include "persist/Purge.h"
+#include "persist/Undo.h"
 #include "web/Dashboard.h"
 #include "web/IconAssets.h"
 
@@ -272,7 +273,7 @@ struct HttpServer::Impl
          Journal* pJournal, const SnapshotConfig& snapConfig, IpAcl& acl, History* pHistory,
          WatchList& watch)
         : mOps(ops), mStore(store), mConfig(config), mpJournal(pJournal), mAcl(acl),
-          mpHistory(pHistory), mWatch(watch), mMcp(ops, store), mSnapConfig(snapConfig),
+          mpHistory(pHistory), mWatch(watch), mMcp(ops, store, pHistory), mSnapConfig(snapConfig),
           msOrigin(ResolveAdvertisedOrigin(config))
     {
         // The middleware instance is owned by the app, so it is wired here rather than constructed
@@ -409,6 +410,12 @@ struct HttpServer::Impl
             if (!JOTJSON::ParseInput(req.body, input, sError))
                 return Fail(400, sError);
 
+            // AFTER the parse, never from it. `editor` is whoever the caller says they are; this is
+            // where the connection actually came from, and the two are stored side by side so the
+            // history log records "claude wrote this, from 192.168.1.30" rather than only the half
+            // anybody can type. See Jot::msOrigin.
+            input.msOrigin = req.remote_ip_address;
+
             AddResult result;
             // ?upsert=1 keys on the slug and updates in place. Kept opt-in so a plain POST can
             // never silently overwrite a memory somebody wrote by hand.
@@ -434,6 +441,7 @@ struct HttpServer::Impl
             std::string sError;
             if (!JOTJSON::ParseInput(req.body, patch, sError))
                 return Fail(400, sError);
+            patch.msOrigin = req.remote_ip_address;
 
             AddResult result;
             // expect_updated is the multi-agent guard: pass the value you last saw and a
@@ -494,11 +502,19 @@ struct HttpServer::Impl
             for (const auto& entry : body["from"])
                 vFrom.push_back(entry.s());
 
-            size_t nChanged = 0;
-            if (std::error_code ec = mOps.MergeTags(vFrom, body["to"].s(), nChanged))
+            size_t   nChanged = 0;
+            uint64_t nTxnID   = 0;
+            if (std::error_code ec = mOps.MergeTags(vFrom, body["to"].s(), nChanged, nTxnID))
                 return Fail(ec);
 
-            return Ok("{\"changed\":" + std::to_string(nChanged) + "}");
+            crow::json::wvalue out;
+            out["changed"] = nChanged;
+            // The whole rewrite as one handle, for POST /history/restore {"txn":N,"undo":true}.
+            // Omitted when there is no history log, so the page cannot offer an undo that would
+            // find nothing to undo.
+            if (nTxnID != 0)
+                out["txn"] = nTxnID;
+            return Ok(out.dump());
         });
 
         //------------------------------------------------------------------------------------
@@ -521,7 +537,7 @@ struct HttpServer::Impl
         {
             if (!Authorized(req)) return Fail(401, "missing or invalid bearer token");
 
-            const std::string sResponse = mMcp.Handle(req.body);
+            const std::string sResponse = mMcp.Handle(req.body, req.remote_ip_address);
             if (sResponse.empty())
                 return crow::response(202);
 
@@ -866,6 +882,15 @@ struct HttpServer::Impl
                 entry["id"]      = e.mID;
                 entry["name"]    = e.msName;
                 entry["editor"]  = e.msEditor;
+                // The declared identity and the observed address, side by side. Omitted when there
+                // is none rather than sent as an empty string, so the page can tell "we did not
+                // record one" from "it came from nowhere".
+                if (!e.msOrigin.empty())
+                    entry["origin"] = e.msOrigin;
+                // Set when this row was part of one act that touched several jots - a tag merge.
+                // The page groups rows by it and offers to undo the whole operation.
+                if (e.mnTxnID != 0)
+                    entry["txn"] = e.mnTxnID;
                 entry["summary"] = e.msSummary;
                 // How many logged mutations this row stands for; 1 unless a run of edits to one jot
                 // was folded into it. The seq is the run's newest, which is what a restore targets.
@@ -892,8 +917,50 @@ struct HttpServer::Impl
             if (!mpHistory)       return Fail(403, "running without persistence - no history log");
 
             auto body = crow::json::load(req.body);
-            if (!body || !body.has("seq"))
-                return Fail(400, "expected {\"seq\":N}");
+            if (!body || (!body.has("seq") && !body.has("txn")))
+                return Fail(400, "expected {\"seq\":N} or {\"txn\":N}");
+
+            // A TRANSACTION IS A DIFFERENT SHAPE OF REQUEST, not a variant of a seq, so it is
+            // answered before anything reads a sequence number. `undo` chooses between putting the
+            // affected jots back as that operation left them and putting them back as they were
+            // before it - and for a tag merge, which is what transactions exist for, only the
+            // second one means anything. See persist/Undo.h.
+            if (body.has("txn"))
+            {
+                const uint64_t nTxnID = static_cast<uint64_t>(body["txn"].u());
+                const bool bUndo = body.has("undo") && body["undo"].b();
+
+                UndoReport report;
+                std::string sUndoError;
+                if (std::error_code ec = UNDO::ByTransaction(mOps, *mpHistory, nTxnID, bUndo,
+                                                             req.remote_ip_address, report,
+                                                             sUndoError))
+                    return Fail(StatusFor(ec), sUndoError);
+
+                std::vector<crow::json::wvalue> vItems;
+                for (const UndoItem& item : report.mItems)
+                {
+                    crow::json::wvalue j;
+                    j["id"]   = item.mID;
+                    j["name"] = item.msName;
+                    if (item.mnFromSeq != 0)
+                        j["from_seq"] = item.mnFromSeq;
+                    j["restored"]  = item.mbRestored;
+                    j["no_change"] = item.mbNoChange;
+                    if (!item.msError.empty())
+                        j["error"] = item.msError;
+                    vItems.push_back(std::move(j));
+                }
+
+                crow::json::wvalue out;
+                out["txn"]       = nTxnID;
+                out["undo"]      = bUndo;
+                out["restored"]  = report.mnRestored;
+                out["unchanged"] = report.mnUnchanged;
+                out["failed"]    = report.mnFailed;
+                out["jots"]      = std::move(vItems);
+                return Ok(out.dump());
+            }
 
             const uint64_t nSeq = static_cast<uint64_t>(body["seq"].i());
             // expect_updated is the multi-agent guard, same as PATCH: pass the value you last saw
@@ -914,6 +981,11 @@ struct HttpServer::Impl
             std::string sError;
             if (target.msRecord.empty() || !JOTJSON::ParseFlat(target.msRecord, record, sError))
                 return Fail(500, "history entry is unreadable: " + sError);
+
+            // The record carries the origin of whoever wrote that old version; the restore is a new
+            // write and it came from here, so it is stamped like any other - the same reasoning
+            // Ops::Restore applies to `updated`.
+            record.msOrigin = req.remote_ip_address;
 
             tJotID   conflictID = kInvalidJotID;
             AddResult result;

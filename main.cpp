@@ -376,9 +376,15 @@ int main(int argc, char** argv)
     // C5039 ("potentially throwing function passed to an extern C API") is /Wall noise on every
     // signal handler ever registered this way, not a real hazard here - OnSignal only flips an
     // atomic and cannot throw. Suppressed for exactly these two lines rather than project-wide.
+    // MSVC-only pragma - gcc/clang have no C5039 and treat the unrecognized pragma itself as a
+    // -Wunknown-pragmas error under -Werror, so it is guarded rather than seen at all off MSVC.
+#ifdef _MSC_VER
     #pragma warning(suppress : 5039)
+#endif
     std::signal(SIGINT,  OnSignal);
+#ifdef _MSC_VER
     #pragma warning(suppress : 5039)
+#endif
     std::signal(SIGTERM, OnSignal);
 
     std::printf("loom listening on http://%s:%u  (%zu jots, %s)\n",

@@ -1,0 +1,42 @@
+# loom - in-RAM jot service.
+#
+# Installed to /etc/systemd/system/loom.service by packaging/install.sh, which also writes
+# /etc/loom/loom.conf. THE UNIT CARRIES NO CONFIGURATION: everything tunable lives in that conf
+# file, so an update can replace this unit wholesale without asking anyone to re-type their port,
+# bind address or token. That separation is the whole reason updates do not lose settings.
+
+[Unit]
+Description=Loom jot service
+Documentation=https://github.com/azvenigo/Loom
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=loom
+Group=loom
+
+EnvironmentFile=/etc/loom/loom.conf
+ExecStart=/usr/local/bin/loom --bind=${LOOM_BIND} --port=${LOOM_PORT} --data=${LOOM_DATA} ${LOOM_EXTRA}
+
+# The data lock (persist/DataLock.h) makes one instance per data directory an OS-enforced fact, so
+# a restart that overlaps its predecessor fails loudly instead of interleaving writes into the WAL.
+# Give the old process time to snapshot on the way out before anything else is tried.
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=30
+KillSignal=SIGTERM
+
+# loom writes a snapshot on SIGTERM, so it must be allowed to finish. Nothing here is a sandbox
+# claim beyond what the service actually needs: it listens on a socket and owns one directory.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/var/lib/loom
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

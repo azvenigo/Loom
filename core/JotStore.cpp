@@ -446,6 +446,11 @@ std::error_code JotStore::Locked_Apply(Jot& jot, const JotInput& input, bool bCr
             mEditorPostings.resize(jot.mEditor + 1);
     }
 
+    // Not normalized, not folded, not indexed. It is an address the server observed, and the only
+    // useful thing to do with it is print it back exactly as it arrived.
+    if (input.msOrigin)
+        jot.msOrigin = *input.msOrigin;
+
     if (input.mTags)
     {
         jot.mTags.clear();
@@ -687,9 +692,10 @@ std::error_code JotStore::Remove(tJotID id)
 }
 
 std::error_code JotStore::MergeTags(const std::vector<std::string>& vFrom, const std::string& sTo,
-                                    size_t& outJotsChanged)
+                                    size_t& outJotsChanged, uint64_t& outTxnID)
 {
     outJotsChanged = 0;
+    outTxnID       = 0;
 
     const std::string sTarget = TagRegistry::Normalize(sTo);
     if (sTarget.empty() || vFrom.empty())
@@ -722,6 +728,12 @@ std::error_code JotStore::MergeTags(const std::vector<std::string>& vFrom, const
             SortedInsert(vAffected, id);
     }
 
+    // One act, so the log gets to say so. Opened only once there is something to write: bracketing
+    // an empty set would burn a transaction id on a merge that touched nothing.
+    const bool bTxn = mpJournal && !vAffected.empty();
+    if (bTxn)
+        mpJournal->BeginTransaction();
+
     for (tJotID id : vAffected)
     {
         const auto it = mJots.find(id);
@@ -749,6 +761,9 @@ std::error_code JotStore::MergeTags(const std::vector<std::string>& vFrom, const
         ++outJotsChanged;
     }
 
+    if (bTxn)
+        outTxnID = mpJournal->EndTransaction();
+
     ++mnMutations;
     return LoomOK();
 }
@@ -774,6 +789,7 @@ std::error_code JotStore::LoadFlatBatch(std::vector<FlatJot>& vFlat, size_t& out
         Jot jot;
         jot.mID          = flat.mID;
         jot.mnUpdatedUS  = flat.mnUpdatedUS;
+        jot.msOrigin     = std::move(flat.msOrigin);
         jot.msName       = flat.msName;
         jot.msSummary    = std::move(flat.msSummary);
         jot.msText       = std::move(flat.msText);
@@ -950,6 +966,7 @@ void JotStore::Locked_Flatten(const Jot& jot, FlatJot& outFlat) const
     // The default editor stays empty rather than becoming the literal "user", so the omit-empty
     // rule in the codec has one thing to test instead of two.
     outFlat.msEditor = (jot.mEditor == kDefaultEditor) ? std::string() : mEditors.Value(jot.mEditor);
+    outFlat.msOrigin = jot.msOrigin;
 
     outFlat.mTags.clear();
     outFlat.mTags.reserve(jot.mTags.size());
@@ -965,6 +982,13 @@ bool JotStore::Locked_SameContent(const Jot& a, const Jot& b)
     // mTags and mLinks are kept sorted by Locked_Apply, so element-wise equality is the right
     // comparison and not an accident of insertion order. mPendingLinks is not sorted, but it is
     // derived from the text in a stable order, so the same text yields the same vector.
+    //
+    // msOrigin IS DELIBERATELY NOT COMPARED, here or in the FlatJot twin below. It is stamped by
+    // the server on every request rather than supplied as content, so counting it would turn the
+    // same memory re-asserted from a second machine into a mutation - a bumped `updated`, a WAL
+    // line and a history row, all saying nothing changed but where the caller was sitting. The
+    // cost is that a no-op write leaves the previous writer's address in place, which is correct:
+    // the last write that actually changed something is the one worth attributing.
     return a.mEditor      == b.mEditor
         && a.msName       == b.msName
         && a.msSummary    == b.msSummary

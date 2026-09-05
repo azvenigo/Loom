@@ -25,7 +25,7 @@ jots — which is what turns a pile of notes into a small durable memory store.
 - **Multi-agent.** Optimistic concurrency (`expect_updated`) means two writers editing the same jot
   get a conflict instead of a silent overwrite. Tag near-duplicates ("infra" vs "infrastructure")
   are flagged in the write response, not silently allowed to fragment the vocabulary.
-- **Three front doors, one core.** REST, MCP (11 tools over Streamable HTTP), and an embedded
+- **Three front doors, one core.** REST, MCP (13 tools over Streamable HTTP), and an embedded
   dashboard all go through the same operations layer, so they can never drift apart.
 
 ## Building
@@ -43,10 +43,10 @@ ctest --test-dir build
 installed somewhere other than the default path). Output lands in `build-direct/`.
 
 Targets: `loom` (the service), `loombench` (in-process benchmark), `coretest` / `persisttest` /
-`mcptest` (144 assertions total).
+`mcptest` (220 assertions total).
 
-**Linux:** not yet verified. The gcc `-Wall -Wextra -Werror` path and the POSIX branch of the
-fsync/rename logic in `persist/` have not been exercised — treat as untested until proven.
+**Linux:** builds and runs. The gcc `-Wall -Wextra -Werror` path and the POSIX branch of the
+fsync/rename logic in `persist/` are both exercised there.
 
 ## Running
 
@@ -61,6 +61,12 @@ loom --port=7700 --data=./data
   claude mcp add --transport http loom http://127.0.0.1:7700/mcp
   ```
 - `--seed` populates a few sample jots, only if the store loads empty.
+- **Duplicate detection on create.** `POST /jots` and `loom_add` run the new record's name and
+  summary back through the ranker and answer with `duplicate_candidates` — the existing memories
+  that score close to it, measured as a fraction of what the new record itself scored, so the
+  threshold means the same thing in a store of sixty memories and one of sixty thousand. The MCP
+  server's first instruction is "search before writing"; this is that rule being checked. It never
+  blocks the write.
 - `--bind=0.0.0.0` to listen beyond loopback — pair it with `--token=SECRET` unless the network is
   fully trusted. Default bind is `127.0.0.1`.
 - **Address allow list.** `GET /acl` and `PUT /acl`, or the shield beside the connection state at
@@ -73,6 +79,18 @@ loom --port=7700 --data=./data
 
 Run `loom --help` for the full flag list.
 
+### Installing it as a service
+
+`packaging/` has install, update and uninstall for systemd and for Windows, with the same shape on
+both: settings live in a config file the update path is not allowed to write, the old binary is kept
+as `loom.prev`, and the update waits on a real health check — `GET /stats`, which only answers once
+the store is loaded and serving — then rolls back if it fails. See
+[packaging/README.md](packaging/README.md).
+
+```
+sudo packaging/install.sh          # then: sudo packaging/update.sh
+```
+
 ### Undo and restore
 
 Every mutation is also appended to `DIR/loom.history` — which, unlike the WAL, is **never truncated
@@ -82,7 +100,12 @@ jot *is* its before-image, so restoring is just re-applying a line that is alrea
 - `GET /history?limit=&offset=&id=` — every change, newest first.
 - `POST /history/restore` `{"seq":N}` — put that version back. A `del` entry restores whatever was in
   force immediately before it, which is what "undo this delete" means.
+- `POST /history/restore` `{"txn":N,"undo":true}` — undo a whole **multi-record operation**. See
+  below.
 - The dashboard's **History** view is the same thing with buttons.
+- `loom_history` and `loom_restore` are the same two over MCP. An agent is the writer most likely to
+  need an undo, and for a while it was the only client that did not have one — the dashboard could
+  repair a bad agent write and the agent that made it had to ask a human.
 
 **A patch that changes nothing is not a mutation.** Front ends send whole records and whole tag
 arrays rather than diffs — the dashboard's Save, its snooze buttons, an agent re-asserting a memory
@@ -94,6 +117,31 @@ agents' `expect_updated` tokens stay valid), no WAL line, and no history point. 
 The id is kept (so links to the jot survive, and a deleted jot comes back at the address others still
 reference) but `updated` is stamped now, because the restore is a change and it happened now. A
 restore is refused if the slug has since been taken by a different jot.
+
+**One act that touches many jots is logged as one act.** `POST /tags/merge` rewrites every jot
+carrying a retired tag, and each rewrite lands in the log as its own entry — so undoing a merge
+across forty jots used to mean finding and restoring forty of them, which is why `loom_merge_tags`
+called itself irreversible. Every entry a multi-record operation produces now carries a shared
+**transaction id**, and the merge returns it as `txn`:
+
+```
+POST /tags/merge      {"from":["looom"],"to":"loom"}   ->  {"changed":12,"txn":481}
+POST /history/restore {"txn":481,"undo":true}          ->  puts all 12 back as they were
+POST /history/restore {"txn":481}                      ->  re-applies it instead
+```
+
+The id needs no counter and no extra durability: it *is* the sequence number of the group's first
+entry, and because the store holds its write lock for the whole operation, a group is a contiguous
+run of sequence numbers. Each jot is attempted and reported independently — one that has been edited
+or renamed since is refused on its own rather than failing the whole undo, and the response names
+it. The History view shows the group as a single row that expands.
+
+**Writes carry a server-stamped origin.** `editor` is what a writer *calls itself* and anything can
+claim to be anyone; alongside it, Loom now records the address the connection actually arrived on,
+on the jot and on every history entry. So the record reads "claude wrote this, from 192.168.1.30"
+rather than only the unverifiable half. It is never read from a request body — the codec deliberately
+ignores an `origin` key — and it is not part of a record's content, so re-asserting an unchanged
+memory from a second machine is still a no-op rather than a write.
 
 ### Purge
 
@@ -119,9 +167,12 @@ answerable after the content is gone, which is the point of the confirmation ste
 ## Status
 
 Working: core store, persistence, REST, MCP, dashboard, an importer for simple `{"ts","entry"}`
-JSONL logs, a runtime address allow list, and an append-only history log with per-jot restore and
-an offline purge. Not yet built: a Linux build, and a design for backing a shared markdown-based memory
-store (files-as-source-of-truth, offline reconcile, conflict review) sketched but not implemented.
+JSONL logs, a runtime address allow list, an append-only history log with per-jot restore,
+transaction-grouped undo for multi-record operations, server-stamped write origins, duplicate
+detection on create, an offline purge, and service packaging with health-checked updates and
+rollback, on both Windows and Linux. Not yet built: a design for backing a shared
+markdown-based memory store (files-as-source-of-truth, offline reconcile, conflict review) sketched
+but not implemented.
 
 ## License
 

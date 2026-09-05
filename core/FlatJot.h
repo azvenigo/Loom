@@ -29,6 +29,7 @@ struct FlatJot
     tJotID                   mID         = kInvalidJotID;
     int64_t                  mnUpdatedUS = 0;      // 0 == never edited
     std::string              msEditor;             // empty == "user"
+    std::string              msOrigin;             // server-stamped address of the last writer
     std::string              msName;
     std::string              msSummary;
     std::string              msText;

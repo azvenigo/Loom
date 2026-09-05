@@ -45,6 +45,27 @@ public:
             pSink->OnDelete(id);
     }
 
+    void BeginTransaction() override
+    {
+        for (IJournalSink* pSink : mSinks)
+            pSink->BeginTransaction();
+    }
+
+    // The FIRST non-zero id wins. Only one sink - the history log - assigns them at all, so in
+    // practice there is exactly one to report; taking the first rather than the last means adding a
+    // second tracking sink later cannot silently change which id the caller is handed.
+    uint64_t EndTransaction() override
+    {
+        uint64_t nTxnID = 0;
+        for (IJournalSink* pSink : mSinks)
+        {
+            const uint64_t n = pSink->EndTransaction();
+            if (n != 0 && nTxnID == 0)
+                nTxnID = n;
+        }
+        return nTxnID;
+    }
+
 private:
     std::vector<IJournalSink*> mSinks;
 };

@@ -8,9 +8,9 @@ project(Loom CXX)
 #   loomcore     core + codec + persist + mcp, compiled STRICT (/Wall /WX, -Wall -Wextra -Werror)
 #   loom         the service: HTTP + MCP + dashboard
 #   loombench    in-process store benchmark, no socket
-#   coretest     86 assertions over the store
+#   coretest     176 assertions over the store
 #   persisttest  29 assertions over WAL/snapshot/replay
-#   mcptest      29 assertions over the MCP protocol surface
+#   mcptest      48 assertions over the MCP protocol surface
 #
 # A LIBRARY plus thin executables, deliberately breaking the ZLibraries convention of copying a
 # COMMON_SOURCE list into every tool. Loom has four front ends over one core; compiling that core
@@ -52,8 +52,10 @@ endif()
 # NOTE: unlike ZLibraries, no -march / -m<isa> flags. Nothing here is hand-vectorized, and pinning
 # x86-64 would silently exclude an ARM box for no gain.
 #
-# NOT YET BUILT ON LINUX. Everything to date is MSVC-only; gcc -Werror will almost certainly have
-# opinions, and the fsync path (persist/Journal.cpp, persist/Snapshot.cpp) switches on _WIN32.
+# BOTH PLATFORMS BUILD. The gcc -Wall -Wextra -Werror path and the POSIX branch of the fsync/rename
+# logic are exercised on Linux; MSVC /Wall /WX is the stricter of the two and is what catches most
+# of it first. The one asymmetry worth knowing: the Windows SDK headers do not survive /Wall, so
+# persist/DataLock.h reads them under #pragma warning(push, 3) - see the note there.
 
 #####################################################################################################
 # loomcore
@@ -70,6 +72,7 @@ add_library(loomcore STATIC
     codec/JotJson.cpp
     persist/History.cpp
     persist/Journal.cpp
+    persist/Undo.cpp
     persist/Purge.cpp
     persist/Snapshot.cpp
     persist/Importer.cpp
@@ -81,7 +84,7 @@ add_library(loomcore STATIC
     core/LoomError.h core/LoomTime.h core/Ops.h      core/Query.h
     core/TagRegistry.h core/Tokenizer.h
     codec/JotJson.h
-    persist/History.h persist/Journal.h persist/Purge.h persist/Snapshot.h
+    persist/History.h persist/Journal.h persist/Purge.h persist/Snapshot.h persist/Undo.h
     persist/Importer.h persist/WatchList.h
     persist/DataLock.h persist/SinkFanout.h
     mcp/McpHandler.h
@@ -95,7 +98,7 @@ target_link_libraries(loomcore PUBLIC Threads::Threads)
 # These four include vendored nlohmann, which does not survive /Wall /WX.
 set_source_files_properties(
     core/IpAcl.cpp
-    codec/JotJson.cpp persist/History.cpp persist/Journal.cpp persist/Purge.cpp
+    codec/JotJson.cpp persist/History.cpp persist/Journal.cpp persist/Purge.cpp persist/Undo.cpp
     persist/Snapshot.cpp
     persist/Importer.cpp
     persist/WatchList.cpp

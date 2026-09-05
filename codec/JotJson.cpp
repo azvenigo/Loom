@@ -51,6 +51,11 @@ namespace
         if (bVerbose || !jot.IsDefaultEditor())
             j["editor"] = jot.msEditor.empty() ? std::string("user") : jot.msEditor;
 
+        // Server-stamped, so unlike `editor` there is no default that could be materialized -
+        // a record written before origins existed, or by the importer, simply has none.
+        if (!jot.msOrigin.empty())
+            j["origin"] = jot.msOrigin;
+
         // Human-readable timestamps are strictly a verbose convenience. The id is authoritative.
         if (bVerbose)
         {
@@ -127,6 +132,7 @@ namespace JOTJSON
         if (j.contains("name")    && j["name"].is_string())    outJot.msName    = j["name"].get<std::string>();
         if (j.contains("summary") && j["summary"].is_string()) outJot.msSummary = j["summary"].get<std::string>();
         if (j.contains("editor")  && j["editor"].is_string())  outJot.msEditor  = j["editor"].get<std::string>();
+        if (j.contains("origin")  && j["origin"].is_string())  outJot.msOrigin  = j["origin"].get<std::string>();
         if (j.contains("updated") && j["updated"].is_number_integer())
             outJot.mnUpdatedUS = j["updated"].get<int64_t>();
 
@@ -192,6 +198,11 @@ namespace JOTJSON
             if (!j["editor"].is_string()) { outError = "editor must be a string"; return false; }
             outInput.msEditor = j["editor"].get<std::string>();
         }
+
+        // `origin` IS NOT READ HERE, and its absence is the feature. It is the one field on a jot
+        // that a caller may not set: the whole value of an origin is that the server observed it
+        // rather than being told it, so it is stamped by the front door after this parse. An
+        // "origin" key in a request body is silently ignored, exactly like any other unknown key.
         if (j.contains("tags"))
         {
             std::vector<std::string> vTags;
@@ -358,6 +369,26 @@ namespace JOTJSON
 
         if (!result.mWarnings.Empty())
             out["warnings"] = result.mWarnings.mMessages;
+
+        // Existing records the new one may duplicate. The same advice is also in `warnings` as a
+        // sentence, for clients that read only that; this is the machine-readable half, with ids to
+        // fetch and a similarity to judge by. Omitted when empty, per the rule at the top of this
+        // file - a create that duplicates nothing says nothing.
+        if (!result.mDuplicates.empty())
+        {
+            json arr = json::array();
+            for (const DuplicateCandidate& c : result.mDuplicates)
+            {
+                json e;
+                e["id"]         = c.mID;
+                if (!c.msName.empty())
+                    e["name"]   = c.msName;
+                e["summary"]    = c.msSummary;
+                e["similarity"] = c.mfSimilarity;
+                arr.push_back(std::move(e));
+            }
+            out["duplicate_candidates"] = std::move(arr);
+        }
 
         return out.dump();
     }

@@ -18,12 +18,17 @@ namespace
     // One history line. The record is nested rather than flattened so a put line contains a jot
     // document byte-identical to what the WAL and the snapshot hold - one serialization, three
     // readers, which is the same argument FlatJot itself is built on.
-    std::string PutLine(uint64_t nSeq, int64_t nAtUS, const std::string& sRecord)
+    std::string PutLine(uint64_t nSeq, int64_t nAtUS, uint64_t nTxnID, const std::string& sRecord)
     {
         std::string s = "{\"seq\":";
         s += std::to_string(nSeq);
         s += ",\"at\":";
         s += std::to_string(nAtUS);
+        if (nTxnID != 0)
+        {
+            s += ",\"txn\":";
+            s += std::to_string(nTxnID);
+        }
         s += ",\"op\":\"put\",\"jot\":";
         s += sRecord;
         s += "}\n";
@@ -31,16 +36,21 @@ namespace
     }
 
     std::string DelLine(uint64_t nSeq, int64_t nAtUS, tJotID id, const std::string& sName,
-                        const std::string& sEditor, const std::string& sSummary)
+                        const std::string& sEditor, const std::string& sSummary,
+                        const std::string& sOrigin, uint64_t nTxnID)
     {
         json j;
         j["seq"] = nSeq;
         j["at"]  = nAtUS;
+        if (nTxnID != 0) j["txn"] = nTxnID;
         j["op"]  = "del";
         j["id"]  = id;
         if (!sName.empty())    j["name"]    = sName;
         if (!sEditor.empty())  j["editor"]  = sEditor;
         if (!sSummary.empty()) j["summary"] = sSummary;
+        // A put line needs no such key: the nested record already carries the origin, and one
+        // serialization read three ways is the rule this file is built on. A delete has no record.
+        if (!sOrigin.empty())  j["origin"]  = sOrigin;
         return j.dump() + "\n";
     }
 }
@@ -182,8 +192,9 @@ bool History::ParseLine(const std::string& sLine, HistoryEntry& outEntry)
         return false;
 
     outEntry = HistoryEntry();
-    outEntry.mnSeq  = j.value("seq", 0ull);
-    outEntry.mnAtUS = j.value("at", int64_t(0));
+    outEntry.mnSeq   = j.value("seq", 0ull);
+    outEntry.mnAtUS  = j.value("at", int64_t(0));
+    outEntry.mnTxnID = j.value("txn", 0ull);
 
     const std::string sOp = j.value("op", std::string());
     if (sOp == "del")
@@ -193,6 +204,7 @@ bool History::ParseLine(const std::string& sLine, HistoryEntry& outEntry)
         outEntry.msName    = j.value("name", std::string());
         outEntry.msEditor  = j.value("editor", std::string());
         outEntry.msSummary = j.value("summary", std::string());
+        outEntry.msOrigin  = j.value("origin", std::string());
         return outEntry.mnSeq != 0;
     }
 
@@ -209,6 +221,7 @@ bool History::ParseLine(const std::string& sLine, HistoryEntry& outEntry)
 
     outEntry.mID      = flat.mID;
     outEntry.msName   = flat.msName;
+    outEntry.msOrigin = flat.msOrigin;
     outEntry.msEditor = flat.msEditor.empty() ? std::string("user") : flat.msEditor;
     outEntry.msSummary = Clip(flat.msSummary.empty() ? flat.msText : flat.msSummary, 110);
     return outEntry.mnSeq != 0;
@@ -225,9 +238,11 @@ std::error_code History::Open(const HistoryConfig& config)
 
     std::unique_lock lock(mMutex);
     mConfig   = config;
-    mnNextSeq = 1;
-    mnEntries = 0;
-    mnBytes   = 0;
+    mnNextSeq   = 1;
+    mnEntries   = 0;
+    mnBytes     = 0;
+    mbInTxn     = false;
+    mnOpenTxnID = 0;
     mRecent.clear();
     mQueue.clear();
     mLastSeen.clear();
@@ -289,7 +304,8 @@ std::error_code History::Open(const HistoryConfig& config)
                         if (!sDiff.empty())
                             entry.msSummary = sDiff;
                         mLastSeen[entry.mID] = { entry.msName, entry.msEditor, flat.msSummary,
-                                                  sPlain, flat.mTags, flat.msText.size() };
+                                                  sPlain, entry.msOrigin, flat.mTags,
+                                                  flat.msText.size() };
                     }
                 }
 
@@ -405,10 +421,38 @@ void History::Append(const HistoryEntry& entry, const std::string& sLine)
     mQueueCV.notify_one();
 }
 
+uint64_t History::Locked_StampTransaction(uint64_t nSeq)
+{
+    if (!mbInTxn)
+        return 0;
+    if (mnOpenTxnID == 0)
+        mnOpenTxnID = nSeq;   // the group is named after its first entry - see HistoryEntry::mnTxnID
+    return mnOpenTxnID;
+}
+
+void History::BeginTransaction()
+{
+    std::unique_lock lock(mMutex);
+    mbInTxn     = true;
+    mnOpenTxnID = 0;
+}
+
+uint64_t History::EndTransaction()
+{
+    std::unique_lock lock(mMutex);
+    const uint64_t nTxnID = mnOpenTxnID;
+    mbInTxn     = false;
+    mnOpenTxnID = 0;
+    // 0 when the bracketed operation logged nothing - the caller asked for a group and there was no
+    // group, which is not an error and must not come back as a handle to something that never was.
+    return nTxnID;
+}
+
 void History::OnPut(const FlatJot& jot)
 {
     HistoryEntry entry;
     entry.msName   = jot.msName;
+    entry.msOrigin = jot.msOrigin;
     entry.msEditor = jot.msEditor.empty() ? std::string("user") : jot.msEditor;
     const std::string sPlainCaption = Clip(jot.msSummary.empty() ? jot.msText : jot.msSummary, 110);
 
@@ -416,7 +460,8 @@ void History::OnPut(const FlatJot& jot)
         std::unique_lock lock(mMutex);
         if (!mbRunning)
             return;
-        entry.mnSeq = mnNextSeq++;
+        entry.mnSeq   = mnNextSeq++;
+        entry.mnTxnID = Locked_StampTransaction(entry.mnSeq);
 
         const auto it = mLastSeen.find(jot.mID);
         const std::string sDiff = DescribeChange(it != mLastSeen.end() ? &it->second : nullptr, jot);
@@ -425,14 +470,14 @@ void History::OnPut(const FlatJot& jot)
         // So a later delete of this same id can still be listed as "deleted <slug>: <summary>", and
         // so the NEXT put for this id has something to diff against.
         mLastSeen[jot.mID] = { entry.msName, entry.msEditor, jot.msSummary, sPlainCaption,
-                               jot.mTags, jot.msText.size() };
+                               entry.msOrigin, jot.mTags, jot.msText.size() };
     }
 
     entry.mnAtUS   = LOOMTIME::NowMicros();
     entry.mID      = jot.mID;
     entry.msRecord = JOTJSON::ToJson(jot, false);
 
-    Append(entry, PutLine(entry.mnSeq, entry.mnAtUS, entry.msRecord));
+    Append(entry, PutLine(entry.mnSeq, entry.mnAtUS, entry.mnTxnID, entry.msRecord));
 }
 
 void History::OnDelete(tJotID id)
@@ -442,12 +487,14 @@ void History::OnDelete(tJotID id)
         std::unique_lock lock(mMutex);
         if (!mbRunning)
             return;
-        entry.mnSeq = mnNextSeq++;
+        entry.mnSeq   = mnNextSeq++;
+        entry.mnTxnID = Locked_StampTransaction(entry.mnSeq);
         const auto it = mLastSeen.find(id);
         if (it != mLastSeen.end())
         {
             entry.msName    = it->second.msName;
             entry.msEditor  = it->second.msEditor;
+            entry.msOrigin  = it->second.msOrigin;
             entry.msSummary = it->second.msCaption;   // the display line, not the raw diff field
         }
     }
@@ -456,7 +503,8 @@ void History::OnDelete(tJotID id)
     entry.mbDelete = true;
     entry.mID      = id;
 
-    Append(entry, DelLine(entry.mnSeq, entry.mnAtUS, id, entry.msName, entry.msEditor, entry.msSummary));
+    Append(entry, DelLine(entry.mnSeq, entry.mnAtUS, id, entry.msName, entry.msEditor,
+                          entry.msSummary, entry.msOrigin, entry.mnTxnID));
 }
 
 
@@ -506,8 +554,16 @@ void History::List(tJotID idFilter, size_t nLimit, size_t nOffset,
             // A delete is its own event at both ends: it never joins a run of edits, and a run does
             // not reach back across one into the jot's previous life. Editors are kept apart too, so
             // one agent's work is never folded into another's.
+            //
+            // So is a multi-record operation, and for the same reason. A tag merge that rewrites a
+            // jot somebody was editing minutes earlier is not part of that editing session; folding
+            // the two would hide the merge behind an "edited" caption and leave its transaction id
+            // attached to a row that also stands for writes the merge had nothing to do with -
+            // which is the one thing the id must never mean. Comparing the ids rather than testing
+            // for zero also keeps two different operations apart, without special-casing either.
             const bool bMergeable = !entry.mbDelete && !run.mbDelete
                                  && entry.msEditor == run.msEditor
+                                 && entry.mnTxnID  == run.mnTxnID
                                  && (mOldestAt[entry.mID] - entry.mnAtUS) <= nWindowUS;
             if (bMergeable)
             {
@@ -583,6 +639,82 @@ bool History::Previous(uint64_t nSeq, HistoryEntry& outEntry) const
     // has to as well, or "undo this delete" for anything older than the window wrongly reports
     // "nothing to restore" instead of finding the earlier version that is really sitting there.
     return ScanFileForPrevious(nSeq, anchor.mID, outEntry);
+}
+
+void History::ListTransaction(uint64_t nTxnID, std::vector<HistoryEntry>& outEntries) const
+{
+    outEntries.clear();
+    if (nTxnID == 0)
+        return;
+
+    {
+        std::unique_lock lock(mMutex);
+
+        // Oldest first, which is also apply order - a group that touched one jot twice must be
+        // replayed in the order it happened or the older state would win.
+        bool bHasFirst = false;
+        for (const HistoryEntry& e : mRecent)
+        {
+            if (e.mnTxnID != nTxnID)
+            {
+                // The group is a contiguous run of seqs, so the first entry past it ends the search.
+                if (!outEntries.empty())
+                    break;
+                continue;
+            }
+            if (e.mnSeq == nTxnID)
+                bHasFirst = true;
+            outEntries.push_back(e);
+        }
+
+        // Holding the group's FIRST entry proves the memory window reaches back past its start, so
+        // what is here is all of it. Without that entry the window begins somewhere inside the group
+        // - or misses it entirely - and the file is the only complete copy.
+        if (bHasFirst)
+            return;
+    }
+
+    outEntries.clear();
+    ScanFileForTransaction(nTxnID, outEntries);
+}
+
+void History::ScanFileForTransaction(uint64_t nTxnID, std::vector<HistoryEntry>& outEntries) const
+{
+    std::string sPath;
+    {
+        std::unique_lock lock(mMutex);
+        sPath = mConfig.msPath;
+    }
+    if (sPath.empty())
+        return;
+
+    // Both generations, oldest first, exactly as ScanFileFor - and for the same reason it is linear:
+    // a group old enough to have left memory is being undone by hand, once.
+    //
+    // A group can straddle the rotation boundary, so this does NOT stop at the end of the first
+    // generation that contains a member; it stops only when it has seen a later seq than the group.
+    for (const std::string& sTry : { sPath + ".1", sPath })
+    {
+        FILE* pFile = std::fopen(sTry.c_str(), "rb");
+        if (!pFile)
+            continue;
+
+        std::string sLine;
+        int ch = 0;
+        while ((ch = std::fgetc(pFile)) != EOF)
+        {
+            if (ch != '\n')
+            {
+                sLine.push_back(static_cast<char>(ch));
+                continue;
+            }
+            HistoryEntry entry;
+            if (!sLine.empty() && ParseLine(sLine, entry) && entry.mnTxnID == nTxnID)
+                outEntries.push_back(std::move(entry));
+            sLine.clear();
+        }
+        std::fclose(pFile);
+    }
 }
 
 bool History::ScanFileFor(uint64_t nSeq, HistoryEntry& outEntry) const

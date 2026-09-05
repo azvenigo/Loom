@@ -103,6 +103,27 @@ public:
     // last one written and needs no notion of which was an insert.
     virtual void OnPut(const FlatJot& jot) = 0;
     virtual void OnDelete(tJotID id) = 0;
+
+    //--------------------------------------------------------------------------------------------
+    // MULTI-RECORD OPERATIONS. Brackets one act that touches many jots, so a log can record that
+    // they were one act rather than N unrelated ones.
+    //
+    // MergeTags is the first operation to need this and it is why loom_merge_tags called itself
+    // irreversible: every individual write it makes is restorable, but nothing said they belonged
+    // together, so undoing a merge across forty jots meant finding and restoring forty entries.
+    //
+    // DEFAULT NO-OPS, deliberately. The WAL does not care: its replay applies puts in order and a
+    // grouping would change nothing about the result. Only the undo log has any use for it, so it
+    // is the only sink that overrides these, and adding a third sink costs nothing.
+    //
+    // Called under the store's write lock, like OnPut, and subject to the same rule: no disk, no
+    // store access. Not nestable - the store brackets one operation at a time.
+    //--------------------------------------------------------------------------------------------
+    virtual void BeginTransaction() {}
+
+    // Returns the id the sink assigned to the group, or 0 if it does not track them - which is what
+    // lets the caller hand it back as "undo this whole thing" without inventing a second id space.
+    virtual uint64_t EndTransaction() { return 0; }
 };
 
 // A jot holds interned tag and editor ids, so anything rendering one needs the tables to turn them
@@ -134,6 +155,7 @@ inline FlatJot Flatten(const Jot& jot, const NameTables& names)
     FlatJot f;
     f.mID           = jot.mID;
     f.mnUpdatedUS   = jot.mnUpdatedUS;
+    f.msOrigin      = jot.msOrigin;
     f.msName        = jot.msName;
     f.msSummary     = jot.msSummary;
     f.msText        = jot.msText;
@@ -194,8 +216,12 @@ public:
 
     // Rewrites every jot carrying any tag in vFrom to carry sTo instead. Returns the number of
     // jots touched. Backs POST /tags/merge.
+    //
+    // outTxnID is the id the journal sink gave the whole rewrite, or 0 when nothing tracks them
+    // (no persistence, or history disabled). It is the handle "undo that merge" is spelled with -
+    // see IJournalSink::BeginTransaction.
     std::error_code MergeTags(const std::vector<std::string>& vFrom, const std::string& sTo,
-                              size_t& outJotsChanged);
+                              size_t& outJotsChanged, uint64_t& outTxnID);
 
     //----------------------------------------------------------------------------------------
     // Bulk load. Takes the write lock once for the whole batch.

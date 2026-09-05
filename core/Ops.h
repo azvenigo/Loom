@@ -34,6 +34,38 @@ struct OpsConfig
     // Past this many live non-reserved tags, every write carries a vocabulary-size warning. Not a
     // hard cap - refusing writes to protect a tag budget would be worse than the problem.
     size_t mnMaxTags      = 200;
+
+    //--------------------------------------------------------------------------------------------
+    // DUPLICATE DETECTION ON CREATE. How many existing memories a new one may be told it resembles,
+    // and how close it has to be to count.
+    //
+    // mnDuplicateCandidates of 0 turns the check off entirely.
+    //--------------------------------------------------------------------------------------------
+    size_t mnDuplicateCandidates = 3;
+
+    // A FRACTION OF THE NEW RECORD'S OWN SCORE, not an absolute one. BM25 scores are unbounded and
+    // depend on corpus size, document lengths and how rare the query terms happen to be, so a fixed
+    // threshold that means "very similar" in a store of sixty memories means "unrelated" in one of
+    // sixty thousand. Scoring the new jot against its own summary gives the ceiling that query can
+    // reach in THIS store right now, and everything else is measured against it.
+    //
+    // 0.5 rather than something tighter because the new jot is also the newest, and the recency
+    // multiplier (RANK::kRecencyWeight) gives it up to 35% more than an otherwise identical record
+    // written months ago - so an exact duplicate scores around 0.74 here, not 1.0.
+    float  mfDuplicateRatio      = 0.5f;
+};
+
+// An existing memory that resembles one just created. Advice, exactly like OpWarnings - the write
+// has already happened and is not in question.
+struct DuplicateCandidate
+{
+    tJotID      mID = kInvalidJotID;
+    std::string msName;
+    std::string msSummary;     // summary, else a clipped first line - enough to recognize it by
+
+    // Relevance relative to what the new record itself scored on the same query, so 1.0 means "as
+    // good a match for this summary as the new jot is". See OpsConfig::mfDuplicateRatio.
+    float       mfSimilarity = 0.0f;
 };
 
 // A write's non-fatal advice. These ride back with the new id and are the entire mechanism by
@@ -54,6 +86,10 @@ struct AddResult
     // The patch resolved to the record that was already there, so nothing was written. See
     // MutationResult::mbNoChange.
     bool       mbNoChange = false;
+
+    // Existing memories the new one may duplicate. Only ever populated on a create - an update to a
+    // jot that already exists cannot be a duplicate of anything, it IS the record.
+    std::vector<DuplicateCandidate> mDuplicates;
 };
 
 struct SearchResultSet
@@ -123,8 +159,11 @@ public:
     std::error_code Restore(const FlatJot& record, int64_t nExpectUpdatedUS, tJotID& outConflictID,
                             AddResult& outResult);
 
+    // outTxnID names the whole rewrite in the history log, so the front ends can offer "undo that
+    // merge" as one act instead of asking somebody to restore each affected jot in turn. 0 when
+    // there is no history log to record it in.
     std::error_code MergeTags(const std::vector<std::string>& vFrom, const std::string& sTo,
-                              size_t& outJotsChanged);
+                              size_t& outJotsChanged, uint64_t& outTxnID);
 
     //----------------------------------------------------------------------------------------
     // Reads
@@ -177,6 +216,20 @@ public:
 
 private:
     void CollectWarnings(const std::vector<TagSuggestion>& vSuggestions, OpWarnings& outWarnings) const;
+
+    // Runs a newly created jot's name and summary back through the ranker and reports the existing
+    // records that come back close to it.
+    //
+    // THE MCP SERVER'S FIRST INSTRUCTION IS "search before writing - the thing you are about to
+    // record may already be here", and until this existed nothing assisted or checked that, so
+    // duplicates accumulated silently and only surfaced when somebody read two of them side by
+    // side. The index is already built and this is the query it answers constantly, so the check
+    // costs one search per create.
+    //
+    // IT NEVER BLOCKS THE WRITE, for the same reason the tag-drift suggestions do not: an agent
+    // that meant to write a second, distinct memory should not have to argue with the store. It is
+    // told what it may not have seen and the record is already there either way.
+    void CollectDuplicates(const Jot& created, AddResult& outResult) const;
 
     JotStore& mStore;
     OpsConfig mConfig;

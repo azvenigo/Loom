@@ -37,18 +37,34 @@
 //   JSON-RPC response carrying isError:true. That is what puts the failure in front of the model,
 //   which can then read it and do something sensible, like re-fetch and retry the edit. Reporting
 //   a 409 as a protocol error would hide the one piece of information the agent needed.
+//
+// HISTORY IS OPTIONAL, and that is why the pointer is nullable rather than a reference. A loom run
+// with --data absent has no journal and no history log, and the MCP surface still works - it is
+// the store that is being served, not the persistence. loom_history and loom_restore then answer
+// with a tool error saying so, exactly as the REST routes answer 403, rather than the constructor
+// demanding something the caller may not have.
 //////////////////////////////////////////////////////////////////////////////////////////////////
+
+class History;
 
 class McpHandler
 {
 public:
-    McpHandler(Ops& ops, JotStore& store);
+    // pHistory may be null - see the note above. It must outlive this handler when it is not.
+    McpHandler(Ops& ops, JotStore& store, History* pHistory = nullptr);
 
     // Returns the JSON-RPC response body, or an EMPTY string when the message was a notification
     // and the protocol requires no reply (the caller should answer HTTP 202 with no body).
-    std::string Handle(const std::string& sRequestJson);
+    //
+    // sOrigin is where the transport saw this message come from - the connection's remote address,
+    // which the caller supplies because this class has no socket to ask. It is stamped onto every
+    // jot the message writes, alongside the `editor` the caller declared for itself; see
+    // Jot::msOrigin. Empty is legal and means "no transport that could tell", which is what the
+    // tests and any future stdio front end pass.
+    std::string Handle(const std::string& sRequestJson, const std::string& sOrigin = {});
 
 private:
     Ops&      mOps;
     JotStore& mStore;
+    History*  mpHistory = nullptr;
 };
