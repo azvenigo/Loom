@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Alexander Zvenigorodsky. MIT License. See LICENSE.
+﻿// Copyright (c) 2026 Alexander Zvenigorodsky. MIT License. See LICENSE.
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // The only translation unit in Loom that includes crow. See HttpServer.h for why that matters.
 //
@@ -46,21 +46,21 @@ namespace
     crow::response Fail(const std::error_code& ec)
     {
         crow::response res(StatusFor(ec), JOTJSON::ErrorToJson(ec.message()));
-        res.set_header("Content-Type", "application/json");
+        res.set_header("Content-Type", "application/json; charset=utf-8");
         return res;
     }
 
     crow::response Fail(int nStatus, const std::string& sMessage)
     {
         crow::response res(nStatus, JOTJSON::ErrorToJson(sMessage));
-        res.set_header("Content-Type", "application/json");
+        res.set_header("Content-Type", "application/json; charset=utf-8");
         return res;
     }
 
     crow::response Ok(std::string sBody)
     {
         crow::response res(200, std::move(sBody));
-        res.set_header("Content-Type", "application/json");
+        res.set_header("Content-Type", "application/json; charset=utf-8");
         return res;
     }
 
@@ -259,7 +259,7 @@ struct HttpServer::Impl
 
             crow::response res(result.mbCreated ? 201 : 200,
                 JOTJSON::MutationToJson(result, Names(), ParamFlag(req, "verbose")));
-            res.set_header("Content-Type", "application/json");
+            res.set_header("Content-Type", "application/json; charset=utf-8");
             return res;
         });
 
@@ -364,7 +364,7 @@ struct HttpServer::Impl
                 return crow::response(202);
 
             crow::response res(200, sResponse);
-            res.set_header("Content-Type", "application/json");
+            res.set_header("Content-Type", "application/json; charset=utf-8");
             return res;
         });
 
