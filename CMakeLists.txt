@@ -7,6 +7,7 @@ project(Loom CXX)
 # Targets:
 #   loomcore     core + codec + persist + mcp, compiled STRICT (/Wall /WX, -Wall -Wextra -Werror)
 #   loom         the service: HTTP + MCP + dashboard
+#   jotpost      standalone write-only ingest endpoint - see jotpost/main.cpp
 #   loombench    in-process store benchmark, no socket
 #   coretest     176 assertions over the store
 #   persisttest  29 assertions over WAL/snapshot/replay
@@ -122,6 +123,25 @@ endif()
 
 # Crow's headers are the noisiest of the vendored set; quarantine them to this one file.
 set_source_files_properties(http/HttpServer.cpp PROPERTIES
+    COMPILE_OPTIONS "$<IF:$<CXX_COMPILER_ID:MSVC>,/W3;/WX-,-w>")
+
+#####################################################################################################
+# jotpost - standalone write-only ingest endpoint, sibling to loom rather than part of it
+#####################################################################################################
+
+add_executable(jotpost jotpost/main.cpp)
+
+target_include_directories(jotpost PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/vendor/asio ${CMAKE_CURRENT_SOURCE_DIR}/vendor/crow)
+target_compile_definitions(jotpost PRIVATE ASIO_STANDALONE CROW_DISABLE_STATIC_DIR)
+target_link_libraries(jotpost PRIVATE Threads::Threads)
+
+if(WIN32)
+    target_compile_definitions(jotpost PRIVATE _WIN32_WINNT=0x0A00)
+    target_link_libraries(jotpost PRIVATE ws2_32 mswsock)
+endif()
+
+set_source_files_properties(jotpost/main.cpp PROPERTIES
     COMPILE_OPTIONS "$<IF:$<CXX_COMPILER_ID:MSVC>,/W3;/WX-,-w>")
 
 #####################################################################################################

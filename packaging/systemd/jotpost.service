@@ -1,0 +1,26 @@
+# jotpost - standalone write-only jot ingest endpoint. See jotpost/main.cpp for what it does and why.
+#
+# Kept deliberately minimal (no separate conf file, no dedicated user) to match how loom.service
+# itself actually runs on azzorin today - straight out of the dev build tree as the owning user, not
+# the packaged /usr/local/bin + dedicated-service-account story in packaging/install.sh. Revisit if
+# this ever needs the same install/update/rollback treatment loom got.
+
+[Unit]
+Description=jotpost - write-only jot ingest endpoint
+Documentation=https://github.com/azvenigo/Loom
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=alex
+Group=alex
+ExecStart=/home/alex/dev/git/Loom/build/jotpost --bind=192.168.1.112 --port=7701 --path=/mnt/fast/web/jot_log/jots.json
+Restart=on-failure
+RestartSec=3
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
