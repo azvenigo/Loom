@@ -107,6 +107,7 @@ std::error_code WatchList::Load(const std::string& sConfigPath, const std::strin
     msStatePath  = sStatePath;
     mPaths.clear();
     mState.clear();
+    mRotate.clear();
 
     std::string sBody;
     if (ReadWholeFile(sConfigPath, sBody))
@@ -116,12 +117,25 @@ std::error_code WatchList::Load(const std::string& sConfigPath, const std::strin
         {
             outWarning = "watch list at " + sConfigPath + " is unreadable - starting empty";
         }
-        else if (j.contains("paths") && j["paths"].is_array())
+        else
         {
-            for (const auto& p : j["paths"])
+            if (j.contains("paths") && j["paths"].is_array())
             {
-                if (p.is_string())
-                    mPaths.push_back(p.get<std::string>());
+                for (const auto& p : j["paths"])
+                {
+                    if (p.is_string())
+                        mPaths.push_back(p.get<std::string>());
+                }
+            }
+            // Absent entirely, or a path missing from it, both mean "rotate" - see RotateFor.
+            // Not exposed from PUT /watch yet, so this is a hand-edit of the file for now.
+            if (j.contains("rotate") && j["rotate"].is_object())
+            {
+                for (auto it = j["rotate"].begin(); it != j["rotate"].end(); ++it)
+                {
+                    if (it.value().is_boolean())
+                        mRotate[it.key()] = it.value().get<bool>();
+                }
             }
         }
     }
@@ -161,6 +175,16 @@ std::error_code WatchList::SaveConfigLocked() const
 {
     json j;
     j["paths"] = mPaths;
+    // Round-tripped even though nothing in this class mutates it yet (PUT /watch only ever
+    // touches mPaths) - without this, a PUT from the dashboard would silently erase a rotate
+    // entry someone hand-edited into the file.
+    if (!mRotate.empty())
+    {
+        json rotate = json::object();
+        for (const auto& [sPath, bRotate] : mRotate)
+            rotate[sPath] = bRotate;
+        j["rotate"] = std::move(rotate);
+    }
     return WriteWholeFileAtomic(msConfigPath, j.dump(2));
 }
 
@@ -229,6 +253,9 @@ std::vector<WatchStatus> WatchList::Resolve() const
         WatchStatus status;
         status.msPath = sPath;
 
+        const auto itRotate = mRotate.find(sPath);
+        status.mbRotate = (itRotate == mRotate.end()) || itRotate->second;
+
         const auto it = mState.find(sPath);
         if (it != mState.end())
             status.mnLastIngestUS = it->second.mnLastIngestUS;
@@ -269,4 +296,11 @@ std::error_code WatchList::MarkIngested(const std::string& sPath, uint64_t nSize
                             std::chrono::system_clock::now().time_since_epoch()).count();
 
     return SaveStateLocked();
+}
+
+bool WatchList::RotateFor(const std::string& sPath) const
+{
+    std::shared_lock lock(mMutex);
+    const auto it = mRotate.find(sPath);
+    return it == mRotate.end() || it->second;
 }

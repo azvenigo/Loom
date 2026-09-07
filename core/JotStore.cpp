@@ -468,9 +468,14 @@ std::error_code JotStore::Locked_Apply(Jot& jot, const JotInput& input, bool bCr
             for (TagSuggestion& s : vFor)
                 outSuggestions.push_back(std::move(s));
 
+            // Checked before Intern() makes it exist - Intern() itself has no "did this just get
+            // created" return, and asking after the fact would always say no.
+            const bool bNewTag = mTags.Find(sTag) == kInvalidTagID;
             const tTagID id = mTags.Intern(sTag);
             if (id == kInvalidTagID)
                 continue;
+            if (bNewTag)
+                ++mnTagsCreated;
             if (id >= mTagPostings.size())
                 mTagPostings.resize(id + 1);
 
@@ -548,6 +553,11 @@ std::error_code JotStore::Add(const JotInput& input, MutationResult& outResult)
     Locked_JournalPut(stored);
 
     ++mnMutations;
+    ++mnAdded;
+    const tTagID todoID = mTags.Find("todo");
+    if (todoID != kInvalidTagID &&
+        std::find(stored.mTags.begin(), stored.mTags.end(), todoID) != stored.mTags.end())
+        ++mnTodosAdded;
     outResult.mJot      = stored;
     outResult.mbCreated = true;
     return LoomOK();
@@ -635,6 +645,13 @@ std::error_code JotStore::Update(tJotID id, const JotInput& patch, int64_t nExpe
     Locked_JournalPut(jot);
 
     ++mnMutations;
+    // Only a jot newly GAINING 'todo' counts - re-saving one that already had it is not new work
+    // appearing, same "a patch that changes nothing is not a mutation" spirit as above.
+    const tTagID todoID = mTags.Find("todo");
+    if (todoID != kInvalidTagID &&
+        std::find(jot.mTags.begin(), jot.mTags.end(), todoID) != jot.mTags.end() &&
+        std::find(before.mTags.begin(), before.mTags.end(), todoID) == before.mTags.end())
+        ++mnTodosAdded;
     outResult.mJot      = jot;
     outResult.mbCreated = false;
     return LoomOK();
@@ -806,9 +823,15 @@ std::error_code JotStore::LoadFlatBatch(std::vector<FlatJot>& vFlat, size_t& out
             const std::string sTag = TagRegistry::Normalize(sRaw);
             if (sTag.empty())
                 continue;
+            // bJournal is true only for a live import (see the header comment on this method) -
+            // WAL/snapshot replay re-interns tags that already exist from the last run and must not
+            // recount them as newly coined.
+            const bool bNewTag = bJournal && mTags.Find(sTag) == kInvalidTagID;
             const tTagID id = mTags.Intern(sTag);
             if (id == kInvalidTagID)
                 continue;
+            if (bNewTag)
+                ++mnTagsCreated;
             if (id >= mTagPostings.size())
                 mTagPostings.resize(id + 1);
             if (std::find(jot.mTags.begin(), jot.mTags.end(), id) == jot.mTags.end())
@@ -874,7 +897,17 @@ std::error_code JotStore::Locked_LoadBatch(std::vector<Jot>& vJots, size_t& outL
         }
 
         if (bJournal)
+        {
             Locked_JournalPut(stored);
+
+            // Same bJournal-gates-liveness reasoning as the tag loop above: only a live import
+            // (bJournal true) is a jot that just appeared, not one being replayed back into memory.
+            ++mnAdded;
+            const tTagID todoID = mTags.Find("todo");
+            if (todoID != kInvalidTagID &&
+                std::find(stored.mTags.begin(), stored.mTags.end(), todoID) != stored.mTags.end())
+                ++mnTodosAdded;
+        }
 
         ++outLoaded;
     }
@@ -945,6 +978,9 @@ StoreStats JotStore::GetStats() const
     s.mnPendingLinks = mPendingLinks.size();
     s.mnEditors      = mEditors.Count();
     s.mnMutations    = mnMutations;
+    s.mnAdded        = mnAdded;
+    s.mnTagsCreated  = mnTagsCreated;
+    s.mnTodosAdded   = mnTodosAdded;
     if (!mChrono.empty())
     {
         s.mnOldestUS = mChrono.front();

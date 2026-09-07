@@ -66,6 +66,11 @@ struct StoreStats
     int64_t mnOldestUS      = 0;
     int64_t mnNewestUS      = 0;
     uint64_t mnMutations    = 0;   // since process start
+    uint64_t mnAdded        = 0;   // new jots created since process start (API writes and live
+                                    // file imports; WAL/snapshot replay at startup does not count -
+                                    // that is loading history, not activity that just happened)
+    uint64_t mnTagsCreated  = 0;   // distinct tag names introduced to the vocabulary, same window
+    uint64_t mnTodosAdded   = 0;   // jots that newly gained the 'todo' tag, same window
 };
 
 // Durability counters, reported alongside StoreStats by /stats. Declared here rather than in
@@ -373,7 +378,10 @@ private:
 
     StoreConfig               mConfig;
     std::atomic<int64_t>      mnLastID{ 0 };
-    uint64_t                  mnMutations = 0;
+    uint64_t                  mnMutations   = 0;
+    uint64_t                  mnAdded       = 0;
+    uint64_t                  mnTagsCreated = 0;
+    uint64_t                  mnTodosAdded  = 0;
 
     std::unordered_map<tJotID, Jot>        mJots;
     std::unordered_map<std::string, tJotID> mNameIndex;

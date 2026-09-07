@@ -21,6 +21,7 @@
 
 #include <atomic>
 #include <cstdlib>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -261,6 +262,8 @@ struct HttpServer::Impl
     IpAcl&               mAcl;
     History*             mpHistory = nullptr;
     WatchList&           mWatch;
+    Watcher*             mpWatcher = nullptr;
+    RunLedger*           mpLedger  = nullptr;
     McpHandler           mMcp;
     SnapshotConfig       mSnapConfig;
     crow::App<AclGuard>  mApp;
@@ -271,9 +274,10 @@ struct HttpServer::Impl
 
     Impl(Ops& ops, JotStore& store, const HttpConfig& config,
          Journal* pJournal, const SnapshotConfig& snapConfig, IpAcl& acl, History* pHistory,
-         WatchList& watch)
+         WatchList& watch, Watcher* pWatcher, RunLedger* pLedger)
         : mOps(ops), mStore(store), mConfig(config), mpJournal(pJournal), mAcl(acl),
-          mpHistory(pHistory), mWatch(watch), mMcp(ops, store, pHistory), mSnapConfig(snapConfig),
+          mpHistory(pHistory), mWatch(watch), mpWatcher(pWatcher), mpLedger(pLedger),
+          mMcp(ops, store, pHistory), mSnapConfig(snapConfig),
           msOrigin(ResolveAdvertisedOrigin(config))
     {
         // The middleware instance is owned by the app, so it is wired here rather than constructed
@@ -601,8 +605,70 @@ struct HttpServer::Impl
             PersistStats persist;
             if (mpJournal)
                 mpJournal->FillStats(persist);
+
+            std::optional<TriageStats> triage;
+            if (mpLedger)
+                triage = mpLedger->Stats(mpWatcher && mpWatcher->IsBreakerOpen(),
+                                        mpWatcher ? mpWatcher->ConsecutiveFailures() : 0,
+                                        mpWatcher && mpWatcher->IsBudgetExceeded(),
+                                        mpWatcher ? mpWatcher->RunsThisProcess() : 0);
+
+            // "Needs attention" - unprocessed jots plus watched files sitting with unread growth.
+            // Same definition as the dashboard's own attention card (web/Dashboard.h's
+            // isUnprocessed/openAttention), computed here instead so it is exact - a full store
+            // count via mnMatched, not the client's newest-200 sample - and available to any caller
+            // of /stats, not just the dashboard.
+            Query query;
+            query.mTags   = { "status:unprocessed" };
+            query.mnLimit = 1;   // only mnMatched is read; nothing here wants the jots themselves
+            SearchResultSet results;
+            JOTJSON::AttentionStats attention;
+            if (!mOps.Search(query, results))
+                attention.mnUnprocessedJots = results.mnMatched;
+            for (const WatchStatus& file : mWatch.Resolve())
+                if (file.mbPending)
+                    ++attention.mnPendingFiles;
+
             return Ok(JOTJSON::StatsToJson(mOps.Stats(), persist, msOrigin,
-                                           !mConfig.msToken.empty()));
+                                           !mConfig.msToken.empty(),
+                                           triage ? &*triage : nullptr, &attention));
+        });
+
+        //------------------------------------------------------------------------------------
+        // Triage run history - what Watcher's background agent invocations have actually cost.
+        // See persist/RunLedger.h. Read-only: runs are recorded internally by Watcher, never
+        // posted here - there is no client this needs to accept a run report FROM.
+        //------------------------------------------------------------------------------------
+
+        CROW_ROUTE(mApp, "/triage/runs").methods(crow::HTTPMethod::Get)
+        ([this](const crow::request& req)
+        {
+            if (!Authorized(req)) return Fail(401, "missing or invalid bearer token");
+
+            std::vector<TriageRun> vRuns;
+            if (mpLedger)
+                vRuns = mpLedger->Recent(ParamSize(req, "limit", 50));
+
+            std::vector<crow::json::wvalue> vOut;
+            for (const TriageRun& r : vRuns)
+            {
+                crow::json::wvalue e;
+                e["at"]           = r.mnAtUS;
+                e["duration_ms"]  = r.mnDurationMS;
+                e["cost_usd"]     = r.mfCostUSD;
+                e["input_tokens"] = r.mnInputTokens;
+                e["output_tokens"] = r.mnOutputTokens;
+                e["jots_given"]   = r.mnJotsGiven;
+                e["success"]      = r.mbSuccess;
+                e["trigger"]      = r.msTrigger;
+                if (!r.msSessionID.empty()) e["session_id"] = r.msSessionID;
+                if (!r.msFailure.empty())   e["failure"]    = r.msFailure;
+                vOut.push_back(std::move(e));
+            }
+
+            crow::json::wvalue out;
+            out["runs"] = std::move(vOut);
+            return Ok(out.dump());
         });
 
         //------------------------------------------------------------------------------------
@@ -1141,8 +1207,9 @@ struct HttpServer::Impl
 
 HttpServer::HttpServer(Ops& ops, JotStore& store, const HttpConfig& config,
                        Journal* pJournal, const SnapshotConfig& snapConfig, IpAcl& acl,
-                       History* pHistory, WatchList& watch)
-    : mpImpl(std::make_unique<Impl>(ops, store, config, pJournal, snapConfig, acl, pHistory, watch))
+                       History* pHistory, WatchList& watch, Watcher* pWatcher, RunLedger* pLedger)
+    : mpImpl(std::make_unique<Impl>(ops, store, config, pJournal, snapConfig, acl, pHistory, watch,
+                                    pWatcher, pLedger))
 {
     mpImpl->Routes();
 }

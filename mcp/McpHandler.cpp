@@ -118,6 +118,11 @@ namespace
                 {"order",    Str("relevance | newest | oldest. Defaults to relevance when there is "
                                  "a query, newest otherwise.")},
                 {"limit",    json{{"type","integer"},{"description","Max results (default 20)."}}},
+                {"offset",   json{{"type","integer"},
+                             {"description","Results to skip, for paging past a truncated result "
+                                            "set - pass the previous call's 'returned' count rather "
+                                            "than re-requesting with a larger 'limit', which "
+                                            "re-sends jots you already have."}}},
                 {"brief",    json{{"type","boolean"},
                              {"description","Drop each hit's body (default true - this is the "
                                             "normal way to search). Set false only once you know "
@@ -414,6 +419,7 @@ namespace
             spec.msUntil  = ReadStr(args, "until");
             spec.msOrder  = ReadStr(args, "order");
             spec.mnLimit  = static_cast<size_t>(ReadInt(args, "limit", 20));
+            spec.mnOffset = static_cast<size_t>(ReadInt(args, "offset", 0));
             const bool bBrief = ReadBool(args, "brief", true);
 
             Query query;

@@ -5,6 +5,7 @@
 #include "core/JotStore.h"
 #include "core/Ops.h"
 #include "core/TagRegistry.h"
+#include "persist/RunLedger.h"
 
 #include <string>
 #include <vector>
@@ -74,8 +75,24 @@ namespace JOTJSON
     // sOrigin is the address a remote machine should use to reach this server; empty leaves the
     // "server" block out entirely. It is here rather than in StoreStats because it is a fact about
     // the process, not the store - the same store answers on a different origin on every machine.
+    //
+    // "Needs attention" tally for /stats - unprocessed jots plus watched files sitting with unread
+    // growth, the same definition the dashboard's own attention card uses. A plain DTO rather than
+    // a live query: the codec never touches the store or the watch list itself, see the file header.
+    struct AttentionStats
+    {
+        size_t mnUnprocessedJots = 0;
+        size_t mnPendingFiles    = 0;
+    };
+
+    // pTriage is null for callers with nothing to report (the MCP stats tool, which has no
+    // Watcher/RunLedger behind it) - the "triage" block is simply omitted rather than emitted
+    // empty, same omit-empty rule as everything else in this file. pAttention is null for the same
+    // reason (the MCP stats tool has no WatchList either).
     std::string StatsToJson(const StoreStats& stats, const PersistStats& persist,
-                            const std::string& sOrigin = {}, bool bAuthRequired = false);
+                            const std::string& sOrigin = {}, bool bAuthRequired = false,
+                            const TriageStats* pTriage = nullptr,
+                            const AttentionStats* pAttention = nullptr);
 
     // The write response: the record, plus any non-fatal tag warnings. The warnings ride with the
     // result rather than arriving out of band, because an agent that has to make a second call to

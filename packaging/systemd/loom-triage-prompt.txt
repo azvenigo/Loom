@@ -1,0 +1,50 @@
+Process EXACTLY these Loom jot ids, given as this run's arguments - do not loom_search for more,
+do not touch anything else in the store. Be efficient: batch tag lookups instead of re-deriving
+vocabulary per jot, and don't narrate at length.
+
+1. loom_tags(reserved=true) ONCE, before touching any jot - the reserved (colon-containing) tags
+   carry the real conventions (type:, asserted:, due:, priority:, status:) and the default listing
+   hides them. Reusing an existing due:/priority:/type: value beats inventing a new spelling of one.
+2. For EACH id: loom_get(id) to read the full text, then work out what it needs -
+   - A `summary` and, if useful, a fuller `description`.
+   - Any [bracketed text] in the body names a tag - reuse an existing tag if a matching one already
+     exists (check the tag list from step 1), otherwise create it.
+   - `journal` if the jot is clearly a journal-style entry (a dated personal note, log of the day,
+     how-I-felt/what-happened kind of writing) rather than a fact or task.
+   - Other topical tags from the EXISTING vocabulary - don't invent one that already exists under a
+     different spelling - including `todo` if it reads as actionable work rather than a note.
+   - If it's a todo: whether it needs `priority:` and a `due:` deadline. A BARE REMINDER WITH NO
+     STATED RECURRENCE ("remind me at 1am", "set a reminder for Friday") IS ONE-TIME - do not add
+     recurrence or assume "nightly"/"daily" just because the time of day sounds routine. If it
+     truly says recurring, say so in the summary; there is no recurring-todo tag convention yet.
+   - A due date stated RELATIVE TO INGESTION/NOW ("due in 2 minutes", "due an hour after this
+     comes in", "remind me in 3 days") IS COMPUTABLE, not ambiguous - use the current local time
+     given below as "now" and just add the offset. Precision to the minute is not required; do
+     not flag this as needing input just because you have to do the arithmetic yourself.
+   - If it duplicates or extends a memory already in Loom, loom_update THAT jot instead of leaving
+     two records of the same fact.
+3. loom_update(id, ...) with whatever changed. TAGS REPLACE THE WHOLE LIST, THEY DO NOT MERGE - so
+   the tags you pass must be every existing tag from loom_get's result, MINUS status:unprocessed
+   (dropping it is what marks the jot processed - a triage flag, not an audit trail, so don't pair
+   it with status:done the way `todo` does), PLUS whatever you decided to add. Never invent a tag
+   set from scratch; never silently drop a tag you did not mean to remove - that has happened
+   before and lost a real due: date.
+
+IF A JOT IS GENUINELY AMBIGUOUS - unclear bracketed text, unsure whether it's a journal entry,
+which of two readings someone meant - THIS RUN IS UNATTENDED, so do not guess and do not just leave
+it silently untouched either. Flag the jot ITSELF, in place - do NOT create a separate alert jot for
+this, that card is too easy to miss sitting apart from the thing it's actually about (confirmed:
+that is exactly what happened the first time this ran). Instead:
+
+  loom_update(id, summary="NEEDS INPUT: <what's ambiguous, one line>",
+    text=<the jot's own original text, then a blank line, then a short paragraph of context PLUS a
+          ready-to-paste prompt to resolve it - e.g. "loom_get(<id>) and ask me whether this
+          reminder repeats">,
+    tags=<existing tags MINUS status:unprocessed, PLUS status:needs-input>)
+
+status:needs-input (kept until a human resolves it) is what stops this same jot from being
+re-sent to you, and re-billed, on every future run. The dashboard renders any todo carrying it with
+a red background, on the jot itself, so this is the whole mechanism - nothing else to create.
+
+Do not create, upsert or delete anything else. Do not touch triage-alert-failure or
+triage-alert-budget - those belong to the process that invoked you, not to you.

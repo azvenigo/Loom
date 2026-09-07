@@ -18,9 +18,11 @@
 #include "persist/Importer.h"
 #include "persist/Journal.h"
 #include "persist/Purge.h"
+#include "persist/RunLedger.h"
 #include "persist/SinkFanout.h"
 #include "persist/Snapshot.h"
 #include "persist/WatchList.h"
+#include "persist/Watcher.h"
 
 #include <atomic>
 #include <cstdio>
@@ -233,7 +235,24 @@ int main(int argc, char** argv)
             "\n"
             "  --purge=DIR    erase the jots named in DIR/loom.purge-request.json from the snapshot,\n"
             "                 the WAL and the history log. Requires the service to be STOPPED. On\n"
-            "                 its own it is a dry run; add --yes to actually erase.\n");
+            "                 its own it is a dry run; add --yes to actually erase.\n"
+            "\n"
+            "  --on-new-jots=CMD   run CMD, with each pending status:unprocessed jot id appended as\n"
+            "                      an argument, whenever there is triage work AND every guardrail\n"
+            "                      below allows it. Unset (default): watched files still poll and\n"
+            "                      ingest in the background, nothing ever invokes a command.\n"
+            "  --watch-interval=N  seconds between background polls of watched files (default 15).\n"
+            "  --triage-cooldown=N seconds between --on-new-jots invocations (default 600). Each\n"
+            "                      invocation has a fixed session-overhead cost regardless of\n"
+            "                      batch size, so a longer cooldown lets more jots share it.\n"
+            "  --triage-max-hourly=N  max --on-new-jots invocations per rolling hour (default 6).\n"
+            "  --triage-daily-usd=F   stop invoking once the rolling 24h cost (as reported by the\n"
+            "                         command's own accounting) reaches this many dollars (default\n"
+            "                         0.50). See DIR/loom.triage-runs.json and GET /stats.\n"
+            "  --triage-timeout=N     kill --on-new-jots if it runs longer than N seconds (300).\n"
+            "  --triage-max-ids=N     cap how many jot ids one invocation is given (default 20).\n"
+            "  --triage-max-failures=N  consecutive failures before auto-triage pauses itself until\n"
+            "                           loom is restarted (default 3). See persist/Watcher.h.\n");
         return 0;
     }
 
@@ -261,6 +280,7 @@ int main(int argc, char** argv)
     SinkFanout sinks;
     IpAcl      acl;
     WatchList  watch;
+    RunLedger  triageLedger;
 
     const bool bPersist = !ArgFlag(argc, argv, "--no-persist");
 
@@ -297,6 +317,13 @@ int main(int argc, char** argv)
         watch.Load(sDir + "/loom.watch.json", sDir + "/loom.watch-state.json", sWatchWarning);
         if (!sWatchWarning.empty())
             std::printf("  %s\n", sWatchWarning.c_str());
+
+        // Loaded here rather than lazily so the 24h spend guard reads real history from the very
+        // first poll - see RunLedger.h on why that figure must survive a restart to mean anything.
+        std::string sLedgerWarning;
+        triageLedger.Load(sDir + "/loom.triage-runs.json", sLedgerWarning);
+        if (!sLedgerWarning.empty())
+            std::printf("  %s\n", sLedgerWarning.c_str());
 
         // Load BEFORE opening the journal. Replaying with the sink already attached would re-log
         // every record it just read, doubling the WAL on each restart.
@@ -370,8 +397,30 @@ int main(int argc, char** argv)
         std::printf("seeded %zu jots\n", store.Size());
     }
 
+    WatcherConfig watcherConfig;
+    watcherConfig.nPollIntervalSec        = std::atoi(ArgStr(argc, argv, "--watch-interval", "15"));
+    // 60s measured as a real problem, not a theoretical one: each `claude -p` invocation pays a
+    // fixed ~$0.02-0.03 of session/cache overhead regardless of how many jots it processes (its
+    // own system prompt and tool schemas, not Loom's content), so a jot arriving alone every
+    // minute means paying that fixed cost once PER JOT instead of once per batch. 10 minutes lets
+    // jots that arrive close together share one invocation's overhead instead of each buying its
+    // own - same-session turnaround, not real-time, which is the right trade for background triage.
+    watcherConfig.nCooldownSec            = std::atoi(ArgStr(argc, argv, "--triage-cooldown", "600"));
+    watcherConfig.nMaxRunsPerHour         = std::atoi(ArgStr(argc, argv, "--triage-max-hourly", "6"));
+    watcherConfig.fMaxDailyUSD            = std::atof(ArgStr(argc, argv, "--triage-daily-usd", "0.50"));
+    watcherConfig.nChildTimeoutSec        = std::atoi(ArgStr(argc, argv, "--triage-timeout", "300"));
+    watcherConfig.nMaxIdsPerRun           = static_cast<size_t>(
+                                                std::atoi(ArgStr(argc, argv, "--triage-max-ids", "20")));
+    watcherConfig.nMaxConsecutiveFailures = std::atoi(ArgStr(argc, argv, "--triage-max-failures", "3"));
+    watcherConfig.sOnNewJots              = ArgStr(argc, argv, "--on-new-jots", "");
+
+    // Started unconditionally, even with no --on-new-jots: background ingestion of watched files
+    // (rotate-and-import) is useful on its own, with or without an agent to hand new jots to.
+    Watcher watcher(watch, ops, store, triageLedger, watcherConfig);
+    watcher.Start();
+
     HttpServer server(ops, store, config, bPersist ? &journal : nullptr, snapConfig, acl,
-                      &history, watch);
+                      &history, watch, &watcher, &triageLedger);
     gpServer = &server;
     // C5039 ("potentially throwing function passed to an extern C API") is /Wall noise on every
     // signal handler ever registered this way, not a real hazard here - OnSignal only flips an
@@ -398,9 +447,19 @@ int main(int argc, char** argv)
         std::printf("  WARNING: bound beyond loopback with no --token and no address list\n");
     if (acl.Enabled())
         std::printf("  address list active (loopback always allowed)\n");
+    std::printf("  watching every %ds; %s\n", watcherConfig.nPollIntervalSec,
+                watcherConfig.sOnNewJots.empty()
+                    ? "no --on-new-jots configured, ingest-only"
+                    : ("auto-triage via '" + watcherConfig.sOnNewJots + "', capped at $" +
+                       std::to_string(watcherConfig.fMaxDailyUSD) + "/24h").c_str());
 
     const std::error_code ec = server.Run();
     gpServer = nullptr;
+
+    // Stopped before the snapshot, not after: Watcher can still be mid-poll (or, rarely, waiting
+    // out a child's timeout) when Run() returns, and Stop() blocks until that settles - joining it
+    // first means the snapshot below sees a store nothing else is still writing to.
+    watcher.Stop();
 
     // Snapshot on the way out. A clean shutdown should leave a small log and a current snapshot,
     // so the next start is fast and the WAL does not grow across restarts.

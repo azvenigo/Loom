@@ -5,8 +5,10 @@
 #include "core/Ops.h"
 #include "persist/History.h"
 #include "persist/Journal.h"
+#include "persist/RunLedger.h"
 #include "persist/Snapshot.h"
 #include "persist/WatchList.h"
+#include "persist/Watcher.h"
 
 #include <cstdint>
 #include <memory>
@@ -58,9 +60,14 @@ public:
     //
     // watch is taken by reference and outlives the server, same as acl: GET/PUT /watch edit it
     // directly, and POST /watch/ingest reads the current file off disk and imports it into store.
+    //
+    // pWatcher/pLedger may both be null (no background triage configured) - the /stats "triage"
+    // block is simply omitted then, the same nullable-optional-feature pattern pJournal/pHistory
+    // already use. GET /triage/runs reports an empty ring rather than failing.
     HttpServer(Ops& ops, JotStore& store, const HttpConfig& config,
                Journal* pJournal, const SnapshotConfig& snapConfig, IpAcl& acl,
-               History* pHistory, WatchList& watch);
+               History* pHistory, WatchList& watch, Watcher* pWatcher = nullptr,
+               RunLedger* pLedger = nullptr);
     ~HttpServer();
 
     HttpServer(const HttpServer&)            = delete;

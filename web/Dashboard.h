@@ -527,6 +527,10 @@ dialog#acl-dialog p, dialog#watch-dialog p{margin:0 0 14px;color:var(--dim);font
 .aclrule button{flex:none;background:none;border:0;color:var(--faint);cursor:pointer;
   font-size:15px;line-height:1;padding:0 2px}
 .aclrule button:hover{color:var(--bad)}
+/* Copy isn't a destructive action like the × next to it, so it gets its own hover color rather
+   than inheriting the remove button's red - turning red on hover would read as a warning. */
+.aclrule button.copy{font-size:11px;color:var(--faint)}
+.aclrule button.copy:hover{color:var(--accent-ink)}
 .aclempty{color:var(--faint);font-size:12.5px;padding:10px 2px}
 .aclcaller{display:flex;align-items:center;gap:8px;margin-bottom:12px;font-size:12.5px;
   color:var(--dim)}
@@ -1041,6 +1045,13 @@ mark{background:var(--mark);color:inherit;border-radius:2px;padding:0 1px}
 /* Same treatment a completed card gets in the result grid - faded and struck through, so a shown
    completed TODO can never be mistaken for something still waiting. */
 .ov-trow.done{opacity:.55}
+/* Whole-row red, SOLID not a wash tint - this is the one state that must be impossible to miss
+   scrolling past it, unlike priority (a left border) or overdue (a colored chip). The wash-tint
+   version measured too subtle to notice against the other cards on the page - this is meant to
+   look like a warning light, not a slightly-different-colored card. */
+.ov-trow.needs-input{background:var(--bad);border-color:var(--bad);box-shadow:0 0 0 1px var(--bad)}
+.ov-trow.needs-input .ov-atitle,.ov-trow.needs-input .ov-asub{color:#fff}
+.ov-trow.needs-input:hover{filter:brightness(1.08)}
 .ov-trow.done .ov-atitle{text-decoration:line-through;text-decoration-color:var(--faint)}
 .ov-todocol.pr-high .ov-trow{border-left-color:var(--bad)}
 .ov-todocol.pr-normal .ov-trow{border-left-color:var(--warn)}
@@ -1390,11 +1401,13 @@ label u{text-decoration:none;color:var(--accent-ink);text-transform:none;letter-
 <dialog id="attention-dialog">
   <div class="body">
     <h2>Needs attention</h2>
-    <p>A watched source file below has new content since it was last ingested - click Ingest to
-       pull it in. <b id="attention-count"></b> came in without a summary and haven't been
-       triaged: dismiss any that don't actually need work, or copy the prompt below into an agent
-       session to have it process the rest: write a summary, tag it, and fold it into existing
-       memories where it belongs.</p>
+    <p>Watched source files are now ingested automatically in the background (every few seconds),
+       not just when this opens - a file still listed below with an Ingest button means that failed
+       and needs a manual retry. <b id="attention-count"></b> came in without a summary and haven't
+       been triaged: dismiss any
+       that don't actually need work, or copy the prompt below into an agent session to have it
+       process the rest: write a summary, tag it, and fold it into existing memories where it
+       belongs.</p>
     <div id="attention-files"></div>
     <div id="attention-list"></div>
     <div class="promptbox open" id="attention-prompt-text"></div>
@@ -1872,7 +1885,10 @@ const isUnprocessed=j=>(j.tags||[]).includes('status:unprocessed');
 /* Same shape as setDue/setPriority/toggleDone: returns the updated jot so the caller can chain an
    undo off ITS expect_updated rather than the stale one the PATCH just moved past. */
 async function setUnprocessed(j,val){
-  const tags=(j.tags||[]).filter(t=>t!=='status:unprocessed');
+  // tbd (see Watcher.h) means "this needs a human decision" - dropping the triage flag by hand
+  // has to drop that too, or a dismissed jot would keep reading as flagged. status:needs-input is
+  // the retired name for the same thing, kept here only so old data dismisses cleanly too.
+  const tags=(j.tags||[]).filter(t=>t!=='status:unprocessed'&&t!=='tbd'&&t!=='status:needs-input');
   if(val)tags.push('status:unprocessed');
   const exp=j.updated||j.id;
   return api('/jots/'+j.id+'?expect_updated='+exp,
@@ -2375,6 +2391,31 @@ const fmtBytes=n=>n<1024?n+' B':n<1048576?(n/1024).toFixed(1)+' KB':(n/1048576).
 function openAttention(list,files){
   list=(list||[]).slice();
   files=(files||[]).slice();
+
+  // Shared by the per-file button below AND the auto-run at the bottom of this function - Ingest
+  // was already a one-click, no-preview action (nothing shows the file's content before you commit
+  // it), so there is nothing an auto-run risks that a manual click didn't already risk. Doing it
+  // for every pending file the moment the dialog opens just removes a click that was never a real
+  // decision point. See needs-attention-auto-ingest jot for the full discussion.
+  const doIngest=async function(f,btn){
+    if(btn)btn.disabled=true;
+    try{
+      const stats=await api('/watch/ingest',{method:'POST',
+        headers:{'Content-Type':'application/json'},body:JSON.stringify({path:f.path})});
+      files=files.filter(x=>x.path!==f.path);
+      toast(f.path+': '+stats.imported+' imported'+
+        (stats.malformed?', '+stats.malformed+' malformed':'')+
+        (stats.skipped?', '+stats.skipped+' already there':''),'ok');
+      // Whatever ingest just created needs the same triage the rest of this dialog offers -
+      // re-query rather than guess at ids, same reasoning as attentionPrompt below. Full detail,
+      // not brief - this list is what Dismiss decides from, so it needs the actual text, not just
+      // a has_text flag.
+      const fresh=await api('/jots?tags=status:unprocessed&limit=200');
+      list=fresh.jots;
+      redraw();
+    }catch(err){if(btn)btn.disabled=false;toast(err.message,'err');}
+  };
+
   const redraw=function(){
     $('#attention-count').textContent=list.length+' jot'+(list.length===1?'':'s');
 
@@ -2389,23 +2430,7 @@ function openAttention(list,files){
       const ingest=el('button','attn-ingest','Ingest');
       ingest.type='button';
       ingest.title='Import this file\'s new content now';
-      ingest.onclick=async function(e){
-        e.stopPropagation();
-        ingest.disabled=true;
-        try{
-          const stats=await api('/watch/ingest',{method:'POST',
-            headers:{'Content-Type':'application/json'},body:JSON.stringify({path:f.path})});
-          files=files.filter(x=>x.path!==f.path);
-          toast(stats.imported+' imported'+
-            (stats.malformed?', '+stats.malformed+' malformed':'')+
-            (stats.skipped?', '+stats.skipped+' already there':''),'ok');
-          // Whatever ingest just created needs the same triage the rest of this dialog offers -
-          // re-query rather than guess at ids, same reasoning as attentionPrompt below.
-          const fresh=await api('/jots?tags=status:unprocessed&brief=1&limit=200');
-          list=fresh.jots;
-          redraw();
-        }catch(err){ingest.disabled=false;toast(err.message,'err');}
-      };
+      ingest.onclick=function(e){e.stopPropagation();doIngest(f,ingest);};
       r.append(ingest);
       fbody.append(r);
     });
@@ -2418,7 +2443,10 @@ function openAttention(list,files){
         const r=el('div','ov-arow');
         r.append(el('i','ov-adot'));
         const mid=el('div','ov-amid');
-        mid.append(el('div','ov-atitle',j.name||'(no summary yet)'));
+        // Same name-or-summary-or-text-snippet fallback used elsewhere (see the activity/todo
+        // rows) - a jot straight off the ingest path has neither name nor summary, so without the
+        // text snippet there was nothing here to base a Dismiss decision on but a timestamp.
+        mid.append(el('div','ov-atitle',j.name||(j.summary||j.text||'').slice(0,90)||'(empty)'));
         mid.append(el('div','ov-asub',(j.editor||'user')+' · '+stamp(j.id)));
         r.append(mid);
         r.append(el('span','ov-awhen',ago(j.id)));
@@ -2454,6 +2482,16 @@ function openAttention(list,files){
   redraw();
   $('#attention-copy').onclick=function(){copyText(attentionPrompt(list),$('#attention-copy'));};
   $('#attention-dialog').showModal();
+
+  // `list` came in brief (it's a slice of the dashboard's one bulk brief=1 fetch) - refetch it in
+  // full now that the dialog is actually open, so rows have real text/summary to show instead of
+  // the has_text-only placeholder. Small and scoped: this is only the status:unprocessed subset,
+  // not the 200-row dashboard fetch.
+  api('/jots?tags=status:unprocessed&limit=200').then(function(fresh){list=fresh.jots;redraw();})
+    .catch(function(err){toast(err.message,'err');});
+
+  // Auto-run Ingest for every pending file rather than waiting for a click - see doIngest above.
+  files.slice().forEach(function(f){doIngest(f);});
 }
 
 const OV_ICONS={
@@ -2572,7 +2610,11 @@ async function viewDashboard(target){
           /* Only reachable while the header switch is showing completed work - but once it is,
              the row has to say so and its button has to reopen rather than re-complete. */
           const jdone=isDone(j);
-          const r=el('div','ov-trow'+(jdone?' done':''));
+          // The triage agent flags a jot it couldn't safely finish this way (see
+          // packaging/systemd/loom-triage-prompt.txt) - it needs to be unmissable on the row
+          // itself, not buried in a separate card nobody notices among other todos.
+          const needsInput=(j.tags||[]).includes('tbd')||(j.tags||[]).includes('status:needs-input');
+          const r=el('div','ov-trow'+(jdone?' done':'')+(needsInput?' needs-input':''));
           r.style.setProperty('--cat','var('+cat.cssVar+')');
           r.draggable=true;
           r.addEventListener('dragstart',function(e){
@@ -2596,8 +2638,7 @@ async function viewDashboard(target){
           r.append(chips);
 
           /* 2. what it is - the slug when it has one, else the first line of what it says */
-          r.append(el('div','ov-atitle',
-            j.name||(j.summary||j.text||'').slice(0,90)||'(untitled)'));
+          r.append(el('div','ov-atitle',j.name||j.summary||j.snippet||'(untitled)'));
 
           /* 3. when - absolute stamp, with the relative magnitude trailing it */
           if(due){
@@ -2700,7 +2741,7 @@ async function viewDashboard(target){
         r.style.setProperty('--cat','var('+cat.cssVar+')');
         r.append(el('i','ov-adot'));
         const mid=el('div','ov-amid');
-        mid.append(el('div','ov-atitle',j.name||(j.summary||'').slice(0,80)||'(untitled)'));
+        mid.append(el('div','ov-atitle',j.name||j.summary||j.snippet||'(untitled)'));
         mid.append(el('div','ov-asub',cat.name+' · '+(j.editor||'user')));
         r.append(mid);
         r.append(el('span','ov-awhen',ago(j.updated||j.id)));
@@ -2739,6 +2780,19 @@ async function viewDashboard(target){
                       unprocessed.length&&unprocessed.length+' to process'].filter(Boolean).join(', '):
       'Nothing waiting',
       needsAttention?function(){openAttention(unprocessed,pendingFiles);}:null);
+
+    /* Usage visibility for the background triage watcher (persist/Watcher.h) - every number here
+       is straight off GET /stats' "triage" block, which is itself straight off claude's own
+       --output-format json report (total_cost_usd et al, see persist/RunLedger.h) - nothing here
+       is estimated. Absent entirely when no RunLedger is wired up (health.triage omitted), same
+       omit-empty rule as the JSON itself. */
+    if(health.triage){
+      const tr=health.triage;
+      const warn=tr.breaker_open||tr.budget_exceeded;
+      card(warn?'warn':'','hash','Triage usage','$'+(tr.cost_usd_24h||0).toFixed(2),
+        (tr.runs_24h||0)+' run'+(tr.runs_24h===1?'':'s')+' in 24h'+
+          (tr.breaker_open?' · PAUSED (failing)':tr.budget_exceeded?' · budget reached':''));
+    }
 
     /* ---- distribution + signals ---- */
     const row1=el('div','ov-row');L.append(row1);
@@ -2796,7 +2850,14 @@ async function viewDashboard(target){
     vr('Jots',health.jots);
     vr('Tag vocabulary',health.tags);
     if(p.enabled){vr('WAL bytes',(p.wal_bytes/1024).toFixed(1)+' KB');vr('Snapshots',p.snapshots);}
-    vr('Mutations this run',health.mutations);
+    /* Since-process-start activity, not lifetime totals - see codec/JotJson.cpp's StatsToJson.
+       Needs attention is the one exception: it is a live count (unprocessed jots + pending watched
+       files right now), not something that accumulates since start. */
+    vr('New jots this run',health.jots_added);
+    vr('New tags this run',health.tags_added);
+    vr('Todos added this run',health.todos_added);
+    vr('Needs attention',(health.needs_attention||{}).total||0);
+    if(health.triage)vr('Haiku calls this run',health.triage.calls_this_run||0);
   }catch(e){L.append(el('div','note bad',e.message));}
 
   clearInterval(window.__rt);
@@ -2873,9 +2934,16 @@ async function viewHealth(target){
       });
     };
     group('Store',[['Jots',s.jots],['Named',s.named],['Tag vocabulary',s.tags],
-      ['Distinct terms',s.terms],['Pending links',s.pending_links],['Editors',s.editors],
-      ['Mutations this run',s.mutations]]);
+      ['Distinct terms',s.terms],['Pending links',s.pending_links],['Editors',s.editors]]);
     if(s.oldest)group('Span',[['Oldest',stamp(s.oldest)],['Newest',stamp(s.newest)]]);
+
+    /* Since-process-start counters, not lifetime totals - a restart zeroes these. Needs attention
+       is the exception: a live count (unprocessed jots + pending watched files) rather than
+       something accumulated since start. */
+    const attnRows=[['New jots',s.jots_added],['New tags',s.tags_added],
+      ['Todos added',s.todos_added],['Needs attention',(s.needs_attention||{}).total||0]];
+    if(s.triage)attnRows.push(['Haiku calls',s.triage.calls_this_run||0]);
+    group('This run',attnRows);
 
     if(!p.enabled){
       L.append(el('div','sect','Durability'));
@@ -3451,6 +3519,17 @@ function renderDetail(){
       catch(e){toast(e.message,'err');}
     };
     act.append(rel,del);
+
+    /* type:prompt marks a jot whose body IS a ready-to-paste agent prompt - the triage watcher's
+       alert cards (triage-alert-failure/-budget/-needs-input, see persist/Watcher.h and
+       packaging/systemd/loom-triage-prompt.txt) are the first thing that writes this, but nothing
+       about the button is specific to them. Reuses copyText, not a second clipboard path - see its
+       own comment on why that matters (non-secure origin, modal-inert-textarea). */
+    if((sel.tags||[]).includes('type:prompt')){
+      const cp=el('button','btn tiny','Copy prompt');
+      cp.onclick=function(){copyText(sel.text||'',cp);};
+      act.append(cp);
+    }
   }
   const close=el('button','btn tiny ghost','Close');
   close.onclick=function(){sel=null;render();};
@@ -3686,6 +3765,12 @@ function renderWatchRules(){
   watchDraft.forEach(function(sPath,i){
     const row=el('div','aclrule');
     row.append(el('span','r',sPath));
+    // Copy the path so it can be opened by hand (a terminal, a file manager) - the durable place
+    // for this, unlike the Needs Attention card where a file's row only exists while it's pending.
+    const c=el('button','copy','Copy');
+    c.type='button';c.title='Copy this path';
+    c.onclick=function(){copyText(sPath,c);};
+    row.append(c);
     const x=el('button',null,'×');
     x.title='Remove';
     x.onclick=function(){watchDraft.splice(i,1);renderWatchRules();};
@@ -3821,7 +3906,7 @@ async function checkReminders(){
     if(isDone(j))return;
     const due=dueOf(j);if(!due)return;
     const dueMs=due.getTime(),key=String(j.id),rec=notified[key]||{};
-    const label=j.name||(j.summary||j.text||'Reminder').slice(0,80);
+    const label=j.name||j.summary||j.snippet||'Reminder';
     if(now>=dueMs-UPCOMING_LEAD_MS&&now<dueMs&&rec.upcomingFor!==dueMs){
       fireReminder('Upcoming: '+label,dueLabel(due)+' — '+fmtLocal(due),j,'loom-upcoming-'+key);
       rec.upcomingFor=dueMs;notified[key]=rec;changed=true;

@@ -9,6 +9,26 @@ using json = nlohmann::json;
 
 namespace
 {
+    // First line, clipped - a caption for a jot that has neither a name nor a summary of its own.
+    // Local rather than shared because every file with a one-line version of this keeps its own
+    // (see core/Ops.cpp's ClipLine, persist/History.h's msCaption) rather than exporting a
+    // substring helper across a module boundary for it.
+    std::string ClipLine(const std::string& s, size_t nMax)
+    {
+        size_t nEnd = s.find('\n');
+        if (nEnd == std::string::npos)
+            nEnd = s.size();
+        if (nEnd > nMax)
+            nEnd = nMax;
+
+        std::string sOut = s.substr(0, nEnd);
+        while (!sOut.empty() && (sOut.back() == ' ' || sOut.back() == '\r'))
+            sOut.pop_back();
+        if (nEnd < s.size())
+            sOut += "...";
+        return sOut;
+    }
+
     // The omit-empty rule, in one place. Everything else in this file defers to it.
     json FlatToObject(const FlatJot& jot, bool bVerbose, bool bBrief = false)
     {
@@ -20,8 +40,16 @@ namespace
             // Skim mode: the point is to fit many jots in one response, so the body - usually the
             // largest field by far - is dropped. `has_text` says whether there was more to fetch,
             // since a name+summary-only jot and a jot with a long body otherwise look identical.
+            // `snippet` is the one exception to "body is dropped": a jot fresh off an import has
+            // neither a name nor a summary, and without SOME text a brief-fed list (the dashboard's
+            // activity feed, its TODO cards, its Needs Attention rows) has nothing to show but a
+            // timestamp - which is exactly how those rows ended up rendering "(untitled)".
             if (!jot.msText.empty())
+            {
                 j["has_text"] = true;
+                if (jot.msName.empty() && jot.msSummary.empty())
+                    j["snippet"] = ClipLine(jot.msText, 100);
+            }
         }
         else
         {
@@ -314,7 +342,8 @@ namespace JOTJSON
     }
 
     std::string StatsToJson(const StoreStats& stats, const PersistStats& persist,
-                            const std::string& sOrigin, bool bAuthRequired)
+                            const std::string& sOrigin, bool bAuthRequired,
+                            const TriageStats* pTriage, const AttentionStats* pAttention)
     {
         json out;
         out["jots"]          = stats.mnJots;
@@ -324,6 +353,9 @@ namespace JOTJSON
         out["pending_links"] = stats.mnPendingLinks;
         out["editors"]       = stats.mnEditors;
         out["mutations"]     = stats.mnMutations;
+        out["jots_added"]    = stats.mnAdded;
+        out["tags_added"]    = stats.mnTagsCreated;
+        out["todos_added"]   = stats.mnTodosAdded;
         if (stats.mnOldestUS != 0)
         {
             out["oldest"]    = stats.mnOldestUS;
@@ -352,6 +384,45 @@ namespace JOTJSON
             server["origin"] = sOrigin;
             server["auth"]   = bAuthRequired;
             out["server"]    = std::move(server);
+        }
+
+        if (pTriage)
+        {
+            json t;
+            t["breaker_open"]           = pTriage->mbBreakerOpen;
+            t["consecutive_failures"]   = pTriage->mnConsecutiveFailures;
+            t["budget_exceeded"]        = pTriage->mbBudgetExceeded;
+            t["runs_24h"]               = pTriage->mnRuns24h;
+            t["cost_usd_24h"]           = pTriage->mfCostUSD24h;
+            t["input_tokens_24h"]       = pTriage->mnInputTokens24h;
+            t["output_tokens_24h"]      = pTriage->mnOutputTokens24h;
+            t["calls_this_run"]         = pTriage->mnRunsThisProcess;
+            t["runs_lifetime"]          = pTriage->mnRunsLifetime;
+            t["cost_usd_lifetime"]      = pTriage->mfCostUSDLifetime;
+            if (pTriage->mbHasLastRun)
+            {
+                const TriageRun& r = pTriage->mLastRun;
+                json last;
+                last["at"]           = r.mnAtUS;
+                last["duration_ms"]  = r.mnDurationMS;
+                last["cost_usd"]     = r.mfCostUSD;
+                last["jots_given"]   = r.mnJotsGiven;
+                last["success"]      = r.mbSuccess;
+                last["trigger"]      = r.msTrigger;
+                if (!r.msFailure.empty())
+                    last["failure"] = r.msFailure;
+                t["last_run"] = std::move(last);
+            }
+            out["triage"] = std::move(t);
+        }
+
+        if (pAttention)
+        {
+            json a;
+            a["jots"]  = pAttention->mnUnprocessedJots;
+            a["files"] = pAttention->mnPendingFiles;
+            a["total"] = pAttention->mnUnprocessedJots + pAttention->mnPendingFiles;
+            out["needs_attention"] = std::move(a);
         }
 
         return out.dump();
