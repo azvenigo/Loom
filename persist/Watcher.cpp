@@ -510,12 +510,31 @@ void Watcher::DeterministicTriage()
                         bHaveDue = true;
                     }
 
+                    // NEEDS-INPUT ONLY ESCALATES A TASK, and that qualifier is load-bearing.
+                    //
+                    // There is one round trip, so `due` and `priority` have to be asked for
+                    // BEFORE `kind` comes back to say whether this is even the sort of thing that
+                    // has a due date. The service then dutifully reports that it could not pin
+                    // one down - which is a true answer to a question we should not have asked.
+                    // Confirmed live: a journal entry reading "Just another journal entry on a
+                    // monday night..." came back correctly classified as kind=journal, with due
+                    // and priority both declined, and a needs_input of "when exactly should this
+                    // be due?" - and honouring that turned a diary line into a high-priority todo,
+                    // because tbd implies both.
+                    //
+                    // The fix is to ignore the answer for anything the service says is not a task,
+                    // rather than to stop asking - not asking would mean classifying first and
+                    // then asking, which is two round trips on every jot to save a wrong tag on a
+                    // few. When the service declines to classify at all, fall back to whether the
+                    // author themselves marked it a todo.
+                    const bool bTaskShaped = res.bHaveKind ? (res.sKind == "task") : bTodo;
+
                     // A stated recurrence has no tag convention yet, so it is exactly the kind of
                     // thing a person should see rather than something to invent a schema for.
-                    if (res.bRecurring)
+                    if (res.bRecurring && bTaskShaped)
                         bNeedsInput = true;
 
-                    if (res.bNeedsInput)
+                    if (res.bNeedsInput && bTaskShaped)
                     {
                         bNeedsInput = true;
                         if (flat.msSummary.empty() && sServiceSummary.empty())
