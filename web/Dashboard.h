@@ -670,7 +670,9 @@ main{flex:1;min-height:0;overflow:hidden}
    Colour appears only on the chip that is set. An unselected row stays neutral grey, which means
    the single hue on screen is always the current priority - the same red/blue/grey the cards and
    column headers use, so the control and its consequence match. */
-.prio{display:flex;gap:7px;flex-wrap:wrap}
+/* align-items:center so Complete, which rides the right end of this row, lines up on the chips'
+   centre line rather than stretching to the row's full height. */
+.prio{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
 .prchip{position:relative;display:inline-flex;margin:0}
 .prchip input{position:absolute;inset:0;width:100%;height:100%;opacity:0;margin:0;cursor:pointer}
 .prchip span{font:10.5px var(--mono);text-transform:uppercase;letter-spacing:.07em;font-weight:600;
@@ -1022,20 +1024,19 @@ mark{background:var(--mark);color:inherit;border-radius:2px;padding:0 1px}
 .ov-todocolhead .pcount{margin-left:auto;font:11px var(--mono);color:var(--faint)}
 .ov-todobody{min-height:34px;border-radius:8px;transition:background .1s ease}
 .ov-todobody.dragover{background:var(--sunk);outline:2px dashed var(--dim);outline-offset:-2px}
-/* A TODO IS A CARD YOU CAN ACT ON WITHOUT OPENING IT.
+/* A TODO IS A CARD YOU CAN READ AT A GLANCE.
    The old row was a checkbox, one bold line and one faint line - to find out what a TODO actually
-   was, or to do anything but complete it, you had to open the dialog. The card states the four
-   things you need to triage at a glance, in reading order:
+   was you had to open the dialog. The card states what you need to triage, in reading order:
 
      1. what kind of thing it is      - the tag chips across the top (TODO / priority / scope)
-     2. what it is                    - the title, in real type
+     2. what it is                    - the SUMMARY, in real type, up to three lines
      3. when it's due                 - its own line, red and bold once that time is past
-     4. what you can do about it      - Edit / Snooze / Complete, visible, not hover-revealed
+     4. which jot it is               - the slug, quiet, at the foot
 
-   Hidden controls were the wrong call here: this panel exists to be dispatched, and a button you
-   have to discover by hovering is a button you don't count on. Dragging between columns still
-   reprioritizes, so the card is a drag handle too - hence the explicit draggable=false on every
-   button inside it. */
+   The card carries NO buttons at all. Edit, Snooze and Complete all live in the dialog, which is
+   one click away on the card itself - and dropping them buys the two lines of summary that
+   actually tell you what the thing IS. A card with no controls on it is also an unambiguous drag
+   handle, and dragging between columns is still how you reprioritize. */
 .ov-trow{display:flex;flex-direction:column;gap:7px;background:var(--panel);
   border:1px solid var(--line);border-left:3px solid var(--dim);border-radius:8px;
   padding:11px 13px 10px;margin-bottom:9px;cursor:grab}
@@ -1051,7 +1052,16 @@ mark{background:var(--mark);color:inherit;border-radius:2px;padding:0 1px}
    look like a warning light, not a slightly-different-colored card. */
 .ov-trow.needs-input{background:var(--bad);border-color:var(--bad);box-shadow:0 0 0 1px var(--bad)}
 .ov-trow.needs-input .ov-atitle,.ov-trow.needs-input .ov-asub{color:#fff}
+.ov-trow.needs-input .ov-tslug{color:rgba(255,255,255,.8)}
 .ov-trow.needs-input:hover{filter:brightness(1.08)}
+/* Overdue gets the same ring .mcard.fresh uses for a recent change - outline, not border, so the
+   card doesn't grow 2px and reflow the column the moment something crosses its due date. Thick
+   enough to read as an alarm from across the panel: the red due line alone was easy to scroll
+   past once a column had a few cards in it.
+   A literal bright red, NOT --bad: --bad is tuned per palette to stay readable as TEXT, which on
+   the darker themes lands it several steps toward brown/maroon. This ring carries no text, so it
+   wants the loudest red on the screen and nothing about legibility holds it back. */
+.ov-trow.over{outline:2px solid #ff2323;outline-offset:-1px}
 .ov-trow.done .ov-atitle{text-decoration:line-through;text-decoration-color:var(--faint)}
 .ov-todocol.pr-high .ov-trow{border-left-color:var(--bad)}
 .ov-todocol.pr-normal .ov-trow{border-left-color:var(--warn)}
@@ -1069,8 +1079,21 @@ mark{background:var(--mark);color:inherit;border-radius:2px;padding:0 1px}
   color:var(--cat,var(--accent));text-transform:none;letter-spacing:.02em}
 .ov-tid{margin-left:auto;font:10px var(--mono);color:var(--faint)}
 
+/* The SUMMARY leads, because that's the sentence a human reads - the slug is a handle, and a
+   handle you have to already know doesn't tell you what's waiting on you. Three lines, clamped,
+   and the min-height reserves all three whether or not the text fills them, so cards in a column
+   keep a common baseline instead of jittering by summary length.
+   Three rather than two because two clipped most real summaries mid-sentence - the card was
+   costing a dialog open to read a line and a half of tail. The uniform height is worth more here
+   than the vertical space: a column of same-size cards is scannable, and the summaries that stop
+   short just leave a little air under them. */
 .ov-trow .ov-atitle{font-size:13.5px;font-weight:600;white-space:normal;line-height:1.35;
-  color:var(--ink)}
+  color:var(--ink);display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;
+  overflow:hidden;min-height:calc(3 * 1.35em)}
+/* The slug drops to the foot in mono, the same treatment it gets everywhere else it's an address
+   rather than a title. */
+.ov-tslug{font:10.5px var(--mono);color:var(--faint);white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis}
 /* Due reads as a full absolute stamp, not just "Overdue by 3 days" - when triaging you want to
    know it was due Tuesday at 9, not do the arithmetic back from a relative figure. The relative
    magnitude rides along in parentheses since it's the faster of the two to compare. */
@@ -1080,22 +1103,14 @@ mark{background:var(--mark);color:inherit;border-radius:2px;padding:0 1px}
 .ov-tdue .rel{color:var(--faint);font-weight:400}
 .ov-tdue.over .rel{color:var(--bad);opacity:.75}
 
-.ov-tacts{display:flex;align-items:center;gap:6px;margin-top:2px;padding-top:8px;
-  border-top:1px solid var(--line-soft)}
-.ov-tacts button:not(.completebtn){font:11.5px var(--sans);color:var(--dim);background:none;
-  cursor:pointer;border:1px solid transparent;border-radius:6px;padding:3px 8px;display:flex;
-  align-items:center;gap:5px}
-.ov-tacts button:not(.completebtn):hover{color:var(--ink);border-color:var(--line);
-  background:var(--sunk)}
-.ov-tacts button svg{width:11px;height:11px;flex:none}
-
-/* ONE Complete treatment, shared by the reminder card and the detail dialog: same green, same
-   box-and-check, same caption, and margin-left:auto puts it bottom-right in both. Completing a
-   TODO is then one gesture to learn, not two that happen to do the same thing. It is also the
-   only affirmative action in either place, which is why it is the only one carrying color -
-   and on the card it sits at the far end, away from Edit/Snooze on something you may be dragging. */
+/* Completing a TODO happens in ONE place: the detail dialog's priority row, at the right end
+   (margin-left:auto). The TODO card used to carry a copy of this button; it doesn't any more,
+   because a card whose whole surface opens the dialog - and which you also drag to reprioritize -
+   is a bad place for a click target that does something irreversible-looking at a glance.
+   Sized to the .prchip radios it now shares a line with, so the row reads as one control group
+   rather than a button parked next to some chips. */
 .completebtn{margin-left:auto;display:inline-flex;align-items:center;gap:6px;cursor:pointer;
-  font:12px var(--sans);font-weight:600;border-radius:6px;padding:5px 11px;
+  font:11.5px var(--sans);font-weight:600;border-radius:6px;padding:5px 12px;
   color:var(--dim);background:var(--sunk);border:1px solid var(--line);box-shadow:none}
 .completebtn:hover{color:var(--ink);border-color:var(--dim)}
 .completebtn svg{width:13px;height:13px;flex:none}
@@ -1103,8 +1118,6 @@ mark{background:var(--mark);color:inherit;border-radius:2px;padding:0 1px}
    only the glyph and the word change, so completing something never reads as a bigger action than
    reopening it. */
 .completebtn.on{font-weight:400}
-.ov-tacts .completebtn{font-size:11.5px;padding:3px 9px}
-.ov-tacts .completebtn svg{width:12px;height:12px}
 .ov-colempty{color:var(--faint);font-size:12px;padding:8px 0}
 /* Borrows the lift/shadow/focus ring the stat cards use, so the one clickable card at the foot of
    a column advertises itself the same way every other clickable card on this view does. */
@@ -1362,9 +1375,11 @@ label u{text-decoration:none;color:var(--accent-ink);text-transform:none;letter-
     <p>Open any jot and click <b>Make this a TODO</b> to reveal Priority and Due - or just add a
        <code>todo</code>/<code>warning</code>/<code>error</code> tag, which does the same thing
        automatically. TODOs get their own panel on the Dashboard, split into High/Normal/Low
-       columns; drag a card between columns to reprioritize it. <b>Snooze</b> just pushes the due
-       date later - there's no separate snoozed state to keep track of. <b>Complete</b> - the green
-       checkbox at the bottom right of both the card and the dialog - adds a
+       columns; drag a card between columns to reprioritize it. A card leads with its summary and
+       carries its slug at the foot; click it to open the editor, which is where every action on
+       a TODO lives. <b>Snooze</b> there just pushes the due date later - there's no separate
+       snoozed state to keep track of. Anything past its due date gets a red outline around the
+       whole card. <b>Complete</b> - the checkbox at the right end of the dialog's priority row - adds a
        <code>status:done</code> tag and drops it out of the panel, keeping <code>todo</code> so the
        finished work stays on the record; hit the same button again to bring it back exactly as
        it was.</p>
@@ -2614,7 +2629,9 @@ async function viewDashboard(target){
           // packaging/systemd/loom-triage-prompt.txt) - it needs to be unmissable on the row
           // itself, not buried in a separate card nobody notices among other todos.
           const needsInput=(j.tags||[]).includes('tbd')||(j.tags||[]).includes('status:needs-input');
-          const r=el('div','ov-trow'+(jdone?' done':'')+(needsInput?' needs-input':''));
+          const overdue=!!due&&due.getTime()<Date.now()&&!jdone;
+          const r=el('div','ov-trow'+(jdone?' done':'')+(needsInput?' needs-input':'')+
+            (overdue?' over':''));
           r.style.setProperty('--cat','var('+cat.cssVar+')');
           r.draggable=true;
           r.addEventListener('dragstart',function(e){
@@ -2637,12 +2654,12 @@ async function viewDashboard(target){
           chips.append(el('span','ov-tid',j.editor||'user'));
           r.append(chips);
 
-          /* 2. what it is - the slug when it has one, else the first line of what it says */
-          r.append(el('div','ov-atitle',j.name||j.summary||j.snippet||'(untitled)'));
+          /* 2. what it is - the summary, the line written for a human to read. Slug only as a
+             last resort, when there's neither a summary nor any text to quote. */
+          r.append(el('div','ov-atitle',j.summary||j.snippet||j.name||'(untitled)'));
 
           /* 3. when - absolute stamp, with the relative magnitude trailing it */
           if(due){
-            const overdue=due.getTime()<Date.now();
             const dl=el('div','ov-tdue'+(overdue?' over':''));
             dl.innerHTML='<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" '+
               'stroke-width="1.6" stroke-linecap="round"><circle cx="8" cy="8" r="6.2"/>'+
@@ -2652,50 +2669,9 @@ async function viewDashboard(target){
             r.append(dl);
           }
 
-          /* 4. what you can do about it, without opening anything */
-          const acts=el('div','ov-tacts');
-          const mkAct=function(cls,label,icon,fn){
-            const b=el('button',cls);b.type='button';b.draggable=false;
-            if(icon)b.innerHTML=icon;
-            b.append(document.createTextNode(label));
-            b.onclick=function(e){e.stopPropagation();fn();};
-            acts.append(b);return b;
-          };
-          mkAct('','Edit','<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" '+
-            'stroke-linejoin="round"><path d="M11.2 2.4 13.6 4.8 5.6 12.8 2.4 13.6l.8-3.2 8-8Z"/></svg>',
-            async function(){
-              try{sel=await api('/jots/'+j.id);render();}catch(e){toast(e.message,'err');}
-            });
-          /* Snooze pushes `due` to tomorrow morning - the same "reschedule, don't track a snoozed
-             state" rule the dialog's snooze buttons follow. One click, no submenu: the dialog is
-             right there for an exact time. */
-          mkAct('','Snooze','<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" '+
-            'stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.2"/>'+
-            '<path d="M8 4.6V8l2.4 1.6"/></svg>',
-            async function(){
-              const prev=tagValue(j.tags,'due:');
-              const d=new Date(Date.now()+86400000);d.setHours(9,0,0,0);
-              try{
-                const updated=await setDue(j,toLocalInputValue(d));
-                toast('Snoozed to tomorrow 9:00','ok',async function(){
-                  try{await setDue(updated,prev||'');toast('Snooze undone');render();}
-                  catch(err){toast(err.message,'err');}
-                });
-                render();
-              }catch(e){toast(e.message,'err');}
-            });
-          acts.append(completeBtn(jdone,async function(){
-            try{
-              const updated=await toggleDone(j,!jdone);
-              toast(jdone?'Reopened':'Marked completed','ok',async function(){
-                try{await toggleDone(updated,jdone);
-                    toast(jdone?'Marked completed':'Restored');render();}
-                catch(err){toast(err.message,'err');}
-              });
-              render();
-            }catch(e){toast(e.message,'err');}
-          }));
-          r.append(acts);
+          /* 4. which jot this is - the slug, quiet, at the foot. Only when the summary above
+             isn't already the slug standing in for a missing one. */
+          if(j.name&&(j.summary||j.snippet))r.append(el('div','ov-tslug',j.name));
 
           r.onclick=async function(){
             try{sel=await api('/jots/'+j.id);render();}
@@ -3353,6 +3329,28 @@ function renderDetail(){
       lab.append(rb,el('span',null,o[1]));
       prRow.append(lab);
     });
+    /* Complete sits at the right end of the priority row rather than down in the actions strip:
+       the two things you do to a live TODO are re-rank it and finish it, so they belong on one
+       line. margin-left:auto (on .completebtn itself) does the right-justifying. Toggling it
+       touches ONLY `status:done` - priority, due and everything else survive, which is what makes
+       reopening a completed TODO put it back exactly as it was. */
+    if(!isNew){
+      const wasDone=isDone(sel);
+      prRow.append(completeBtn(wasDone,async function(){
+        try{
+          sel=await toggleDone(sel,!wasDone);
+          const updated=sel;
+          toast(wasDone?'Reopened':'Marked completed','ok',async function(){
+            try{
+              sel=await toggleDone(updated,wasDone);
+              toast(wasDone?'Marked completed':'Reopened');
+              await refreshStats();render();
+            }catch(err){toast(err.message,'err');}
+          });
+          await refreshStats();render();
+        }catch(e){toast(e.message,'err');}
+      }));
+    }
   }else{
     /* Not a ghost: it's the only control between the header and the first card, so on the
        dialog's bare ground a borderless button read as a caption rather than something to press. */
@@ -3549,26 +3547,6 @@ function renderDetail(){
   close.onclick=function(){sel=null;render();};
   act.append(close);
 
-  /* Complete rides the actions row at the bottom right - same button, same place it occupies on
-     a reminder card. Toggling it touches ONLY `status:done`: priority, due and everything else
-     survive, which is what makes reopening a completed TODO put it back exactly as it was. */
-  if(showTask&&!isNew){
-    const wasDone=isDone(sel);
-    act.append(completeBtn(wasDone,async function(){
-      try{
-        sel=await toggleDone(sel,!wasDone);
-        const updated=sel;
-        toast(wasDone?'Reopened':'Marked completed','ok',async function(){
-          try{
-            sel=await toggleDone(updated,wasDone);
-            toast(wasDone?'Marked completed':'Reopened');
-            await refreshStats();render();
-          }catch(err){toast(err.message,'err');}
-        });
-        await refreshStats();render();
-      }catch(e){toast(e.message,'err');}
-    }));
-  }
   W.append(act);
 
   P.onkeydown=function(e){
