@@ -265,6 +265,7 @@ struct HttpServer::Impl
     Watcher*             mpWatcher = nullptr;
     RunLedger*           mpLedger  = nullptr;
     JotpostStatus*       mpJotpostStatus = nullptr;
+    const TriageClient*  mpResolver      = nullptr;
     McpHandler           mMcp;
     SnapshotConfig       mSnapConfig;
     crow::App<AclGuard>  mApp;
@@ -275,10 +276,12 @@ struct HttpServer::Impl
 
     Impl(Ops& ops, JotStore& store, const HttpConfig& config,
          Journal* pJournal, const SnapshotConfig& snapConfig, IpAcl& acl, History* pHistory,
-         WatchList& watch, Watcher* pWatcher, RunLedger* pLedger, JotpostStatus* pJotpostStatus)
+         WatchList& watch, Watcher* pWatcher, RunLedger* pLedger, JotpostStatus* pJotpostStatus,
+         const TriageClient* pResolver)
         : mOps(ops), mStore(store), mConfig(config), mpJournal(pJournal), mAcl(acl),
           mpHistory(pHistory), mWatch(watch), mpWatcher(pWatcher), mpLedger(pLedger),
           mpJotpostStatus(pJotpostStatus),
+          mpResolver(pResolver),
           mMcp(ops, store, pHistory), mSnapConfig(snapConfig),
           msOrigin(ResolveAdvertisedOrigin(config))
     {
@@ -642,10 +645,18 @@ struct HttpServer::Impl
                 jotpost = j;
             }
 
+            // Cheap: a handful of atomic loads, no socket and no lock - see
+            // TriageClient::Stats. Safe to do on the request thread for the same reason the
+            // Watcher guardrail flags above are.
+            std::optional<ResolverStats> resolver;
+            if (mpResolver)
+                resolver = mpResolver->Stats();
+
             return Ok(JOTJSON::StatsToJson(mOps.Stats(), persist, msOrigin,
                                            !mConfig.msToken.empty(),
                                            triage ? &*triage : nullptr, &attention,
-                                           jotpost ? &*jotpost : nullptr));
+                                           jotpost ? &*jotpost : nullptr,
+                                           resolver ? &*resolver : nullptr));
         });
 
         //------------------------------------------------------------------------------------
@@ -1222,9 +1233,9 @@ struct HttpServer::Impl
 HttpServer::HttpServer(Ops& ops, JotStore& store, const HttpConfig& config,
                        Journal* pJournal, const SnapshotConfig& snapConfig, IpAcl& acl,
                        History* pHistory, WatchList& watch, Watcher* pWatcher, RunLedger* pLedger,
-                       JotpostStatus* pJotpostStatus)
+                       JotpostStatus* pJotpostStatus, const TriageClient* pResolver)
     : mpImpl(std::make_unique<Impl>(ops, store, config, pJournal, snapConfig, acl, pHistory, watch,
-                                    pWatcher, pLedger, pJotpostStatus))
+                                    pWatcher, pLedger, pJotpostStatus, pResolver))
 {
     mpImpl->Routes();
 }

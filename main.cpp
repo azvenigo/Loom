@@ -496,7 +496,8 @@ int main(int argc, char** argv)
         pJotpostStatus = std::make_unique<JotpostStatus>(jotpostConfig);
 
     HttpServer server(ops, store, config, bPersist ? &journal : nullptr, snapConfig, acl,
-                      &history, watch, &watcher, &triageLedger, pJotpostStatus.get());
+                      &history, watch, &watcher, &triageLedger, pJotpostStatus.get(),
+                      pTriage.get());
     gpServer = &server;
     // C5039 ("potentially throwing function passed to an extern C API") is /Wall noise on every
     // signal handler ever registered this way, not a real hazard here - OnSignal only flips an

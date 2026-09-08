@@ -2517,7 +2517,11 @@ const OV_ICONS={
   hash:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">'+
       '<path d="M6.2 2 4.7 14M11.3 2 9.8 14M3 6h11M2 10h11"/></svg>',
   flag:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round">'+
-      '<path d="M3 14V2"/><path d="M3 3h9l-2.3 3L12 9H3"/></svg>'
+      '<path d="M3 14V2"/><path d="M3 3h9l-2.3 3L12 9H3"/></svg>',
+  /* A bolt for the offline resolver - the one card on this row whose work happens on another
+     machine, for free, in about two seconds. */
+  zap:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round">'+
+      '<path d="M9 1.5 3.5 9h4l-.5 5.5L12.5 7h-4l.5-5.5Z"/></svg>'
 };
 
 /* ---------- dashboard: overview ----------
@@ -2757,17 +2761,42 @@ async function viewDashboard(target){
       'Nothing waiting',
       needsAttention?function(){openAttention(unprocessed,pendingFiles);}:null);
 
-    /* Usage visibility for the background triage watcher (persist/Watcher.h) - every number here
-       is straight off GET /stats' "triage" block, which is itself straight off claude's own
-       --output-format json report (total_cost_usd et al, see persist/RunLedger.h) - nothing here
-       is estimated. Absent entirely when no RunLedger is wired up (health.triage omitted), same
-       omit-empty rule as the JSON itself. */
+    /* TWO CARDS, BECAUSE THERE ARE TWO MECHANISMS AND THEY MUST NOT BE ADDED TOGETHER.
+       "Triage usage" is the billable cloud-agent path: a persisted ledger of `claude -p` runs with
+       real dollars attached (persist/RunLedger.h), straight off claude's own --output-format json
+       report - nothing there is estimated. "Offline triage" is the LAN call to zserver
+       (persist/TriageClient.h): free, unpersisted, counted since process start. Each is absent
+       entirely when its feature is unconfigured, same omit-empty rule as the JSON itself.
+
+       Most installs will now show only the second. That is the point of the work - but the first
+       stays wired up rather than being deleted, because it is the only thing that would show a
+       cloud path quietly coming back to life. */
     if(health.triage){
       const tr=health.triage;
       const warn=tr.breaker_open||tr.budget_exceeded;
       card(warn?'warn':'','hash','Triage usage','$'+(tr.cost_usd_24h||0).toFixed(2),
         (tr.runs_24h||0)+' run'+(tr.runs_24h===1?'':'s')+' in 24h'+
           (tr.breaker_open?' · PAUSED (failing)':tr.budget_exceeded?' · budget reached':''));
+    }
+    if(health.resolver){
+      const rs=health.resolver;
+      const calls=rs.calls||0;
+      /* CALLS is the headline, not applied-or-declined, because it is the honest measure of how
+         much work moved off the cloud path - a declined call still answered a question Loom would
+         otherwise have had to ask a person or an agent.
+         The caption splits the three outcomes, which is the whole reason they are tracked apart:
+         "declined" is the service working correctly and "failed" is the box being unreachable, and
+         a card that only counted calls would render those identically. Failures are called out in
+         their own clause so a dead resolver cannot hide inside a healthy-looking total. */
+      const bits=[];
+      if(rs.applied)bits.push(rs.applied+' applied');
+      if(rs.declined)bits.push(rs.declined+' declined');
+      if(rs.avg_ms)bits.push(rs.avg_ms+'ms avg');
+      const warn=rs.breaker_open||rs.failed>0;
+      card(warn?'warn':'','zap','Offline triage',calls,
+        (calls?bits.join(' · '):'No calls yet')+
+          (rs.breaker_open?' · PAUSED ('+(rs.consecutive_failures||0)+' failures)':
+           rs.failed?' · '+rs.failed+' failed':''));
     }
 
     /* ---- distribution + signals ---- */
@@ -2833,7 +2862,17 @@ async function viewDashboard(target){
     vr('New tags this run',health.tags_added);
     vr('Todos added this run',health.todos_added);
     vr('Needs attention',(health.needs_attention||{}).total||0);
-    if(health.triage)vr('Haiku calls this run',health.triage.calls_this_run||0);
+    /* "Cloud agent" rather than "Haiku": the model behind --on-new-jots is a config choice, and
+       labelling the row after one particular model made it read as a permanent fact about Loom.
+       Shown only when a run has actually happened, since most installs no longer use this path at
+       all and a permanent "0" invites the question of what is broken. */
+    if(health.triage&&(health.triage.calls_this_run||0))
+      vr('Cloud agent calls this run',health.triage.calls_this_run);
+    if(health.resolver){
+      const rs=health.resolver;
+      vr('Offline triage calls this run',rs.calls||0);
+      if(rs.failed)vr('Offline triage failures',rs.failed);
+    }
     /* Only present with --jotpost-host configured (main.cpp) - see viewHealth for the fuller
        status note. A plain vrow here rather than another card: it is one more fact about the
        store's health, not something with its own click-through. */
@@ -2922,7 +2961,9 @@ async function viewHealth(target){
        something accumulated since start. */
     const attnRows=[['New jots',s.jots_added],['New tags',s.tags_added],
       ['Todos added',s.todos_added],['Needs attention',(s.needs_attention||{}).total||0]];
-    if(s.triage)attnRows.push(['Haiku calls',s.triage.calls_this_run||0]);
+    if(s.triage&&(s.triage.calls_this_run||0))
+      attnRows.push(['Cloud agent calls',s.triage.calls_this_run]);
+    if(s.resolver)attnRows.push(['Offline triage calls',s.resolver.calls||0]);
     group('This run',attnRows);
 
     if(!p.enabled){
@@ -2951,6 +2992,30 @@ async function viewHealth(target){
       L.append(el('div','note '+(s.jotpost.reachable?'good':'bad'),
         (s.jotpost.reachable?'Reachable — ':'Unreachable — ')+
         'the ZHotkey ingest endpoint. Last checked '+ago(s.jotpost.checked_at)+'.'));
+    }
+
+    /* Only present with --resolver-host configured (main.cpp, persist/TriageClient.h). Counters
+       are since process start; there is no ledger behind this because there is no spend to bound.
+       The three outcomes are broken out rather than summed: "declined" is the service doing its
+       job - refusing to guess is the behaviour that makes it safe to trust with the rest - while
+       "failed" means it was never reached at all, and only the second is a problem. */
+    if(s.resolver){
+      const rs=s.resolver;
+      L.append(el('div','sect','Offline triage'));
+      const bad=rs.breaker_open||(rs.failed||0)>0;
+      L.append(el('div','note '+(bad?'bad':'good'),
+        (rs.breaker_open
+           ? 'PAUSED after '+(rs.consecutive_failures||0)+' consecutive failures — backing off '+
+             'before retrying. '
+           : 'Answering at '+rs.endpoint+'. ')+
+        'Jots the built-in rules could not settle go here before they go to you.'));
+      group('Offline triage',[['Endpoint',rs.endpoint],
+        ['Calls this run',rs.calls||0],
+        ['Proposals applied',rs.applied||0],
+        ['Declined (refused to guess)',rs.declined||0],
+        ['Failed to reach',rs.failed||0],
+        ['Average round trip',(rs.avg_ms||0)+' ms'],
+        ['Last round trip',(rs.last_ms||0)+' ms']]);
     }
 
     L.append(el('div','sect','Endpoints'));

@@ -6,6 +6,7 @@
 #include "persist/History.h"
 #include "persist/Journal.h"
 #include "persist/JotpostStatus.h"
+#include "persist/TriageClient.h"
 #include "persist/RunLedger.h"
 #include "persist/Snapshot.h"
 #include "persist/WatchList.h"
@@ -71,7 +72,8 @@ public:
     HttpServer(Ops& ops, JotStore& store, const HttpConfig& config,
                Journal* pJournal, const SnapshotConfig& snapConfig, IpAcl& acl,
                History* pHistory, WatchList& watch, Watcher* pWatcher = nullptr,
-               RunLedger* pLedger = nullptr, JotpostStatus* pJotpostStatus = nullptr);
+               RunLedger* pLedger = nullptr, JotpostStatus* pJotpostStatus = nullptr,
+               const TriageClient* pResolver = nullptr);
     ~HttpServer();
 
     HttpServer(const HttpServer&)            = delete;

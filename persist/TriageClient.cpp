@@ -131,9 +131,27 @@ bool TriageClient::Available() const
 
 bool TriageClient::IsBreakerOpen() const
 {
-    if (mnConsecutiveFailures < mConfig.nFailsToOpen)
+    if (mnConsecutiveFailures.load() < mConfig.nFailsToOpen)
         return false;
-    return (NowUS() - mnBreakerOpenedUS) < static_cast<int64_t>(mConfig.nFailBackoffSec) * 1000000;
+    return (NowUS() - mnBreakerOpenedUS.load())
+           < static_cast<int64_t>(mConfig.nFailBackoffSec) * 1000000;
+}
+
+ResolverStats TriageClient::Stats() const
+{
+    ResolverStats out;
+    out.bConfigured = Configured();
+    if (out.bConfigured)
+        out.sEndpoint = mConfig.sHost + ":" + std::to_string(mConfig.nPort);
+    out.nCalls               = mnCalls.load();
+    out.nApplied             = mnApplied.load();
+    out.nDeclined            = mnDeclined.load();
+    out.nFailed              = mnFailed.load();
+    out.nTotalMS             = mnTotalMS.load();
+    out.nLastMS              = mnLastMS.load();
+    out.bBreakerOpen         = IsBreakerOpen();
+    out.nConsecutiveFailures = mnConsecutiveFailures.load();
+    return out;
 }
 
 void TriageClient::VerifyDue(TriageResult& result, const std::string& sDueLocal, int64_t nRefUS)
@@ -243,16 +261,23 @@ bool TriageClient::Triage(int64_t nJotID,
     }
 
     ++mnUsedThisPoll;
-    ++mnCalls;
+    mnCalls.fetch_add(1);
 
+    const int64_t nStartUS = NowUS();
     std::string sResponse;
-    if (!PostTriage(body.dump(), sResponse))
+    const bool bGotResponse = PostTriage(body.dump(), sResponse);
+    const uint64_t nElapsedMS = static_cast<uint64_t>((NowUS() - nStartUS) / 1000);
+    mnLastMS.store(nElapsedMS);
+    mnTotalMS.fetch_add(nElapsedMS);
+
+    if (!bGotResponse)
     {
         // Transport/auth failure - NOT the service declining. Count it toward the breaker so a
         // sleeping zserver costs one connect timeout per backoff window rather than one per jot
         // per poll.
-        if (++mnConsecutiveFailures >= mConfig.nFailsToOpen)
-            mnBreakerOpenedUS = NowUS();
+        mnFailed.fetch_add(1);
+        if (mnConsecutiveFailures.fetch_add(1) + 1 >= mConfig.nFailsToOpen)
+            mnBreakerOpenedUS.store(NowUS());
         return false;
     }
 
@@ -263,14 +288,15 @@ bool TriageClient::Triage(int64_t nJotID,
     }
     catch (const json::exception&)
     {
-        if (++mnConsecutiveFailures >= mConfig.nFailsToOpen)
-            mnBreakerOpenedUS = NowUS();
+        mnFailed.fetch_add(1);
+        if (mnConsecutiveFailures.fetch_add(1) + 1 >= mConfig.nFailsToOpen)
+            mnBreakerOpenedUS.store(NowUS());
         return false;
     }
 
     // A well-formed answer, whatever it says, means the service is up - so a run of refusals must
     // not creep the breaker open. Only transport and parse failures count against it.
-    mnConsecutiveFailures = 0;
+    mnConsecutiveFailures.store(0);
 
     out.sStatus = StrOr(parsed, "status");
     out.sReason = StrOr(parsed, "reason");
@@ -279,7 +305,10 @@ bool TriageClient::Triage(int64_t nJotID,
 
     const auto itProps = parsed.find("proposals");
     if (itProps == parsed.end() || !itProps->is_object())
+    {
+        mnDeclined.fetch_add(1);
         return true;   // answered, proposed nothing - a valid outcome, see the header
+    }
     const json& props = *itProps;
 
     // Every sub-proposal is read defensively and independently: a service that implements five of
@@ -351,7 +380,9 @@ bool TriageClient::Triage(int64_t nJotID,
 
     if (out.bHaveSummary || out.bHaveKind || out.bHaveTopics || out.bHavePriority ||
         out.bHaveDue || out.bHaveDuplicate || out.bNeedsInput)
-        ++mnApplied;
+        mnApplied.fetch_add(1);
+    else
+        mnDeclined.fetch_add(1);
 
     return true;
 }

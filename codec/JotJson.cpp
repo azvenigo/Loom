@@ -344,7 +344,8 @@ namespace JOTJSON
     std::string StatsToJson(const StoreStats& stats, const PersistStats& persist,
                             const std::string& sOrigin, bool bAuthRequired,
                             const TriageStats* pTriage, const AttentionStats* pAttention,
-                            const JotpostStats* pJotpost)
+                            const JotpostStats* pJotpost,
+                            const ResolverStats* pResolver)
     {
         json out;
         out["jots"]          = stats.mnJots;
@@ -432,6 +433,30 @@ namespace JOTJSON
             j["reachable"]  = pJotpost->mbReachable;
             j["checked_at"] = pJotpost->mnCheckedUS;
             out["jotpost"]  = std::move(j);
+        }
+
+        // The offline triage service (persist/TriageClient.h). A SEPARATE block from "triage"
+        // rather than more fields inside it, because the two measure different mechanisms: that
+        // one is a persisted ledger of billable agent runs, this one is a since-start counter for
+        // a free LAN call. Folding them together would invite a dashboard to add up numbers that
+        // do not belong in the same total.
+        if (pResolver && pResolver->bConfigured)
+        {
+            json r;
+            r["endpoint"]             = pResolver->sEndpoint;
+            r["calls"]                = pResolver->nCalls;
+            r["applied"]              = pResolver->nApplied;
+            r["declined"]             = pResolver->nDeclined;
+            r["failed"]               = pResolver->nFailed;
+            r["last_ms"]              = pResolver->nLastMS;
+            // Mean over calls that actually completed a round trip; a failed call's time is real
+            // but is mostly connect timeout, which would make the model look slow when it is the
+            // network that is broken.
+            const uint64_t nOk = pResolver->nApplied + pResolver->nDeclined;
+            r["avg_ms"]               = nOk ? (pResolver->nTotalMS / nOk) : 0;
+            r["breaker_open"]         = pResolver->bBreakerOpen;
+            r["consecutive_failures"] = pResolver->nConsecutiveFailures;
+            out["resolver"]           = std::move(r);
         }
 
         return out.dump();

@@ -1,6 +1,7 @@
 #pragma once
 // Copyright (c) 2026 Alexander Zvenigorodsky. MIT License. See LICENSE.
 
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <string>
@@ -134,6 +135,30 @@ struct TriageResult
     int         nRetryAfterSec = 0;        // set when sStatus == "deferred"
 };
 
+// What GET /stats reports about the offline service. Everything here is SINCE PROCESS START, not
+// persisted - there is no ledger behind this the way RunLedger backs the Haiku numbers, because
+// there is no spend to bound. A restart zeroes it, the same window the store's own "this run"
+// counters use.
+struct ResolverStats
+{
+    bool        bConfigured = false;
+    std::string sEndpoint;                // "192.168.1.30:7711", for the card's caption
+
+    // nCalls == nApplied + nDeclined + nFailed, always. Keeping the three apart is the whole point:
+    // "the service said no" and "the service is unreachable" look identical on a card that only
+    // counts calls, and they need completely different reactions from a human.
+    uint64_t    nCalls    = 0;
+    uint64_t    nApplied  = 0;            // answered, and Loom used at least one proposal
+    uint64_t    nDeclined = 0;            // answered, proposed nothing it was willing to stand behind
+    uint64_t    nFailed   = 0;            // transport, auth or parse failure - never reached the model
+
+    uint64_t    nTotalMS = 0;             // cumulative wall time in calls
+    uint64_t    nLastMS  = 0;
+
+    bool        bBreakerOpen         = false;
+    int         nConsecutiveFailures = 0;
+};
+
 class TriageClient
 {
 public:
@@ -173,10 +198,13 @@ public:
                 const std::vector<TriageCandidate>& vCandidates,
                 TriageResult& out);
 
-    bool     IsBreakerOpen() const;
-    int      ConsecutiveFailures() const { return mnConsecutiveFailures; }
-    uint64_t Calls() const               { return mnCalls; }
-    uint64_t Applied() const             { return mnApplied; }
+    bool IsBreakerOpen() const;
+
+    // Safe to call from the HTTP thread while the poll thread is mid-call - every field is read
+    // from an atomic. A snapshot can be internally inconsistent by a few instructions (nCalls
+    // incremented before nApplied catches up), which is the same tolerance JotpostStatus already
+    // accepts for a display value.
+    ResolverStats Stats() const;
 
 private:
     bool PostTriage(const std::string& sBody, std::string& outBody) const;
@@ -188,11 +216,18 @@ private:
 
     TriageConfig mConfig;
 
-    // Watcher-poll-thread-only, like Watcher's own loop state. The counters are read by the HTTP
-    // thread for /stats, a torn-read-tolerant display value - the same call JotpostStatus makes.
-    int      mnUsedThisPoll        = 0;
-    int      mnConsecutiveFailures = 0;
-    int64_t  mnBreakerOpenedUS     = 0;
-    uint64_t mnCalls               = 0;
-    uint64_t mnApplied             = 0;
+    // Poll-thread-only - never read off it, so it needs no synchronization.
+    int mnUsedThisPoll = 0;
+
+    // Everything below is written by the poll thread and read by the HTTP thread for GET /stats,
+    // so atomic - the same call Watcher.h makes for its own guardrail flags, and for the same
+    // reason: a plain int here is a data race even where the hardware would forgive it.
+    std::atomic<int>      mnConsecutiveFailures{ 0 };
+    std::atomic<int64_t>  mnBreakerOpenedUS{ 0 };
+    std::atomic<uint64_t> mnCalls{ 0 };
+    std::atomic<uint64_t> mnApplied{ 0 };
+    std::atomic<uint64_t> mnDeclined{ 0 };
+    std::atomic<uint64_t> mnFailed{ 0 };
+    std::atomic<uint64_t> mnTotalMS{ 0 };
+    std::atomic<uint64_t> mnLastMS{ 0 };
 };

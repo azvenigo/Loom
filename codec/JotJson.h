@@ -6,6 +6,7 @@
 #include "core/Ops.h"
 #include "core/TagRegistry.h"
 #include "persist/RunLedger.h"
+#include "persist/TriageClient.h"
 
 #include <string>
 #include <vector>
@@ -103,7 +104,8 @@ namespace JOTJSON
                             const std::string& sOrigin = {}, bool bAuthRequired = false,
                             const TriageStats* pTriage = nullptr,
                             const AttentionStats* pAttention = nullptr,
-                            const JotpostStats* pJotpost = nullptr);
+                            const JotpostStats* pJotpost = nullptr,
+                            const ResolverStats* pResolver = nullptr);
 
     // The write response: the record, plus any non-fatal tag warnings. The warnings ride with the
     // result rather than arriving out of band, because an agent that has to make a second call to
