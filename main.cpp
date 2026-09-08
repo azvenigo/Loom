@@ -22,6 +22,7 @@
 #include "persist/RunLedger.h"
 #include "persist/SinkFanout.h"
 #include "persist/Snapshot.h"
+#include "persist/TriageClient.h"
 #include "persist/WatchList.h"
 #include "persist/Watcher.h"
 
@@ -31,6 +32,7 @@
 #include <cstring>
 #include <csignal>
 #include <filesystem>
+#include <fstream>
 #include <memory>
 #include <string>
 
@@ -260,7 +262,22 @@ int main(int argc, char** argv)
             "                       with a cached TCP connect, surfaced as GET /stats' \"jotpost\"\n"
             "                       block and on the dashboard's Health page. Unset (default): no\n"
             "                       check, no block.\n"
-            "  --jotpost-port=N     port for the above (default 7701).\n");
+            "  --jotpost-port=N     port for the above (default 7701).\n"
+            "\n"
+            "  --resolver-host=HOST  ask the offline triage service (persist/TriageClient.h) for\n"
+            "                        whatever the built-in rules could not settle - summary, kind,\n"
+            "                        topical tags, priority, a due phrase the regex cannot read -\n"
+            "                        before falling back to tagging a jot `tbd` for you. Unset\n"
+            "                        (default): no calls, unchanged behaviour.\n"
+            "  --resolver-port=N     port for the above (default 7711).\n"
+            "  --resolver-token-file=PATH  file holding the resolver's bearer token. A FILE, not a\n"
+            "                        --resolver-token=SECRET flag, so the token never shows up in\n"
+            "                        `ps` output or a shell history.\n"
+            "  --resolver-timeout=N  seconds to wait on one resolve call (default 20). This waits on\n"
+            "                        model inference, not just a socket.\n"
+            "  --resolver-max-per-poll=N  most jots to resolve in one watch cycle (default 4), so a\n"
+            "                        backlog cannot stall background ingestion. The rest wait for\n"
+            "                        the next poll.\n");
         return 0;
     }
 
@@ -405,6 +422,48 @@ int main(int argc, char** argv)
         std::printf("seeded %zu jots\n", store.Size());
     }
 
+    // The local due-date resolver, if one is configured. Constructed before the Watcher because
+    // the Watcher borrows it; null means "not configured", the same nullable-optional-feature
+    // shape jotpost's status probe uses below. See persist/TriageClient.h.
+    TriageConfig resolverConfig;
+    resolverConfig.sHost       = ArgStr(argc, argv, "--resolver-host", "");
+    resolverConfig.nPort       = static_cast<uint16_t>(
+                                     std::atoi(ArgStr(argc, argv, "--resolver-port", "7711")));
+    resolverConfig.nTimeoutMS  = std::atoi(ArgStr(argc, argv, "--resolver-timeout", "20")) * 1000;
+    resolverConfig.nMaxPerPoll = std::atoi(ArgStr(argc, argv, "--resolver-max-per-poll", "4"));
+
+    std::unique_ptr<TriageClient> pTriage;
+    if (!resolverConfig.sHost.empty())
+    {
+        // Read from a file rather than a flag so the secret is never in `ps` or a shell history -
+        // and trim, because a token file written by an editor almost always ends in a newline and
+        // a stray \r or \n in an Authorization header is a 400 that looks like a wrong token.
+        const char* pTokenFile = ArgStr(argc, argv, "--resolver-token-file", "");
+        if (pTokenFile && *pTokenFile)
+        {
+            std::ifstream tokenIn(pTokenFile, std::ios::binary);
+            if (tokenIn)
+            {
+                std::string sToken((std::istreambuf_iterator<char>(tokenIn)),
+                                   std::istreambuf_iterator<char>());
+                const size_t nEnd = sToken.find_last_not_of(" \t\r\n");
+                resolverConfig.sToken = (nEnd == std::string::npos) ? "" : sToken.substr(0, nEnd + 1);
+            }
+        }
+
+        // Refuse loudly rather than starting a resolver that will 401 on every call - an
+        // unreachable token file is a config mistake, and silently degrading to `tbd` would look
+        // exactly like the resolver simply declining everything.
+        if (resolverConfig.sToken.empty())
+        {
+            std::fprintf(stderr,
+                         "loom: --resolver-host set but no token could be read from "
+                         "--resolver-token-file; refusing to start the resolver.\n");
+            return 1;
+        }
+        pTriage = std::make_unique<TriageClient>(resolverConfig);
+    }
+
     WatcherConfig watcherConfig;
     watcherConfig.nPollIntervalSec        = std::atoi(ArgStr(argc, argv, "--watch-interval", "15"));
     // 60s measured as a real problem, not a theoretical one: each `claude -p` invocation pays a
@@ -424,7 +483,7 @@ int main(int argc, char** argv)
 
     // Started unconditionally, even with no --on-new-jots: background ingestion of watched files
     // (rotate-and-import) is useful on its own, with or without an agent to hand new jots to.
-    Watcher watcher(watch, ops, store, triageLedger, watcherConfig);
+    Watcher watcher(watch, ops, store, triageLedger, watcherConfig, pTriage.get());
     watcher.Start();
 
     // Unset host = feature off: no probing, and /stats simply omits the "jotpost" block (same
@@ -472,6 +531,14 @@ int main(int argc, char** argv)
     if (pJotpostStatus)
         std::printf("  health-checking jotpost at %s:%u\n",
                     jotpostConfig.sHost.c_str(), static_cast<unsigned>(jotpostConfig.nPort));
+    // Worth a line of its own: "the offline service is configured" and "the offline service is
+    // actually answering" are different facts, and without this the only symptom of a mistyped
+    // host is jots quietly going to `tbd` exactly as they did before - which looks like nothing
+    // being wrong at all.
+    if (pTriage)
+        std::printf("  offline triage via %s:%u, up to %d jot(s) per poll\n",
+                    resolverConfig.sHost.c_str(), static_cast<unsigned>(resolverConfig.nPort),
+                    resolverConfig.nMaxPerPoll);
 
     const std::error_code ec = server.Run();
     gpServer = nullptr;

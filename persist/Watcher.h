@@ -3,6 +3,7 @@
 
 #include "core/JotStore.h"
 #include "core/Ops.h"
+#include "persist/TriageClient.h"
 #include "persist/RunLedger.h"
 #include "persist/WatchList.h"
 
@@ -98,8 +99,10 @@ public:
     // store is needed alongside ops for exactly one thing - Flatten(jot, names) to read a jot's
     // tags back out as strings when editing an alert jot's tag list, the same reason HttpServer
     // itself is handed both rather than just Ops. See core/FlatJot.h.
+    // pResolver may be null (no --resolver-host) - the offline triage step is then skipped
+    // entirely and triage behaves exactly as it did before that service existed.
     Watcher(WatchList& watch, Ops& ops, JotStore& store, RunLedger& ledger,
-            const WatcherConfig& config);
+            const WatcherConfig& config, TriageClient* pResolver = nullptr);
     ~Watcher();
 
     Watcher(const Watcher&)            = delete;
@@ -139,6 +142,11 @@ private:
     // Watcher.cpp. Only what this cannot confidently handle gets tagged `tbd` for a human to
     // decide, rather than spending a Haiku invocation (confirmed live: ~$0.02-0.03 of FIXED
     // per-invocation overhead regardless of content) on jots simple enough not to need it.
+    //
+    // With a TriageClient configured there is now a RUNG BETWEEN those two: whatever this cannot
+    // settle - a summary, what kind of thing the jot is, topical tags, priority, a due phrase the
+    // regex could not read - is asked of the offline service on zserver before the jot is handed
+    // to a human. Only what THAT also declines becomes a `tbd` card. See TriageClient.h.
     void DeterministicTriage();
 
     // Guarantees every `tbd` jot is `todo` + `priority:high`, in code rather than trusting a single
@@ -164,6 +172,7 @@ private:
     JotStore&  mStore;
     RunLedger& mLedger;
     WatcherConfig mConfig;
+    TriageClient*  mpResolver = nullptr;   // borrowed, may be null - owned by main.cpp
 
     std::thread             mThread;
     std::atomic<bool>       mbStop{ false };

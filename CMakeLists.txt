@@ -81,6 +81,7 @@ add_library(loomcore STATIC
     persist/RunLedger.cpp
     persist/Watcher.cpp
     persist/JotpostStatus.cpp
+    persist/TriageClient.cpp
     mcp/McpHandler.cpp
 
     core/FairSharedMutex.h
@@ -92,6 +93,7 @@ add_library(loomcore STATIC
     persist/Importer.h persist/WatchList.h
     persist/RunLedger.h persist/Watcher.h
     persist/JotpostStatus.h
+    persist/TriageClient.h
     persist/DataLock.h persist/SinkFanout.h
     mcp/McpHandler.h
 )

@@ -302,8 +302,9 @@ namespace
 
 
 Watcher::Watcher(WatchList& watch, Ops& ops, JotStore& store, RunLedger& ledger,
-                 const WatcherConfig& config)
-    : mWatch(watch), mOps(ops), mStore(store), mLedger(ledger), mConfig(config)
+                 const WatcherConfig& config, TriageClient* pResolver)
+    : mWatch(watch), mOps(ops), mStore(store), mLedger(ledger), mConfig(config),
+      mpResolver(pResolver)
 {
 }
 
@@ -368,6 +369,11 @@ void Watcher::DeterministicTriage()
     NameTables names;
     mStore.SnapshotNames(names);
 
+    // The per-cycle resolve budget is per POLL, not per jot - reset once, here, so a large batch
+    // of ambiguous jots spreads across polls instead of stalling ingestion behind model inference.
+    if (mpResolver)
+        mpResolver->BeginPoll();
+
     for (const Jot& jot : results.mJots)
     {
         const FlatJot flat = Flatten(jot, names);
@@ -404,16 +410,129 @@ void Watcher::DeterministicTriage()
         // timestamp (Jot.h) - no notion of "now" is needed, so this does not care how long the
         // jot sat pending before this poll happened to run.
         int64_t nOffsetUS = 0;
+        bool    bHaveDue  = std::find_if(vTags.begin(), vTags.end(),
+                                [](const std::string& t) { return t.rfind("due:", 0) == 0; })
+                            != vTags.end();
         if (bTodo && ParseRelativeOffset(flat.msText, nOffsetUS))
         {
             vTags.erase(std::remove_if(vTags.begin(), vTags.end(),
                         [](const std::string& t) { return t.rfind("due:", 0) == 0; }),
                        vTags.end());
             vTags.push_back("due:" + FormatDueLocal(jot.mID + nOffsetUS));
+            bHaveDue = true;
         }
 
+        // THE MIDDLE RUNG - the offline triage service on zserver. See persist/TriageClient.h.
+        //
+        // `want` carries ONLY what the code above could not settle for itself, and the service is
+        // contractually required not to run a prompt for anything absent from it. That is the cost
+        // discipline of the whole design: a jot that needs one answer buys one narrow prompt, not
+        // six. It is also why this is worth doing at all - the measured Haiku path spent $0.0407
+        // and 29 seconds to answer a question the regex above usually answers for free.
+        std::string sServiceSummary;
+        bool bNeedsInput   = false;
+        bool bServiceKnows = false;   // the service told us enough that a human need not look
+
+        if (mpResolver && mpResolver->Available())
+        {
+            const bool bHasTopic = std::find_if(vTags.begin(), vTags.end(),
+                [&vVocab](const std::string& t)
+                {
+                    for (const TagStat& v : vVocab)
+                        if (v.msTag == t)
+                            return true;
+                    return false;
+                }) != vTags.end();
+            const bool bHasPriority = std::find_if(vTags.begin(), vTags.end(),
+                [](const std::string& t) { return t.rfind("priority:", 0) == 0; }) != vTags.end();
+
+            TriageWants wants;
+            // A short jot's own text already IS its summary, for free - only ask about the long
+            // unstructured ones the deterministic path cannot safely condense.
+            wants.bSummary  = flat.msSummary.empty() && !bConfident;
+            // If brackets told us what this is, we already know; asking would be paying to be told
+            // something the author wrote down explicitly.
+            wants.bClassify = !bConfident;
+            wants.bTopics   = !bHasTopic;
+            wants.bPriority = (bTodo || !bConfident) && !bHasPriority;
+            wants.bDue      = !bHaveDue && (bTodo || !bConfident);
+            // Dedupe is deliberately NOT requested here - see the note at the end of this block.
+
+            if (wants.bSummary || wants.bClassify || wants.bTopics || wants.bPriority ||
+                wants.bDue)
+            {
+                std::vector<std::string> vVocabNames;
+                vVocabNames.reserve(vVocab.size());
+                for (const TagStat& v : vVocab)
+                    vVocabNames.push_back(v.msTag);
+
+                TriageResult res;
+                if (mpResolver->Triage(jot.mID, flat.msName, flat.msSummary, flat.msText, vTags,
+                                       wants, vVocabNames, {}, res))
+                {
+                    if (res.bHaveSummary)
+                    {
+                        sServiceSummary = res.sSummary;
+                        bServiceKnows   = true;
+                    }
+
+                    // KIND MAPS TO TAGS HERE, NOT IN THE SERVICE. The service proposes a concept
+                    // ("journal"/"fact"/"task") and Loom owns the vocabulary that expresses it -
+                    // which is what keeps a future rename of these tags a one-codebase change.
+                    // "fact" maps to nothing on purpose: type:project vs type:reference is a real
+                    // distinction and guessing it wrong mislabels a memory permanently.
+                    if (res.bHaveKind)
+                    {
+                        if (res.sKind == "task" &&
+                            std::find(vTags.begin(), vTags.end(), "todo") == vTags.end())
+                            vTags.push_back("todo");
+                        else if (res.sKind == "journal" &&
+                                 std::find(vTags.begin(), vTags.end(), "journal") == vTags.end())
+                            vTags.push_back("journal");
+                        bServiceKnows = true;
+                    }
+
+                    // Guaranteed by contract to be a subset of the vocabulary we just sent, so
+                    // there is no second spelling of an existing tag to defend against here.
+                    // res.vNewTopics is deliberately IGNORED: minting vocabulary is a decision
+                    // with no undo at the store level, and it is not one a background thread
+                    // should be making unattended.
+                    for (const std::string& t : res.vTopics)
+                        if (std::find(vTags.begin(), vTags.end(), t) == vTags.end())
+                            vTags.push_back(t);
+
+                    if (res.bHavePriority && !bHasPriority)
+                        vTags.push_back(res.sPriority);
+
+                    if (res.bHaveDue && !bHaveDue)
+                    {
+                        vTags.push_back(res.sDueTag);
+                        bHaveDue = true;
+                    }
+
+                    // A stated recurrence has no tag convention yet, so it is exactly the kind of
+                    // thing a person should see rather than something to invent a schema for.
+                    if (res.bRecurring)
+                        bNeedsInput = true;
+
+                    if (res.bNeedsInput)
+                    {
+                        bNeedsInput = true;
+                        if (flat.msSummary.empty() && sServiceSummary.empty())
+                            sServiceSummary = res.sNeedsSummary;
+                    }
+                }
+            }
+        }
+
+        // DEDUPE IS NOT WIRED, AND THE REASON IS AN ORDERING PROBLEM, NOT AN OVERSIGHT.
+        // Ops::CollectDuplicates finds candidates by probing name+summary, and it skips a jot that
+        // has neither - which is precisely the state of every jot reaching this function, since a
+        // summary is one of the things we are here to acquire. Wiring it would mean a second call
+        // after the summary lands, and a second call is a real cost decision rather than a tidy-up.
+
         JotInput patch;
-        if (!bConfident)
+        if (bNeedsInput || (!bConfident && !bServiceKnows))
         {
             // tbd IMPLIES todo, always, in code rather than relying on a human or a prompt to
             // remember both - EnsureNeedsInputVisible enforces this too, as a backstop for a tbd
@@ -422,10 +541,12 @@ void Watcher::DeterministicTriage()
                 vTags.push_back("todo");
             vTags.push_back("tbd");
         }
-        else if (!sClean.empty())
-        {
+
+        if (!sServiceSummary.empty())
+            patch.msSummary = sServiceSummary.size() > 300 ? sServiceSummary.substr(0, 300)
+                                                           : sServiceSummary;
+        else if (bConfident && !sClean.empty())
             patch.msSummary = sClean.size() > 100 ? sClean.substr(0, 100) : sClean;
-        }
         // else: e.g. a jot that was just "[todo]" with nothing else - nothing to summarize,
         // leave the summary field untouched.
 
