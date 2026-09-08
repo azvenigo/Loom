@@ -2858,6 +2858,10 @@ async function viewDashboard(target){
     vr('Todos added this run',health.todos_added);
     vr('Needs attention',(health.needs_attention||{}).total||0);
     if(health.triage)vr('Haiku calls this run',health.triage.calls_this_run||0);
+    /* Only present with --jotpost-host configured (main.cpp) - see viewHealth for the fuller
+       status note. A plain vrow here rather than another card: it is one more fact about the
+       store's health, not something with its own click-through. */
+    if(health.jotpost)vr('Jotpost',health.jotpost.reachable?'Reachable':'Unreachable');
   }catch(e){L.append(el('div','note bad',e.message));}
 
   clearInterval(window.__rt);
@@ -2961,6 +2965,16 @@ async function viewHealth(target){
       fl.onclick=async function(){try{await api('/admin/flush',{method:'POST'});toast('Flushed');}
         catch(e){toast(e.message,'err');}};
       row.append(snap,fl);L.append(row);
+    }
+
+    /* Only present when the service was started with --jotpost-host - see main.cpp and
+       persist/JotpostStatus.h. reachable is a cached TCP connect, not a real HTTP health check -
+       jotpost has no /health route of its own (its only route is POST /jot). */
+    if(s.jotpost){
+      L.append(el('div','sect','Jotpost'));
+      L.append(el('div','note '+(s.jotpost.reachable?'good':'bad'),
+        (s.jotpost.reachable?'Reachable — ':'Unreachable — ')+
+        'the ZHotkey ingest endpoint. Last checked '+ago(s.jotpost.checked_at)+'.'));
     }
 
     L.append(el('div','sect','Endpoints'));

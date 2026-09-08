@@ -13,6 +13,8 @@ LOOM_PORT=7700
 # Snapshot, WAL, history log, ACL and data lock all live here.
 LOOM_DATA=/var/lib/loom
 
-# Anything else you would pass on the command line: --token=SECRET, --sync=always, --threads=N.
-# Kept as one opaque string so a new flag needs no change to the unit file.
+# Anything else you would pass on the command line: --token=SECRET, --sync=always, --threads=N,
+# --jotpost-host=192.168.1.112 --jotpost-port=7701 (health-checks jotpost - see GET /stats'
+# "jotpost" block and the dashboard's Health page). Kept as one opaque string so a new flag needs
+# no change to the unit file.
 LOOM_EXTRA=

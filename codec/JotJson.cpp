@@ -343,7 +343,8 @@ namespace JOTJSON
 
     std::string StatsToJson(const StoreStats& stats, const PersistStats& persist,
                             const std::string& sOrigin, bool bAuthRequired,
-                            const TriageStats* pTriage, const AttentionStats* pAttention)
+                            const TriageStats* pTriage, const AttentionStats* pAttention,
+                            const JotpostStats* pJotpost)
     {
         json out;
         out["jots"]          = stats.mnJots;
@@ -423,6 +424,14 @@ namespace JOTJSON
             a["files"] = pAttention->mnPendingFiles;
             a["total"] = pAttention->mnUnprocessedJots + pAttention->mnPendingFiles;
             out["needs_attention"] = std::move(a);
+        }
+
+        if (pJotpost)
+        {
+            json j;
+            j["reachable"]  = pJotpost->mbReachable;
+            j["checked_at"] = pJotpost->mnCheckedUS;
+            out["jotpost"]  = std::move(j);
         }
 
         return out.dump();

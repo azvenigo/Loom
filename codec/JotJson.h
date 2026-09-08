@@ -85,6 +85,16 @@ namespace JOTJSON
         size_t mnPendingFiles    = 0;
     };
 
+    // pJotpost is null for callers with nothing to report (no --jotpost-host configured, or the
+    // MCP stats tool, which has no JotpostStatus behind it) - the "jotpost" block is then simply
+    // omitted, same omit-empty rule as everything else here. See persist/JotpostStatus.h for what
+    // "reachable" actually checks (a raw, cached TCP connect - not a real HTTP health check).
+    struct JotpostStats
+    {
+        bool    mbReachable = false;
+        int64_t mnCheckedUS = 0;
+    };
+
     // pTriage is null for callers with nothing to report (the MCP stats tool, which has no
     // Watcher/RunLedger behind it) - the "triage" block is simply omitted rather than emitted
     // empty, same omit-empty rule as everything else in this file. pAttention is null for the same
@@ -92,7 +102,8 @@ namespace JOTJSON
     std::string StatsToJson(const StoreStats& stats, const PersistStats& persist,
                             const std::string& sOrigin = {}, bool bAuthRequired = false,
                             const TriageStats* pTriage = nullptr,
-                            const AttentionStats* pAttention = nullptr);
+                            const AttentionStats* pAttention = nullptr,
+                            const JotpostStats* pJotpost = nullptr);
 
     // The write response: the record, plus any non-fatal tag warnings. The warnings ride with the
     // result rather than arriving out of band, because an agent that has to make a second call to

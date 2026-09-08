@@ -5,6 +5,7 @@
 #include "core/Ops.h"
 #include "persist/History.h"
 #include "persist/Journal.h"
+#include "persist/JotpostStatus.h"
 #include "persist/RunLedger.h"
 #include "persist/Snapshot.h"
 #include "persist/WatchList.h"
@@ -64,10 +65,13 @@ public:
     // pWatcher/pLedger may both be null (no background triage configured) - the /stats "triage"
     // block is simply omitted then, the same nullable-optional-feature pattern pJournal/pHistory
     // already use. GET /triage/runs reports an empty ring rather than failing.
+    //
+    // pJotpostStatus may also be null (no --jotpost-host configured) - the /stats "jotpost" block
+    // is then omitted too. See persist/JotpostStatus.h.
     HttpServer(Ops& ops, JotStore& store, const HttpConfig& config,
                Journal* pJournal, const SnapshotConfig& snapConfig, IpAcl& acl,
                History* pHistory, WatchList& watch, Watcher* pWatcher = nullptr,
-               RunLedger* pLedger = nullptr);
+               RunLedger* pLedger = nullptr, JotpostStatus* pJotpostStatus = nullptr);
     ~HttpServer();
 
     HttpServer(const HttpServer&)            = delete;

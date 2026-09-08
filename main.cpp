@@ -17,6 +17,7 @@
 #include "persist/History.h"
 #include "persist/Importer.h"
 #include "persist/Journal.h"
+#include "persist/JotpostStatus.h"
 #include "persist/Purge.h"
 #include "persist/RunLedger.h"
 #include "persist/SinkFanout.h"
@@ -30,6 +31,7 @@
 #include <cstring>
 #include <csignal>
 #include <filesystem>
+#include <memory>
 #include <string>
 
 namespace
@@ -252,7 +254,13 @@ int main(int argc, char** argv)
             "  --triage-timeout=N     kill --on-new-jots if it runs longer than N seconds (300).\n"
             "  --triage-max-ids=N     cap how many jot ids one invocation is given (default 20).\n"
             "  --triage-max-failures=N  consecutive failures before auto-triage pauses itself until\n"
-            "                           loom is restarted (default 3). See persist/Watcher.h.\n");
+            "                           loom is restarted (default 3). See persist/Watcher.h.\n"
+            "\n"
+            "  --jotpost-host=HOST  health-check a jotpost instance (jotpost/main.cpp) at HOST:PORT\n"
+            "                       with a cached TCP connect, surfaced as GET /stats' \"jotpost\"\n"
+            "                       block and on the dashboard's Health page. Unset (default): no\n"
+            "                       check, no block.\n"
+            "  --jotpost-port=N     port for the above (default 7701).\n");
         return 0;
     }
 
@@ -419,8 +427,17 @@ int main(int argc, char** argv)
     Watcher watcher(watch, ops, store, triageLedger, watcherConfig);
     watcher.Start();
 
+    // Unset host = feature off: no probing, and /stats simply omits the "jotpost" block (same
+    // nullable-optional-feature pattern watcher/ledger already use). See persist/JotpostStatus.h.
+    JotpostConfig jotpostConfig;
+    jotpostConfig.sHost = ArgStr(argc, argv, "--jotpost-host", "");
+    jotpostConfig.nPort = static_cast<uint16_t>(std::atoi(ArgStr(argc, argv, "--jotpost-port", "7701")));
+    std::unique_ptr<JotpostStatus> pJotpostStatus;
+    if (!jotpostConfig.sHost.empty())
+        pJotpostStatus = std::make_unique<JotpostStatus>(jotpostConfig);
+
     HttpServer server(ops, store, config, bPersist ? &journal : nullptr, snapConfig, acl,
-                      &history, watch, &watcher, &triageLedger);
+                      &history, watch, &watcher, &triageLedger, pJotpostStatus.get());
     gpServer = &server;
     // C5039 ("potentially throwing function passed to an extern C API") is /Wall noise on every
     // signal handler ever registered this way, not a real hazard here - OnSignal only flips an
@@ -452,6 +469,9 @@ int main(int argc, char** argv)
                     ? "no --on-new-jots configured, ingest-only"
                     : ("auto-triage via '" + watcherConfig.sOnNewJots + "', capped at $" +
                        std::to_string(watcherConfig.fMaxDailyUSD) + "/24h").c_str());
+    if (pJotpostStatus)
+        std::printf("  health-checking jotpost at %s:%u\n",
+                    jotpostConfig.sHost.c_str(), static_cast<unsigned>(jotpostConfig.nPort));
 
     const std::error_code ec = server.Run();
     gpServer = nullptr;

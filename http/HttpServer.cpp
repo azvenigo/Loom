@@ -264,6 +264,7 @@ struct HttpServer::Impl
     WatchList&           mWatch;
     Watcher*             mpWatcher = nullptr;
     RunLedger*           mpLedger  = nullptr;
+    JotpostStatus*       mpJotpostStatus = nullptr;
     McpHandler           mMcp;
     SnapshotConfig       mSnapConfig;
     crow::App<AclGuard>  mApp;
@@ -274,9 +275,10 @@ struct HttpServer::Impl
 
     Impl(Ops& ops, JotStore& store, const HttpConfig& config,
          Journal* pJournal, const SnapshotConfig& snapConfig, IpAcl& acl, History* pHistory,
-         WatchList& watch, Watcher* pWatcher, RunLedger* pLedger)
+         WatchList& watch, Watcher* pWatcher, RunLedger* pLedger, JotpostStatus* pJotpostStatus)
         : mOps(ops), mStore(store), mConfig(config), mpJournal(pJournal), mAcl(acl),
           mpHistory(pHistory), mWatch(watch), mpWatcher(pWatcher), mpLedger(pLedger),
+          mpJotpostStatus(pJotpostStatus),
           mMcp(ops, store, pHistory), mSnapConfig(snapConfig),
           msOrigin(ResolveAdvertisedOrigin(config))
     {
@@ -629,9 +631,21 @@ struct HttpServer::Impl
                 if (file.mbPending)
                     ++attention.mnPendingFiles;
 
+            // Reachable() re-probes only once per cache window (persist/JotpostStatus.h) - most
+            // calls here are a mutex lock and a stale-check, not a socket.
+            std::optional<JOTJSON::JotpostStats> jotpost;
+            if (mpJotpostStatus)
+            {
+                JOTJSON::JotpostStats j;
+                j.mbReachable = mpJotpostStatus->Reachable();
+                j.mnCheckedUS = mpJotpostStatus->CheckedAtUS();
+                jotpost = j;
+            }
+
             return Ok(JOTJSON::StatsToJson(mOps.Stats(), persist, msOrigin,
                                            !mConfig.msToken.empty(),
-                                           triage ? &*triage : nullptr, &attention));
+                                           triage ? &*triage : nullptr, &attention,
+                                           jotpost ? &*jotpost : nullptr));
         });
 
         //------------------------------------------------------------------------------------
@@ -1207,9 +1221,10 @@ struct HttpServer::Impl
 
 HttpServer::HttpServer(Ops& ops, JotStore& store, const HttpConfig& config,
                        Journal* pJournal, const SnapshotConfig& snapConfig, IpAcl& acl,
-                       History* pHistory, WatchList& watch, Watcher* pWatcher, RunLedger* pLedger)
+                       History* pHistory, WatchList& watch, Watcher* pWatcher, RunLedger* pLedger,
+                       JotpostStatus* pJotpostStatus)
     : mpImpl(std::make_unique<Impl>(ops, store, config, pJournal, snapConfig, acl, pHistory, watch,
-                                    pWatcher, pLedger))
+                                    pWatcher, pLedger, pJotpostStatus))
 {
     mpImpl->Routes();
 }
