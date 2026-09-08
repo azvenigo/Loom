@@ -38,6 +38,35 @@
         LimitRequestBody 16384
     </Location>
 
+# HOW TO VERIFY THIS - and how NOT to
+#
+# The ONLY valid test is a POST carrying a well-formed body, which must return 204:
+#
+#   curl -i -X POST https://www.azvenigo.com/jot -H 'Content-Type: application/json' \
+#        --data-binary '{"ts":"2026-01-01T00:00:00","entry":"proxy test"}'
+#
+# and then confirm the line actually landed in /mnt/fast/web/jot_log/jots.json on azzorin. Delete
+# it afterwards - Loom's WatchList ingests that file, and a test line becomes a real jot within
+# minutes.
+#
+# Every cheaper check is worthless here, because it exercises a request jotpost would reject
+# anyway: a GET is 404'd by the RewriteRule before it is ever proxied, and a POST with an empty or
+# malformed body fails jotpost's own validation. All of them return the same 404 whether the proxy
+# works or was never installed.
+#
+# That is not an accident, it is ProxyErrorOverride doing its job - and it means THIS ENDPOINT
+# CANNOT BE DIAGNOSED FROM THE PUBLIC URL. A broken proxy and an unconfigured path are byte
+# identical: same status, same length, same ETag. Comparing /jot against a dead path proves
+# nothing. It has already produced one confident wrong diagnosis. When something is off, read the
+# vhost access log on the Apache host and jots.json on azzorin; the status code will not tell you
+# where the chain broke.
+#
+# ORDERING GOTCHA, the first thing to check if a valid POST 404s: mod_rewrite runs in the
+# URL-translation phase, BEFORE <Location> sections are resolved. An existing RewriteRule earlier
+# in the vhost that rewrites or claims the URI will stop this ProxyPass from ever being consulted,
+# and Apache falls through to the filesystem and serves an ordinary 404. Placing this block near
+# an existing root-block RewriteRule is exactly where that bites.
+#
 # STILL TO DO ON THE JOTPOST SIDE, before anything off-LAN can route here:
 #
 #   1. Set a token. Without one jotpost accepts from anyone who can reach it, and after this change
