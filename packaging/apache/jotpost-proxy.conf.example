@@ -1,0 +1,68 @@
+# jotpost behind an existing Apache TLS vhost.
+#
+# WHY THIS RATHER THAN OPENING PORT 7701:
+#   - No new open port. A port scan of the house already finds 443 open and expects to; it learns
+#     nothing new. Quieting jotpost's own responses cannot achieve this - nmap decides a port is
+#     open from the TCP handshake, before any HTTP byte is exchanged, so a forwarded 7701 reports
+#     `open` no matter what the service answers.
+#   - TLS for free. jotpost speaks plain HTTP. Forwarded directly, the bearer token and the full
+#     text of every jot cross the internet in cleartext.
+#   - One thing to keep patched and rate-limited, and it is the one already built for the job.
+#
+# Goes inside the *:443 vhost for www.azvenigo.com, on whichever host terminates TLS - NOT on
+# azzorin, which only runs jotpost itself. Needs: a2enmod proxy proxy_http rewrite
+#
+#   192.168.1.112:7701 = azzorin, per packaging/systemd/jotpost.service.
+
+    # Non-POST gets Apache's own 404, rendered by Apache, before the backend is ever contacted -
+    # so `GET /jot` is byte-identical to `GET /any-dead-path`, same status, same body, same length.
+    # <LimitExcept POST> would answer 403, which is itself the tell we are trying not to give.
+    RewriteEngine On
+    RewriteCond %{REQUEST_METHOD} !=POST
+    RewriteRule ^/jot$ - [R=404,L]
+
+    <Location /jot>
+        ProxyPass         http://192.168.1.112:7701/jot connectiontimeout=5 timeout=15
+        ProxyPassReverse  http://192.168.1.112:7701/jot
+
+        # The other half of looking like nothing. jotpost answers every rejection with the same
+        # 15-byte "404 Not Found"; without this, that body is distinguishable from the site's real
+        # 404 page by Content-Length alone (15 vs 541 as of this writing), which is enough to mark
+        # /jot as special. ProxyErrorOverride swaps any backend 4xx/5xx body for this
+        # site's own ErrorDocument, keeping the status code. 2xx is passed through untouched, so a
+        # successful 204 still reaches the client as a 204.
+        ProxyErrorOverride On
+
+        # Matches kMaxBodyBytes in jotpost/main.cpp. Rejected here, so an oversized body never
+        # crosses the LAN.
+        LimitRequestBody 16384
+    </Location>
+
+# STILL TO DO ON THE JOTPOST SIDE, before anything off-LAN can route here:
+#
+#   1. Set a token. Without one jotpost accepts from anyone who can reach it, and after this change
+#      "anyone who can reach it" includes the internet:
+#
+#        umask 077; head -c 32 /dev/urandom | base64 > /etc/loom/jotpost.token
+#        chown alex:alex /etc/loom/jotpost.token
+#
+#      then add --token-file=/etc/loom/jotpost.token to ExecStart. Use --token-file rather than
+#      --token: jotpost.service is public in this repo, and --token=SECRET is visible in `ps` to
+#      every user on the box.
+#
+#   2. Firewall 7701 to the Apache host only, so the proxy is the sole path in and the LAN-side
+#      port cannot be reached from anywhere a guest VLAN or a compromised device can route:
+#
+#        ufw allow proto tcp from <apache-host-ip> to 192.168.1.112 port 7701
+#
+#   3. Consider a path nobody would guess - /jot is a word a wordlist scanner will try. Change the
+#      RewriteRule, the <Location> and the first ProxyPass argument together (the trailing /jot on
+#      ProxyPass is the backend's route name and must stay /jot, since that is what jotpost serves):
+#
+#        RewriteRule ^/k7f3q9x2$ ...   <Location /k7f3q9x2>   ProxyPass http://192.168.1.112:7701/jot
+#
+#      Obscurity, not security - the token is what actually protects this. It just keeps the
+#      endpoint out of the logs of every scanner that walks a common-paths list.
+#
+#   4. Rate limiting is not configured here. Apache's mod_ratelimit shapes bandwidth, not request
+#      rate; fail2ban on the access log, or mod_qos, is the real answer if this ever gets found.

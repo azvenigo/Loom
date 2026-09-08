@@ -1,5 +1,12 @@
 # jotpost - standalone write-only jot ingest endpoint. See jotpost/main.cpp for what it does and why.
 #
+# Reachable off-LAN only by reverse proxy from an existing TLS vhost - see
+# packaging/apache/jotpost-proxy.conf.example, which also lists what has to change HERE first (a
+# token, and a firewall rule narrowing 7701 to the proxy host). Do not port-forward 7701 instead:
+# jotpost answers every rejection with an indistinguishable bare 404, but that hides what is
+# listening, not that something is - a scanner reads the TCP handshake and reports the port open
+# regardless - and jotpost speaks plain HTTP, so a forwarded port puts the token on the wire.
+#
 # Kept deliberately minimal (no separate conf file, no dedicated user) to match how loom.service
 # itself actually runs on azzorin today - straight out of the dev build tree as the owning user, not
 # the packaged /usr/local/bin + dedicated-service-account story in packaging/install.sh. Revisit if
@@ -15,6 +22,9 @@ Wants=network-online.target
 Type=simple
 User=alex
 Group=alex
+# LAN-only as it stands: no token, so anything that can route to 192.168.1.112 can write a jot.
+# Before the Apache proxy above is switched on, append --token-file=/etc/loom/jotpost.token (a
+# file, not --token=SECRET, which would be public in this repo and visible in `ps`).
 ExecStart=/home/alex/dev/git/Loom/build/jotpost --bind=192.168.1.112 --port=7701 --path=/mnt/fast/web/jot_log/jots.json
 Restart=on-failure
 RestartSec=3
