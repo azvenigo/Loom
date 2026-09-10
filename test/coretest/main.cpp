@@ -16,6 +16,8 @@
 // Exit code 0 means everything passed. Anything else means read the output.
 //////////////////////////////////////////////////////////////////////////////////////////////////
 
+#include "codec/JotJson.h"
+#include "core/ChangeKind.h"
 #include "core/IpAcl.h"
 #include "core/JotStore.h"
 #include "core/LoomTime.h"
@@ -791,6 +793,129 @@ namespace
         store.SetJournalSink(nullptr);
     }
 
+    void TestLastChange()
+    {
+        Section("last change");
+
+        // The classifier on its own, over tag sets - no store, because these are the cases that
+        // must be right regardless of how a write arrives.
+        using V = std::vector<std::string>;
+        Check(CHANGE::Classify(V{ "todo" }, V{ "todo", "status:done" }) == eChangeKind::kDone,
+              "gaining status:done is 'done'");
+        Check(CHANGE::Classify(V{ "todo", "status:done" }, V{ "todo" }) == eChangeKind::kReopened,
+              "losing status:done is 'reopened'");
+        Check(CHANGE::Classify(V{ "todo" }, V{ "todo", "due:2026-09-13t17:00" }) == eChangeKind::kScheduled,
+              "gaining a due date is 'scheduled'");
+        Check(CHANGE::Classify(V{ "due:2026-09-13t17:00" }, V{ "due:2026-09-20t17:00" }) == eChangeKind::kSnoozed,
+              "a due date pushed later is 'snoozed'");
+        Check(CHANGE::Classify(V{ "due:2026-09-20t17:00" }, V{ "due:2026-09-13t17:00" }) == eChangeKind::kRescheduled,
+              "a due date pulled earlier is 'rescheduled', not 'snoozed'");
+        Check(CHANGE::Classify(V{ "due:2026-09-13t17:00" }, V{}) == eChangeKind::kUnscheduled,
+              "losing the due date is 'unscheduled'");
+        Check(CHANGE::Classify(V{ "todo" }, V{ "todo" }) == eChangeKind::kUpdated,
+              "an edit that moves no tag is plain 'updated'");
+
+        // Same-day times still order correctly by string - the hour is inside the compared text,
+        // not something the date-shape check truncates away.
+        Check(CHANGE::Classify(V{ "due:2026-09-13t09:00" }, V{ "due:2026-09-13t17:00" }) == eChangeKind::kSnoozed,
+              "a snooze within one day is still a snooze");
+
+        // A due: tag nobody's scheduler wrote cannot be ordered, so the direction is not claimed.
+        Check(CHANGE::Classify(V{ "due:friday" }, V{ "due:next-week" }) == eChangeKind::kRescheduled,
+              "an off-format due date moves without claiming which way");
+
+        // Completion outranks scheduling: the dashboard's Complete clears the due date in the same
+        // Save, and "done" is what happened.
+        Check(CHANGE::Classify(V{ "todo", "due:2026-09-13t17:00" }, V{ "todo", "status:done" }) == eChangeKind::kDone,
+              "finishing and clearing the due date in one write reads as 'done'");
+
+        // --- through the store ---
+        JotStore store;
+        Ops      ops(store);
+
+        JotInput in;
+        in.msText = "Connect the front fan on azzorin.";
+        in.mTags  = std::vector<std::string>{ "todo" };
+        AddResult created;
+        Check(!ops.Add(in, created), "created a todo");
+        Check(created.mJot.mLastChange == eChangeKind::kAdded, "a create is stamped 'added'");
+
+        JotInput snooze;
+        snooze.mTags = std::vector<std::string>{ "todo", "due:2026-09-13t17:00" };
+        AddResult r;
+        Check(!ops.Update(created.mJot.mID, snooze, 0, r), "scheduled it");
+        Check(r.mJot.mLastChange == eChangeKind::kScheduled, "and the store stamped 'scheduled'");
+
+        JotInput later;
+        later.mTags = std::vector<std::string>{ "todo", "due:2026-09-27t17:00" };
+        Check(!ops.Update(created.mJot.mID, later, 0, r), "pushed it back");
+        Check(r.mJot.mLastChange == eChangeKind::kSnoozed, "and the store stamped 'snoozed'");
+
+        // THE ONE THAT MATTERS. A no-op patch must not overwrite the real answer with "updated" -
+        // an agent re-asserting a state it already believes in would otherwise erase the record of
+        // what actually last happened to the jot.
+        JotInput echo;
+        echo.mTags = std::vector<std::string>{ "todo", "due:2026-09-27t17:00" };
+        AddResult noop;
+        Check(!ops.Update(created.mJot.mID, echo, 0, noop), "re-asserted the same state");
+        Check(noop.mbNoChange, "which is a no change");
+        Jot after;
+        Check(store.Get(created.mJot.mID, after), "read it back");
+        Check(after.mLastChange == eChangeKind::kSnoozed,
+              "and the stored label still says 'snoozed', not 'updated'");
+
+        JotInput done;
+        done.mTags = std::vector<std::string>{ "todo", "status:done" };
+        Check(!ops.Update(created.mJot.mID, done, 0, r), "finished it");
+        Check(r.mJot.mLastChange == eChangeKind::kDone, "'done' outranks the due date it cleared");
+
+        // A tag merge is a bulk rewrite, and says so rather than borrowing a per-jot verdict.
+        size_t nChanged = 0;
+        uint64_t nTxn   = 0;
+        Check(!store.MergeTags(std::vector<std::string>{ "todo" }, "todo-item", nChanged, nTxn),
+              "merged the todo tag away");
+        Check(store.Get(created.mJot.mID, after) && after.mLastChange == eChangeKind::kRetagged,
+              "a merged jot reads as 'retagged', not 'reopened'");
+
+        // --- the wire form ---
+        NameTables names;
+        store.SnapshotNames(names);
+        const FlatJot flat = Flatten(after, names);
+        Check(flat.msLastChange == "retagged", "flattening spells the kind out");
+
+        const std::string sJson = JOTJSON::ToJson(flat, false);
+        Check(sJson.find("\"last_change\":\"retagged\"") != std::string::npos,
+              "and it survives to the wire");
+
+        FlatJot back;
+        std::string sErr;
+        Check(JOTJSON::ParseFlat(sJson, back, sErr) && back.msLastChange == "retagged",
+              "and round-trips back out of a serialized record");
+
+        // A record written before the field existed - i.e. any older snapshot line - must load, and
+        // must come back as "we do not know", never as a guess.
+        FlatJot old;
+        Check(JOTJSON::ParseFlat("{\"id\":1756661962123456,\"text\":\"older record\"}", old, sErr),
+              "a record with no last_change still parses");
+        Check(old.msLastChange.empty(), "and carries no kind");
+        Check(CHANGE::Parse(old.msLastChange) == eChangeKind::kNone, "which resolves to kNone");
+
+        // A kind coined by a NEWER build degrades to kNone rather than failing the record.
+        Check(CHANGE::Parse("archived") == eChangeKind::kNone, "an unknown kind is not fatal");
+
+        // A caller may not set it. The whole value of the field is that the server derived it.
+        JotInput forged;
+        std::string sParseErr;
+        Check(JOTJSON::ParseInput("{\"text\":\"hi\",\"last_change\":\"done\"}", forged, sParseErr),
+              "a body carrying last_change is accepted");
+        JotStore store2;
+        Ops      ops2(store2);
+        AddResult forgedResult;
+        Check(!ops2.Add(forged, forgedResult), "and creates a jot");
+        Check(forgedResult.mJot.mLastChange == eChangeKind::kAdded,
+              "but the forged kind is ignored - a create is 'added'");
+    }
+
     void TestIpAclParsing()
     {
         Section("ip acl - parsing");
@@ -985,6 +1110,7 @@ int main()
     TestSearch();
     TestIndexCoherence();
     TestNoOpUpdates();
+    TestLastChange();
     TestIpAclParsing();
     TestIpAclMatching();
     TestWatchList();

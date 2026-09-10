@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Alexander Zvenigorodsky. MIT License. See LICENSE.
 #include "Ops.h"
 
+#include "ChangeKind.h"
 #include "LoomTime.h"
 #include "TagRegistry.h"
 
@@ -320,6 +321,12 @@ std::error_code Ops::Restore(const FlatJot& record, int64_t nExpectUpdatedUS, tJ
 
     std::vector<FlatJot> vOne(1, record);
     vOne[0].mnUpdatedUS = LOOMTIME::NowMicros();
+
+    // The label the logged version carried described whatever happened back THEN - "snoozed", say.
+    // Putting it back is a new event with its own answer, and it is not the old one: what last
+    // happened to this jot is that somebody reached into the history log and reverted it. Losing
+    // the old label costs nothing, since the version it described is still in the log.
+    vOne[0].msLastChange = CHANGE::Name(eChangeKind::kRestored);
 
     size_t nLoaded = 0;
     if (std::error_code ec = mStore.LoadFlatBatch(vOne, nLoaded, /*bJournal*/ true))

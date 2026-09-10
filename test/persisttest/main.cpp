@@ -280,6 +280,73 @@ namespace
         }
     }
 
+    void TestLastChangeSurvivesRestart()
+    {
+        Section("last change survives a restart");
+        Reset();
+
+        const SnapshotConfig paths = Paths();
+        tJotID nSnoozed = kInvalidJotID, nDone = kInvalidJotID;
+
+        {
+            JotStore store;
+            Ops      ops(store);
+            Journal  journal;
+            JournalConfig cfg;
+            cfg.msPath = paths.msWalPath;
+            cfg.mSync  = eSyncPolicy::kAlways;
+            journal.Open(cfg);
+            store.SetJournalSink(&journal);
+
+            // One jot whose last change lands in the SNAPSHOT half, one whose last change lands in
+            // the WAL half - the field has to come back through both readers, and they are separate
+            // code paths that could each drop it on its own.
+            JotInput in;
+            in.msText = "Get the case out of the closet.";
+            in.mTags  = std::vector<std::string>{ "todo", "due:2026-09-13t17:00" };
+            AddResult created;
+            ops.Add(in, created);
+            nSnoozed = created.mJot.mID;
+
+            JotInput later;
+            later.mTags = std::vector<std::string>{ "todo", "due:2026-09-27t17:00" };
+            AddResult r;
+            ops.Update(nSnoozed, later, 0, r);
+            Check(r.mJot.mLastChange == eChangeKind::kSnoozed, "snoozed before the snapshot");
+
+            JotInput second;
+            second.msText = "Verify /mnt/fast/Alex against the NAS.";
+            second.mTags  = std::vector<std::string>{ "todo" };
+            AddResult other;
+            ops.Add(second, other);
+            nDone = other.mJot.mID;
+
+            journal.Flush();
+            size_t nWritten = 0;
+            Check(!SNAPSHOT::Write(paths, store, &journal, nWritten), "snapshot writes");
+
+            // After the checkpoint, so this one is only in the fresh log.
+            JotInput done;
+            done.mTags = std::vector<std::string>{ "todo", "status:done" };
+            ops.Update(nDone, done, 0, r);
+            Check(r.mJot.mLastChange == eChangeKind::kDone, "finished after the snapshot");
+            journal.Flush();
+            journal.Close();
+        }
+
+        {
+            JotStore store;
+            size_t nLoaded = 0, nReplayed = 0, nDropped = 0;
+            Check(!SNAPSHOT::Load(paths, store, nLoaded, nReplayed, nDropped), "reload succeeds");
+
+            Jot jot;
+            Check(store.Get(nSnoozed, jot) && jot.mLastChange == eChangeKind::kSnoozed,
+                  "a kind written before the snapshot comes back out of the snapshot");
+            Check(store.Get(nDone, jot) && jot.mLastChange == eChangeKind::kDone,
+                  "a kind written after it comes back out of the replayed log");
+        }
+    }
+
     void TestNoPersistIsSilent()
     {
         Section("no sink attached");
@@ -306,6 +373,7 @@ int main(int argc, char** argv)
     TestTornFinalLine();
     TestReplayIdempotent();
     TestSnapshotCycle();
+    TestLastChangeSurvivesRestart();
     TestNoPersistIsSilent();
 
     std::error_code ec;

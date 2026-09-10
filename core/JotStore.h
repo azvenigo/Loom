@@ -161,6 +161,7 @@ inline FlatJot Flatten(const Jot& jot, const NameTables& names)
     f.mID           = jot.mID;
     f.mnUpdatedUS   = jot.mnUpdatedUS;
     f.msOrigin      = jot.msOrigin;
+    f.msLastChange  = CHANGE::Name(jot.mLastChange);
     f.msName        = jot.msName;
     f.msSummary     = jot.msSummary;
     f.msText        = jot.msText;
@@ -347,8 +348,14 @@ private:
     void Locked_Flatten(const Jot& jot, FlatJot& outFlat) const;
     void Locked_JournalPut(const Jot& jot);
 
-    // Content equality over the fields a patch can touch - everything except id, updated, slot and
-    // the derived index lengths. An exact comparison rather than a hash: "these are the same
+    // A jot's tags as strings, for CHANGE::Classify - which is written against the vocabulary a
+    // person writes, not against interned ids whose numbering is meaningless outside this process.
+    // Deliberately NOT Locked_Flatten: classification needs two versions of one jot, and flattening
+    // both would copy a body that can be a megabyte, twice, on every write.
+    void Locked_TagNames(const Jot& jot, std::vector<std::string>& outTags) const;
+
+    // Content equality over the fields a patch can touch - everything except id, updated, slot,
+    // last-change and the derived index lengths. An exact comparison rather than a hash: "these are the same
     // record" has to be exactly right, and the strings are already in cache from applying them.
     static bool Locked_SameContent(const Jot& a, const Jot& b);
     std::error_code Locked_LoadBatch(std::vector<Jot>& vJots, size_t& outLoaded, bool bJournal);

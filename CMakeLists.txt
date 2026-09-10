@@ -9,8 +9,8 @@ project(Loom CXX)
 #   loom         the service: HTTP + MCP + dashboard
 #   jotpost      standalone write-only ingest endpoint - see jotpost/main.cpp
 #   loombench    in-process store benchmark, no socket
-#   coretest     176 assertions over the store
-#   persisttest  29 assertions over WAL/snapshot/replay
+#   coretest     210 assertions over the store
+#   persisttest  35 assertions over WAL/snapshot/replay
 #   mcptest      48 assertions over the MCP protocol surface
 #
 # A LIBRARY plus thin executables, deliberately breaking the ZLibraries convention of copying a

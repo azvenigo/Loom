@@ -2,6 +2,7 @@
 #include "persist/Importer.h"
 
 #include "codec/JotJson.h"
+#include "core/ChangeKind.h"
 #include "core/LoomTime.h"
 
 #include "vendor/json.hpp"
@@ -128,6 +129,11 @@ namespace IMPORT
             flat.mID      = nUS;
             flat.msText   = sEntry;
             flat.msEditor = sEditor;   // empty resolves to "user"
+            // An import IS the record's creation - it has never existed anywhere else - so it takes
+            // the same label a create through the API would. Not a kind of its own: how a jot
+            // arrived is what `origin` and `source:` tags are for, and a second answer to that
+            // question here would be one more thing to keep in step for no new information.
+            flat.msLastChange = CHANGE::Name(eChangeKind::kAdded);
             // This format carries no summary, so every line it produces needs triage - see
             // web/Dashboard.h's isUnprocessed/attention-dialog, which is what actually surfaces it.
             flat.mTags    = { "status:unprocessed" };

@@ -550,6 +550,8 @@ std::error_code JotStore::Add(const JotInput& input, MutationResult& outResult)
         Locked_PromotePendingLinks(stored.msName, id);
     }
 
+    stored.mLastChange = eChangeKind::kAdded;
+
     Locked_JournalPut(stored);
 
     ++mnMutations;
@@ -629,6 +631,16 @@ std::error_code JotStore::Update(tJotID id, const JotInput& patch, int64_t nExpe
     }
 
     jot.mnUpdatedUS = LOOMTIME::NowMicros();
+
+    // STAMPED ONLY PAST THE NO-CHANGE GATE ABOVE, which is the whole reason it sits here rather
+    // than next to Locked_Apply. A patch that re-asserts the state a jot is already in is not a
+    // mutation, and overwriting the label with "updated" would erase the real answer - a todo
+    // finished on Monday would read as "updated" the moment any agent re-saved it unchanged.
+    std::vector<std::string> vBeforeTags, vAfterTags;
+    Locked_TagNames(before, vBeforeTags);
+    Locked_TagNames(jot, vAfterTags);
+    jot.mLastChange = CHANGE::Classify(vBeforeTags, vAfterTags);
+
     Locked_IndexJot(jot);
 
     if (sOldName != jot.msName)
@@ -773,6 +785,13 @@ std::error_code JotStore::MergeTags(const std::vector<std::string>& vFrom, const
         jot.mTags = std::move(vNew);
         jot.mnUpdatedUS = LOOMTIME::NowMicros();
 
+        // Not run through CHANGE::Classify, even though a merge could in principle rename a tag
+        // into or out of `status:done`. The honest answer to "what happened to this jot" is that
+        // somebody rewrote the vocabulary across the whole store and this record was caught in it -
+        // nobody looked at this jot or decided anything about it, and labelling it "done" would
+        // attribute a decision to a bulk find-and-replace.
+        jot.mLastChange = eChangeKind::kRetagged;
+
         Locked_IndexJot(jot);
         Locked_JournalPut(jot);
         ++outJotsChanged;
@@ -807,6 +826,7 @@ std::error_code JotStore::LoadFlatBatch(std::vector<FlatJot>& vFlat, size_t& out
         jot.mID          = flat.mID;
         jot.mnUpdatedUS  = flat.mnUpdatedUS;
         jot.msOrigin     = std::move(flat.msOrigin);
+        jot.mLastChange  = CHANGE::Parse(flat.msLastChange);
         jot.msName       = flat.msName;
         jot.msSummary    = std::move(flat.msSummary);
         jot.msText       = std::move(flat.msText);
@@ -1003,11 +1023,17 @@ void JotStore::Locked_Flatten(const Jot& jot, FlatJot& outFlat) const
     // rule in the codec has one thing to test instead of two.
     outFlat.msEditor = (jot.mEditor == kDefaultEditor) ? std::string() : mEditors.Value(jot.mEditor);
     outFlat.msOrigin = jot.msOrigin;
+    outFlat.msLastChange = CHANGE::Name(jot.mLastChange);
 
-    outFlat.mTags.clear();
-    outFlat.mTags.reserve(jot.mTags.size());
+    Locked_TagNames(jot, outFlat.mTags);
+}
+
+void JotStore::Locked_TagNames(const Jot& jot, std::vector<std::string>& outTags) const
+{
+    outTags.clear();
+    outTags.reserve(jot.mTags.size());
     for (tTagID id : jot.mTags)
-        outFlat.mTags.push_back(mTags.Name(id));
+        outTags.push_back(mTags.Name(id));
 }
 
 // Journals one record while the caller still holds the write lock. Every mutation path routes
@@ -1018,6 +1044,10 @@ bool JotStore::Locked_SameContent(const Jot& a, const Jot& b)
     // mTags and mLinks are kept sorted by Locked_Apply, so element-wise equality is the right
     // comparison and not an accident of insertion order. mPendingLinks is not sorted, but it is
     // derived from the text in a stable order, so the same text yields the same vector.
+    //
+    // mLastChange is not compared either, for the same reason and one more: it is DERIVED from a
+    // comparison of this kind, so feeding it back in would make every write differ from the one
+    // before it and defeat the no-change gate outright.
     //
     // msOrigin IS DELIBERATELY NOT COMPARED, here or in the FlatJot twin below. It is stamped by
     // the server on every request rather than supplied as content, so counting it would turn the
@@ -1036,6 +1066,11 @@ bool JotStore::Locked_SameContent(const Jot& a, const Jot& b)
 
 // The FlatJot twin of the check above, and it must cover the same fields - a record read back out
 // of the history log has no interned ids to compare, so this is what the restore path uses.
+//
+// msLastChange is excluded here for a reason the twin does not have: a logged version carries the
+// label it was written with, and the live record carries whatever has happened since. Comparing
+// them would call a restore-to-current a real change and write it, which is exactly the no-op this
+// check exists to catch.
 bool JotStore::SameContent(const FlatJot& a, const FlatJot& b)
 {
     // Editor is normalized rather than compared raw: the default editor flattens to an empty string

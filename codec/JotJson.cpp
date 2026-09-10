@@ -84,6 +84,13 @@ namespace
         if (!jot.msOrigin.empty())
             j["origin"] = jot.msOrigin;
 
+        // What the last write DID - "done", "snoozed", "added". Same rule as origin, and for the
+        // same reason: there is no default worth materializing, because "we do not know what
+        // happened to this jot" is a real state and an empty string says it precisely. Every record
+        // written before the field existed is in it. See core/ChangeKind.h.
+        if (!jot.msLastChange.empty())
+            j["last_change"] = jot.msLastChange;
+
         // Human-readable timestamps are strictly a verbose convenience. The id is authoritative.
         if (bVerbose)
         {
@@ -161,6 +168,8 @@ namespace JOTJSON
         if (j.contains("summary") && j["summary"].is_string()) outJot.msSummary = j["summary"].get<std::string>();
         if (j.contains("editor")  && j["editor"].is_string())  outJot.msEditor  = j["editor"].get<std::string>();
         if (j.contains("origin")  && j["origin"].is_string())  outJot.msOrigin  = j["origin"].get<std::string>();
+        if (j.contains("last_change") && j["last_change"].is_string())
+            outJot.msLastChange = j["last_change"].get<std::string>();
         if (j.contains("updated") && j["updated"].is_number_integer())
             outJot.mnUpdatedUS = j["updated"].get<int64_t>();
 
@@ -227,6 +236,10 @@ namespace JOTJSON
             outInput.msEditor = j["editor"].get<std::string>();
         }
 
+        // `last_change` IS NOT READ HERE EITHER, and for a stronger reason than origin: it is not
+        // merely observed by the server, it is DERIVED from the difference between two versions, so
+        // a caller supplying one would be asserting something about a write it has not made yet.
+        //
         // `origin` IS NOT READ HERE, and its absence is the feature. It is the one field on a jot
         // that a caller may not set: the whole value of an origin is that the server observed it
         // rather than being told it, so it is stamped by the front door after this parse. An

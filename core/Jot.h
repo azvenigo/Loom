@@ -1,6 +1,8 @@
 #pragma once
 // Copyright (c) 2026 Alexander Zvenigorodsky. MIT License. See LICENSE.
 
+#include "ChangeKind.h"
+
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -65,6 +67,17 @@ struct Jot
     // interning it would buy a few bytes a jot and cost a third name table threaded through
     // NameTables and every Flatten call site.
     std::string         msOrigin;
+
+    // What the last write to this jot DID - finished it, snoozed it, or just edited it. Derived,
+    // never supplied: like msOrigin this is a fact the server establishes, not a field a caller
+    // may set, and the codec reads no key for it out of a request body. Unlike msOrigin it is
+    // computed from the DIFFERENCE between two versions, which is why it is stamped inside the
+    // store rather than at the front door - see ChangeKind.h.
+    //
+    // kNone on every record written before the field existed, and that is a permanent normal
+    // state, not a backlog to fill in: nothing knows what happened to those, and guessing from
+    // their current tags would invent answers. See eChangeKind::kNone.
+    eChangeKind         mLastChange = eChangeKind::kNone;
 
     std::string         msName;         // optional stable slug; empty for plain jots
     std::string         msSummary;      // optional; weighted above body when ranking

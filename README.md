@@ -143,6 +143,29 @@ rather than only the unverifiable half. It is never read from a request body —
 ignores an `origin` key — and it is not part of a record's content, so re-asserting an unchanged
 memory from a second machine is still a no-op rather than a write.
 
+**Every jot records what last happened to it.** Alongside *when* it changed, *who* changed it and
+*where from*, a jot now carries *what the change was*: `added`, `done`, `reopened`, `scheduled`,
+`snoozed`, `rescheduled`, `unscheduled`, `updated`, `retagged` or `restored`. It is classified
+inside the store's write lock, where both versions of the record exist, and stored on the record —
+because every kind except `added` is a statement about a *difference*, and nothing reading a jot on
+its own can recover it. A jot carrying `due:2026-09-20` cannot tell you whether that date was just
+set or just pushed back a week.
+
+The history log does hold before-images, but it is bounded and rotated by size: it answers "what
+changed this week", not "what last happened to this jot in March". Keeping the one-byte answer on
+the record is what makes the question survive rotation. Like `origin` it is server-derived and the
+codec reads no `last_change` key from a request body, and like `origin` it is not part of a record's
+content — so re-asserting an unchanged memory neither writes nor overwrites the label, and a todo
+finished on Monday still reads `done` after any number of no-op saves. The field is optional and
+absent on everything written before it existed, which is why adding it needed no migration; the
+dashboard's **Recently changed** list shows it as a label down the left of every row.
+
+**TODOs carry who they are for.** `for:human` and `for:agent` say who should *do* a piece of open
+work, which is a different question from `source:` — the machine a jot was *written* from. The
+dashboard's TODO panel filters on it, and a todo with neither tag stays unrouted and visible under
+**All** rather than being defaulted into either bucket, so an untriaged pile shows up as the gap
+between All and the other two counts.
+
 ### Purge
 
 `DELETE /jots/<id>` removes a jot from RAM and appends a tombstone. The text is still in the
@@ -168,8 +191,8 @@ answerable after the content is gone, which is the point of the confirmation ste
 
 Working: core store, persistence, REST, MCP, dashboard, an importer for simple `{"ts","entry"}`
 JSONL logs, a runtime address allow list, an append-only history log with per-jot restore,
-transaction-grouped undo for multi-record operations, server-stamped write origins, duplicate
-detection on create, an offline purge, and service packaging with health-checked updates and
+transaction-grouped undo for multi-record operations, server-stamped write origins, a per-jot
+record of what the last change actually was, duplicate detection on create, an offline purge, and service packaging with health-checked updates and
 rollback, on both Windows and Linux. Not yet built: a design for backing a shared
 markdown-based memory store (files-as-source-of-truth, offline reconcile, conflict review) sketched
 but not implemented.

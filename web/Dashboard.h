@@ -1010,6 +1010,21 @@ mark{background:var(--mark);color:inherit;border-radius:2px;padding:0 1px}
 .ov-todobadge{flex:none;width:34px;height:34px;border-radius:9px;background:var(--warn);color:#fff;
   display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px -2px color-mix(in srgb,var(--warn) 70%,transparent)}
 .ov-todobadge svg{width:16px;height:16px}
+/* Audience filter, in the TODO panel head. Segmented rather than three loose buttons, because
+   these are three views of ONE set and exactly one is always active - the shared border says that
+   in a way a row of independent pills does not. */
+.audfilter{display:flex;margin-top:8px;border:1px solid var(--line);border-radius:6px;
+  overflow:hidden;width:max-content;max-width:100%}
+.audchip{font:11px var(--mono);color:var(--faint);background:var(--sunk);border:0;
+  border-right:1px solid var(--line);padding:4px 10px;cursor:pointer;display:flex;
+  align-items:center;gap:6px;white-space:nowrap}
+.audchip:last-child{border-right:0}
+.audchip:hover{color:var(--ink)}
+.audchip.on{background:var(--accent-wash);color:var(--accent-ink);font-weight:600}
+/* The count, dimmed - it qualifies the label rather than competing with it. */
+.audchip b{font-weight:600;color:var(--dim)}
+.audchip.on b{color:var(--accent-ink)}
+
 .ov-todocols{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
 @media(max-width:760px){.ov-todocols{grid-template-columns:1fr}}
 .ov-todocolhead{display:flex;align-items:center;gap:7px;margin-bottom:9px;padding-bottom:7px;
@@ -1155,6 +1170,26 @@ mark{background:var(--mark);color:inherit;border-radius:2px;padding:0 1px}
 .ov-arow.fresh{outline:2px solid var(--accent);outline-offset:-2px;border-radius:7px;
   padding-left:8px;padding-right:8px;margin:0 -8px}
 .ov-adot{width:7px;height:7px;border-radius:50%;background:var(--cat,var(--accent));flex:none}
+
+/* What the last write to that jot DID - see core/ChangeKind.h. A FIXED-WIDTH column rather than a
+   chip that hugs its text: the whole value of the label is scanning the list vertically for the one
+   thing that got finished, and a ragged left edge is exactly what defeats that. 80px is the widest
+   word in the vocabulary ("UNSCHEDULED", 11 chars of 10px mono) plus its padding, so nothing in the
+   closed set can push the column out of line.
+   Colored by what the change MEANS, not one color per kind - five tiers a reader can learn at a
+   glance beat eleven they have to look up. Everything in the scheduling family shares the warn
+   tint because "the date moved" is the thing being noticed; which direction it moved is what the
+   word itself says. */
+.chgchip{font:10px var(--mono);text-transform:uppercase;letter-spacing:.04em;padding:2px 6px;
+  border-radius:4px;width:80px;text-align:center;flex:none;background:var(--sunk);
+  color:var(--faint);box-sizing:border-box;overflow:hidden}
+.chgchip.ch-done{background:var(--good-wash);color:var(--good);font-weight:600}
+.chgchip.ch-reopened{background:var(--bad-wash);color:var(--bad);font-weight:600}
+.chgchip.ch-added{background:var(--accent-wash);color:var(--accent-ink);font-weight:600}
+.chgchip.ch-time{background:var(--warn-wash);color:var(--warn)}
+/* A jot written before Loom recorded change kinds. Deliberately still occupies the column - the
+   alignment is the feature - and reads as an absent answer rather than as a kind of its own. */
+.chgchip.ch-unknown{color:var(--dim);background:transparent}
 .ov-amid{min-width:0;flex:1}
 .ov-atitle{font-size:12.5px;color:var(--ink);font-weight:500;white-space:nowrap;
   overflow:hidden;text-overflow:ellipsis}
@@ -1383,6 +1418,21 @@ label u{text-decoration:none;color:var(--accent-ink);text-transform:none;letter-
        <code>status:done</code> tag and drops it out of the panel, keeping <code>todo</code> so the
        finished work stays on the record; hit the same button again to bring it back exactly as
        it was.</p>
+    <p><b>For me / For agents.</b> Tag a TODO <code>for:human</code> or <code>for:agent</code> to
+       say who should <em>do</em> it, and the panel's filter will split the board that way. This is
+       not the same as <code>source:</code>, which records the machine a jot was <em>written</em>
+       from - an agent on azzorin can perfectly well write down something only you can do. A TODO
+       with neither tag is unrouted and appears under <b>All</b> only; when All's count exceeds the
+       other two put together, that gap is the untriaged pile.</p>
+
+    <h3>What changed</h3>
+    <p>Every row in <b>Recently changed</b> leads with what the last write to that jot actually
+       did - <code>DONE</code>, <code>SNOOZED</code>, <code>ADDED</code>, <code>UPDATED</code> and
+       so on. It is recorded on the jot itself at the moment of the write, by comparing the new
+       version against the old one, so it still answers months later - long after the history log
+       that could have reconstructed it has rotated away. Hover a label for what it means.
+       A dash means the jot was written before Loom kept this, which is not the same as nothing
+       having happened to it.</p>
 
     <h3>Notifications</h3>
     <p>The <b>Reminders</b> button in the header asks the browser for permission to show
@@ -1563,6 +1613,10 @@ let cardMode='cards';try{cardMode=localStorage.getItem('loom-cardmode')||'cards'
    choice, and it defaults ON because "open work is todo minus status:done" is the project's own
    definition of open, and this panel is the open-work panel. */
 let hideDoneTodos=true;try{hideDoneTodos=localStorage.getItem('loom-hide-done')!=='0';}catch(e){}
+/* Which audience's open work the TODO panel is showing: 'all', 'human' or 'agent'. A VIEW choice
+   like hideDoneTodos, remembered the same way, and defaulting to 'all' because a filter nobody
+   asked for that hides work is how a todo goes missing. */
+let todoAudience='all';try{todoAudience=localStorage.getItem('loom-todo-audience')||'all';}catch(e){}
 /* The detail dialog opens minimal (summary/priority/due) or full, and detailExpanded says which.
    It is a PREFERENCE, not per-jot state: someone who works in the full form wants the full form on
    the next jot too, and having to click "More details" on every single open was the complaint.
@@ -1856,6 +1910,17 @@ function isTodo(j){
   return isDone(j)||(j.tags||[]).some(t=>ACTION_TAGS.has(t))||
     !!tagValue(j.tags,'due:')||!!tagValue(j.tags,'priority:');
 }
+/* Who a todo is FOR, which is not who WROTE it - `source:` already records the machine a jot came
+   from, and the two answer different questions: a jot written by an agent on azzorin can still be
+   something only Alex can do. Null means nobody has said yet, and that is deliberately its own
+   state rather than folding into "an agent can take it": an untriaged todo is not a cleared one. */
+function audienceOf(j){
+  const t=j.tags||[];
+  if(t.includes('for:human'))return'human';
+  if(t.includes('for:agent'))return'agent';
+  return null;
+}
+
 function dueLabel(d){
   const ms=d.getTime()-Date.now(),hr=3600000,day=86400000,abs=Math.abs(ms),overdue=ms<0;
   let mag;
@@ -2545,7 +2610,17 @@ async function viewDashboard(target){
     const allTodos=recent.jots.filter(isTodo);
     const doneCount=allTodos.filter(isDone).length;
     const openCount=allTodos.length-doneCount;
-    const todos=hideDoneTodos?allTodos.filter(j=>!isDone(j)):allTodos;
+    /* Audience filters BEFORE the done filter and before the counts, so "3 open" under "For me"
+       means three things Alex can act on - not three of the whole board that happen to be his.
+       Unassigned todos show under "All" only: they are work nobody has routed yet, and quietly
+       serving them to whichever tab is open would be the filter answering a question it was not
+       asked. The chips carry counts precisely so an untriaged pile cannot hide - All exceeding
+       the other two combined IS the visible signal that something needs routing. */
+    const audTodos=todoAudience==='all'?allTodos:allTodos.filter(j=>audienceOf(j)===todoAudience);
+    const doneCountAud=audTodos.filter(isDone).length;
+    const openHuman=allTodos.filter(j=>!isDone(j)&&audienceOf(j)==='human').length;
+    const openAgent=allTodos.filter(j=>!isDone(j)&&audienceOf(j)==='agent').length;
+    const todos=hideDoneTodos?audTodos.filter(j=>!isDone(j)):audTodos;
     /* Same brief=1/newest-200 fetch, same reasoning as todos above: cheap enough that a second
        request buys nothing. Caps at 200 like everything else fed by `recent` - a backlog past
        that is already a "go look at Search" problem, not a dashboard-card one. */
@@ -2560,8 +2635,26 @@ async function viewDashboard(target){
     const th1=el('div','pheadmain');
     th1.append(el('div','eyebrow','TODOS & REMINDERS'));
     /* Always the OPEN count, never the row count - with completed ones showing, a heading that
-       counted what is on screen would announce finished work as outstanding. */
-    th1.append(el('h3',null,openCount?openCount+' open':'Nothing outstanding'));
+       counted what is on screen would announce finished work as outstanding. Scoped to the chosen
+       audience, so the number and the cards under it always describe the same set. */
+    const openShown=audTodos.length-doneCountAud;
+    th1.append(el('h3',null,openShown?openShown+' open':'Nothing outstanding'));
+    /* In the panel head rather than the topbar, unlike "Show completed": that switch is global to
+       every view that lists jots, this one filters exactly one panel and belongs beside it. */
+    const audRow=el('div','audfilter');
+    [['all','All',openCount],['human','For me',openHuman],['agent','For agents',openAgent]]
+      .forEach(function(o){
+        const b=el('button','audchip'+(todoAudience===o[0]?' on':''),o[1]);
+        b.type='button';
+        b.append(el('b',null,String(o[2])));
+        b.onclick=function(){
+          todoAudience=o[0];
+          try{localStorage.setItem('loom-todo-audience',o[0]);}catch(e){}
+          render();
+        };
+        audRow.append(b);
+      });
+    th1.append(audRow);
     th.append(th1);
     /* The switch itself lives in the topbar (see #showdone-opt); this hands it the only number it
        cannot work out for itself. Every complete/reopen ends in render(), and render() rebuilds
@@ -2571,9 +2664,15 @@ async function viewDashboard(target){
     th.lastChild.onclick=function(){view='search';activeTags=new Set(['todo']);drawNav();render();};
     todoP.append(th);
     if(!todos.length){
-      todoP.append(el('div','empty',doneCount&&hideDoneTodos?
-        'Nothing open. '+doneCount+' completed - "Show completed" up by the search box.':
-        'Nothing tagged todo, warning, or error, and nothing due. Clear.'));
+      /* Three different emptinesses, and saying "Clear." for the middle one would be a lie - the
+         work exists, this tab just isn't where it lives. */
+      todoP.append(el('div','empty',
+        todoAudience!=='all'&&openCount?
+          'Nothing here for '+(todoAudience==='human'?'you':'agents')+'. '+
+            openCount+' open under All.':
+        doneCount&&hideDoneTodos?
+          'Nothing open. '+doneCount+' completed - "Show completed" up by the search box.':
+          'Nothing tagged todo, warning, or error, and nothing due. Clear.'));
     }else{
       /* Split by priority rather than one flat list - high-priority work should never be scrolled
          past to find it. Due date breaks ties within a column, soonest (or most overdue) first;
@@ -2705,6 +2804,45 @@ async function viewDashboard(target){
        made the 4th most recent jot sit above the 2nd.
        Sorted by `updated` rather than trusting the fetch's order=newest, which orders by id, i.e.
        by CREATION - an old jot edited a minute ago belongs at the top of an activity list. */
+    /* The vocabulary the server stamps, mapped to the two things the row needs: a word and a tier.
+       Kept as a lookup rather than derived from the string so that a kind coined by a newer server
+       than this page renders as its own raw word instead of silently reading as "unknown" - the
+       page is served by the binary that stamps these, but a cached tab outlives a deploy. */
+    const CHG={
+      added:      {w:'ADDED',       c:'ch-added'},
+      updated:    {w:'UPDATED',     c:''},
+      done:       {w:'DONE',        c:'ch-done'},
+      reopened:   {w:'REOPENED',    c:'ch-reopened'},
+      scheduled:  {w:'SCHEDULED',   c:'ch-time'},
+      snoozed:    {w:'SNOOZED',     c:'ch-time'},
+      rescheduled:{w:'RESCHED',     c:'ch-time'},
+      unscheduled:{w:'UNSCHEDULED', c:'ch-time'},
+      retagged:   {w:'RETAGGED',    c:''},
+      restored:   {w:'RESTORED',    c:''}
+    };
+    const CHG_WHY={
+      added:      'created',
+      updated:    'edited, with no tag change worth its own word',
+      done:       'gained status:done',
+      reopened:   'lost status:done',
+      scheduled:  'gained a due date it did not have',
+      snoozed:    'its due date moved later',
+      rescheduled:'its due date moved earlier',
+      unscheduled:'lost its due date',
+      retagged:   'caught in a tag merge - nobody edited this jot itself',
+      restored:   'put back to an earlier version from the history log'
+    };
+    const chgChip=function(j){
+      const k=j.last_change||'';
+      const known=CHG[k];
+      const c=el('span','chgchip '+(known?known.c:(k?'':'ch-unknown')),
+                 known?known.w:(k?k.toUpperCase():'—'));
+      c.title=known?('Last change: '+CHG_WHY[k])
+             :(k?('Last change: '+k+' (this dashboard predates that kind)')
+                :'Written before Loom recorded what a change was');
+      return c;
+    };
+
     const actP=el('div','ov-panel');L.append(actP);
     const ah=el('div','phead');const ah1=el('div');
     ah1.append(el('div','eyebrow','ACTIVITY'));ah1.append(el('h3',null,'Recently changed'));
@@ -2720,6 +2858,7 @@ async function viewDashboard(target){
         const r=el('div','ov-arow'+(isFresh(j)?' fresh':''));
         r.style.setProperty('--cat','var('+cat.cssVar+')');
         r.append(el('i','ov-adot'));
+        r.append(chgChip(j));
         const mid=el('div','ov-amid');
         mid.append(el('div','ov-atitle',j.name||j.summary||j.snippet||'(untitled)'));
         mid.append(el('div','ov-asub',cat.name+' · '+(j.editor||'user')));
