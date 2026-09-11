@@ -1263,6 +1263,14 @@ std::error_code HttpServer::Run()
         .concurrency(static_cast<std::uint16_t>(nThreads))
         .run();
 
+    // Crow reports a failed bind by logging it and returning from run() as if it had served and
+    // stopped. Left at that, the process exits 0 and systemd's Restart=on-failure never fires -
+    // which is exactly what happens when the interface address is not up yet at boot. is_bound()
+    // is only set once the bind succeeded, so its absence here means we never served at all. Crow
+    // has already logged the precise errno just above; this code exists to make the exit non-zero.
+    if (!mpImpl->mApp.is_bound())
+        return std::make_error_code(std::errc::not_connected);
+
     return LoomOK();
 }
 

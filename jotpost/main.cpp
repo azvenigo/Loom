@@ -264,5 +264,7 @@ int main(int argc, char* argv[])
                 sToken.empty() ? " (NO AUTH TOKEN SET - LAN binds only)" : "");
     std::fflush(stdout);   // journald gets a pipe, so this line would otherwise sit in the buffer
     app.bindaddr(sBind).port(nPort).run();
-    return 0;
+    // Crow returns from run() on a failed bind as well as on a clean stop; only is_bound() tells
+    // them apart. Exit non-zero on the former so systemd's Restart=on-failure gets to retry.
+    return app.is_bound() ? 0 : 1;
 }
