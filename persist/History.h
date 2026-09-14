@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <deque>
 #include <mutex>
+#include <shared_mutex>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -20,7 +21,14 @@
 // WHY THIS IS NOT THE WAL. loom.wal is the durability path and Snapshot::Write TRUNCATES it the
 // moment a snapshot lands, because at that point the log is redundant - that is the whole point of
 // a checkpoint. It is therefore exactly the wrong place to look for what a jot said last Tuesday.
-// This file is append-only and survives snapshots; it is rotated by size, never by checkpoint.
+// This file is append-only and survives snapshots, and NOTHING EVER DELETES FROM IT.
+//
+// KEPT FOREVER. Loom is meant to be a lifelong memory, so history is too: there is no retention
+// window, no TTL and no generation that gets overwritten. The active file is loom.history; when it
+// passes a size it is sealed and renamed to loom.history.000001, .000002 and so on, and a sealed
+// segment is never written again. Size only decides how the log is cut into files - small enough
+// to scan, back up and grep - never how much of it survives. The one thing allowed to remove lines
+// is the offline purge tool, which exists for content that must not be kept at all.
 //
 // THE BEFORE-IMAGE IS FREE, and that is the reason this is small. Journal's format already
 // guarantees that "a put carries the COMPLETE record, so replay is idempotent" - so the previous
@@ -36,9 +44,10 @@
 //
 // TWO COPIES, ON PURPOSE. The file is the record; a bounded deque of the most recent entries is
 // what the dashboard lists and restores from, so paging history costs no I/O at all. Open() seeds
-// that deque from the tail of the file, or history would look empty after every restart. Restoring
-// something older than the deque falls back to scanning the file, which is slow and rare and worth
-// exactly nothing to optimize.
+// that deque from the tail of the log, or history would look empty after every restart. Restoring
+// something older than the deque falls back to scanning the files. That is rare, but the log grows
+// for life, so it is not a scan of everything: a small index of each sealed segment's seq and time
+// range sends a lookup straight to the files that can hold the answer.
 //////////////////////////////////////////////////////////////////////////////////////////////////
 
 struct HistoryEntry
@@ -78,10 +87,9 @@ struct HistoryConfig
 {
     std::string msPath;
 
-    // Rotation is by size and keeps ONE previous generation (loom.history.1). Unbounded growth is
-    // the failure mode every "just log it" feature eventually finds; two generations is enough to
-    // make the window long and the disk cost bounded.
-    size_t  mnMaxBytes = 64u * 1024u * 1024u;
+    // The size at which the active file is sealed into a numbered segment. This bounds a FILE, not
+    // the history - every segment is kept. 0 never seals.
+    size_t  mnMaxBytes = 16u * 1024u * 1024u;
 
     // How many recent entries stay in RAM for the dashboard. At a few hundred bytes each this is
     // single-digit megabytes at the default.
@@ -104,7 +112,21 @@ struct HistoryStats
     bool     mbEnabled  = false;
     uint64_t mnEntries  = 0;     // total ever recorded this run plus what was loaded
     uint64_t mnInMemory = 0;
-    uint64_t mnBytes    = 0;
+    uint64_t mnBytes    = 0;     // the active file
+    uint64_t mnSegments = 0;     // sealed segments on disk
+    uint64_t mnSealedBytes = 0;  // their combined size
+};
+
+// One sealed segment, as the index knows it. The seq and time fields come from the file's first and
+// last parseable lines; 0 means the file had none, and such a segment is never skipped by a lookup.
+struct HistorySegment
+{
+    std::string msPath;
+    uint64_t    mnFirstSeq  = 0;
+    uint64_t    mnLastSeq   = 0;
+    int64_t     mnFirstAtUS = 0;
+    int64_t     mnLastAtUS  = 0;
+    uint64_t    mnBytes     = 0;
 };
 
 class History : public IJournalSink
@@ -116,8 +138,9 @@ public:
     History(const History&)            = delete;
     History& operator=(const History&) = delete;
 
-    // Reads the tail of an existing log into memory, rotates it if it is already oversized, opens
-    // for append and starts the committer. A missing file is a first run, not an error.
+    // Indexes the sealed segments, seals the active file if it is already oversized, reads the tail
+    // of the log into memory, opens for append and starts the committer. A missing file is a first
+    // run, not an error. A legacy loom.history.1 left by an older build becomes segment 000001.
     std::error_code Open(const HistoryConfig& config);
     void Close();
 
@@ -144,7 +167,7 @@ public:
     bool Previous(uint64_t nSeq, HistoryEntry& outEntry) const;
 
     // Every entry belonging to one multi-record operation, OLDEST FIRST. Empty means no such group
-    // survives - either it never existed or it has aged out of both generations of the log.
+    // survives - it never existed, or it was purged.
     //
     // Because a group is a contiguous run of seqs beginning at nTxnID, finding its first entry in
     // memory proves the whole group is in memory; only when that first entry is missing does this
@@ -164,8 +187,26 @@ public:
     static std::error_code PurgeFile(const std::string& sPath, const std::vector<tJotID>& vIDs,
                                      size_t& outRemoved, size_t& outKept);
 
+    // Every file the log at sPath consists of, OLDEST FIRST: a legacy .1 if one is still there, the
+    // numbered segments in order, then the active file. Only files that exist are returned. This is
+    // the one definition of "the whole history", so the purge tool scrubs exactly what readers read.
+    static std::vector<std::string> AllFiles(const std::string& sPath);
+
 private:
     void CommitterLoop();
+    // Seals the active file into the next numbered segment and starts a fresh one, returning the
+    // segment's path - empty if the rename failed and the old file is still active. Caller holds
+    // mRotateMutex exclusively and mMutex, and indexes the segment after releasing mMutex.
+    std::string Locked_Seal();
+    // Reads one file into mRecent/mLastSeen, in order. Called from Open() with mMutex held.
+    void Locked_Load(const std::string& sPath);
+    // The files a lookup for seqs in [nFrom, nTo] has to open, oldest first, active file last.
+    std::vector<std::string> FilesSpanning(uint64_t nFrom, uint64_t nTo) const;
+    static std::vector<std::pair<uint64_t, std::string>> NumberedSegments(const std::string& sPath);
+    static std::string SegmentPath(const std::string& sPath, uint64_t nNumber);
+    static HistorySegment IndexSegment(const std::string& sPath);
+    // Calls fn for each non-empty line until it returns false. A torn final line is not delivered.
+    template <typename Fn> static void ForEachLine(const std::string& sPath, Fn&& fn);
     void Append(const HistoryEntry& entry, const std::string& sLine);
     // Returns the transaction id an entry with this seq should carry, adopting the seq as the
     // group's id when it is the first entry in an open group. 0 outside a transaction. Called with
@@ -179,6 +220,7 @@ private:
     // learn the highest sequence number a generation reached without parsing the whole thing before
     // retiring it.
     static bool ScanLastLine(const std::string& sPath, HistoryEntry& outEntry);
+    static bool ScanFirstLine(const std::string& sPath, HistoryEntry& outEntry);
     static std::string Clip(const std::string& s, size_t nMax);
 
     // Last state seen for each id, so the NEXT entry for it can be captioned with what actually
@@ -209,6 +251,14 @@ private:
     void*                     mpFile = nullptr;   // FILE*, opaque to keep the header clean
 
     mutable std::mutex        mMutex;
+
+    // Sealing renames the active file. A scan that picked its file list before the rename and opened
+    // the path after it would read the new, empty file and miss what it came for - and on Windows the
+    // rename fails outright while a scan holds the file open. Scans hold this shared, sealing holds it
+    // exclusively. Always taken BEFORE mMutex.
+    mutable std::shared_mutex mRotateMutex;
+    std::vector<HistorySegment> mSegments;     // sealed, oldest first; guarded by mMutex
+    uint64_t                  mnNextSegment = 1;
     std::condition_variable   mQueueCV;
     std::deque<std::string>   mQueue;     // lines awaiting the disk
     std::deque<HistoryEntry>  mRecent;    // bounded, newest at the back

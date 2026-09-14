@@ -197,9 +197,9 @@ std::error_code PURGE::Run(const std::string& sDir, const PurgeRequest& request,
     if (FILE* pWal = std::fopen(snapConfig.msWalPath.c_str(), "wb"))
         std::fclose(pWal);
 
-    // Both history generations. This is the copy that a plain delete deliberately preserves, so it
-    // is the one that matters most here.
-    for (const std::string& sHist : { sDir + "/loom.history", sDir + "/loom.history.1" })
+    // Every history file, sealed segments included. This is the copy that a plain delete deliberately
+    // preserves - and keeps forever - so it is the one that matters most here.
+    for (const std::string& sHist : History::AllFiles(sDir + "/loom.history"))
     {
         size_t nRemoved = 0, nKept = 0;
         if (std::error_code ec = History::PurgeFile(sHist, request.mIDs, nRemoved, nKept))
@@ -254,7 +254,7 @@ std::string PURGE::AgentInstructions(const std::string& sDir, const PurgeRequest
     s += "       loom --purge=" + sDir + "\n\n";
     s += "   Then, once that output matches what was agreed in step 1:\n\n";
     s += "       loom --purge=" + sDir + " --yes\n\n";
-    s += "   That rewrites the snapshot, empties the WAL, scrubs both history generations, and\n";
+    s += "   That rewrites the snapshot, empties the WAL, scrubs every history segment, and\n";
     s += "   prints what it removed.\n\n";
     s += "4. Start the service again.  systemctl start loom\n\n";
     s += "5. Confirm. Search Loom for the content that prompted this. It should return nothing,\n";

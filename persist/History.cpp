@@ -7,6 +7,8 @@
 #include "vendor/json.hpp"
 
 #include <algorithm>
+#include <climits>
+#include <cstdint>
 #include <chrono>
 #include <cstdio>
 #include <filesystem>
@@ -229,13 +231,234 @@ bool History::ParseLine(const std::string& sLine, HistoryEntry& outEntry)
 
 
 //====================================================================================================
+// Segments
+//====================================================================================================
+
+template <typename Fn>
+void History::ForEachLine(const std::string& sPath, Fn&& fn)
+{
+    FILE* pFile = std::fopen(sPath.c_str(), "rb");
+    if (!pFile)
+        return;
+
+    // Chunked rather than a character at a time: segments are read whole, and the log only grows.
+    std::string sLine;
+    char   buf[1 << 16];
+    size_t nRead = 0;
+    bool   bStop = false;
+    while (!bStop && (nRead = std::fread(buf, 1, sizeof(buf), pFile)) > 0)
+    {
+        size_t nStart = 0;
+        for (size_t i = 0; i < nRead; ++i)
+        {
+            if (buf[i] != '\n')
+                continue;
+            sLine.append(buf + nStart, i - nStart);
+            nStart = i + 1;
+            if (!sLine.empty() && !fn(sLine))
+            {
+                bStop = true;
+                break;
+            }
+            sLine.clear();
+        }
+        if (!bStop)
+            sLine.append(buf + nStart, nRead - nStart);
+    }
+    // Whatever is left in sLine has no newline after it - a torn final line, which is dropped here
+    // exactly as the WAL drops one.
+    std::fclose(pFile);
+}
+
+std::string History::SegmentPath(const std::string& sPath, uint64_t nNumber)
+{
+    char sz[32];
+    std::snprintf(sz, sizeof(sz), ".%06llu", static_cast<unsigned long long>(nNumber));
+    return sPath + sz;
+}
+
+std::vector<std::pair<uint64_t, std::string>> History::NumberedSegments(const std::string& sPath)
+{
+    namespace fs = std::filesystem;
+    std::vector<std::pair<uint64_t, std::string>> vOut;
+
+    const fs::path path(sPath);
+    fs::path dir = path.parent_path();
+    if (dir.empty())
+        dir = ".";
+    const std::string sPrefix = path.filename().string() + ".";
+
+    // loom.history.<at least six digits>, and nothing else - so loom.history.1, a purge's .purge.tmp
+    // and a hand-made .bak-20260903 are never mistaken for part of the sequence.
+    std::error_code ec;
+    for (fs::directory_iterator it(dir, ec), end; !ec && it != end; it.increment(ec))
+    {
+        const std::string sName = it->path().filename().string();
+        if (sName.size() < sPrefix.size() + 6 || sName.size() > sPrefix.size() + 18
+            || sName.compare(0, sPrefix.size(), sPrefix) != 0)
+            continue;
+        const std::string sNum = sName.substr(sPrefix.size());
+        if (!std::all_of(sNum.begin(), sNum.end(), [](char c) { return c >= '0' && c <= '9'; }))
+            continue;
+        vOut.emplace_back(std::stoull(sNum), sPath + "." + sNum);
+    }
+    std::sort(vOut.begin(), vOut.end());
+    return vOut;
+}
+
+std::vector<std::string> History::AllFiles(const std::string& sPath)
+{
+    std::vector<std::string> vOut;
+    std::error_code ec;
+    if (std::filesystem::exists(sPath + ".1", ec))
+        vOut.push_back(sPath + ".1");
+    for (auto& [nNumber, sSegment] : NumberedSegments(sPath))
+        vOut.push_back(std::move(sSegment));
+    if (std::filesystem::exists(sPath, ec))
+        vOut.push_back(sPath);
+    return vOut;
+}
+
+bool History::ScanFirstLine(const std::string& sPath, HistoryEntry& outEntry)
+{
+    bool bParsed = false;
+    ForEachLine(sPath, [&](const std::string& sLine)
+    {
+        bParsed = ParseLine(sLine, outEntry);
+        return !bParsed;
+    });
+    return bParsed;
+}
+
+HistorySegment History::IndexSegment(const std::string& sPath)
+{
+    HistorySegment seg;
+    seg.msPath = sPath;
+
+    HistoryEntry entry;
+    if (ScanFirstLine(sPath, entry))
+    {
+        seg.mnFirstSeq  = entry.mnSeq;
+        seg.mnFirstAtUS = entry.mnAtUS;
+    }
+    if (ScanLastLine(sPath, entry))
+    {
+        seg.mnLastSeq  = entry.mnSeq;
+        seg.mnLastAtUS = entry.mnAtUS;
+    }
+
+    std::error_code ec;
+    const auto nSize = std::filesystem::file_size(sPath, ec);
+    seg.mnBytes = ec ? 0 : static_cast<uint64_t>(nSize);
+    return seg;
+}
+
+std::vector<std::string> History::FilesSpanning(uint64_t nFrom, uint64_t nTo) const
+{
+    std::vector<std::string> vOut;
+    std::unique_lock lock(mMutex);
+    if (mConfig.msPath.empty())
+        return vOut;
+
+    for (const HistorySegment& seg : mSegments)
+    {
+        // A segment whose ends could not be read is opened rather than skipped: being slow about a
+        // damaged file is better than answering "no such entry" for something that is in it.
+        const bool bUnknown = seg.mnFirstSeq == 0 || seg.mnLastSeq == 0;
+        if (bUnknown || (seg.mnLastSeq >= nFrom && seg.mnFirstSeq <= nTo))
+            vOut.push_back(seg.msPath);
+    }
+
+    // Everything in the active file is newer than every sealed segment.
+    if (mSegments.empty() || mSegments.back().mnLastSeq == 0 || nTo > mSegments.back().mnLastSeq)
+        vOut.push_back(mConfig.msPath);
+    return vOut;
+}
+
+std::string History::Locked_Seal()
+{
+    namespace fs = std::filesystem;
+
+    FILE* pFile = static_cast<FILE*>(mpFile);
+    std::fflush(pFile);
+    std::fclose(pFile);
+    mpFile = nullptr;
+
+    // Never onto an existing name. Something sitting at the next number was not put there by this
+    // class, and a rename would silently replace it - the exact loss this layout exists to prevent.
+    std::error_code ec;
+    std::string sTo = SegmentPath(mConfig.msPath, mnNextSegment);
+    while (fs::exists(sTo, ec))
+        sTo = SegmentPath(mConfig.msPath, ++mnNextSegment);
+
+    std::error_code ecMove;
+    fs::rename(mConfig.msPath, sTo, ecMove);
+
+    // Reopen whatever happened. If the rename failed the old file is still the active one, appends
+    // carry on into it, and the next batch tries to seal again - an oversized file costs nothing,
+    // while a closed one would stop history altogether.
+    mpFile = std::fopen(mConfig.msPath.c_str(), "ab");
+
+    if (ecMove)
+        return std::string();
+
+    ++mnNextSegment;
+    mnBytes = 0;
+    return sTo;
+}
+
+void History::Locked_Load(const std::string& sPath)
+{
+    ForEachLine(sPath, [this](const std::string& sLine)
+    {
+        HistoryEntry entry;
+        if (!ParseLine(sLine, entry))
+            return true;
+
+        ++mnEntries;
+        if (entry.mnSeq >= mnNextSeq)
+            mnNextSeq = entry.mnSeq + 1;
+        if (!entry.mbDelete)
+        {
+            // ParseLine already computed the plain summary/text clip into entry.msSummary. Diff it
+            // against the running mLastSeen - built up in the same seq order the live path sees -
+            // before overwriting it with the change caption, exactly as OnPut does, so a restart
+            // does not revert older entries to the flat caption.
+            FlatJot flat;
+            std::string sErrIgnored;
+            if (JOTJSON::ParseFlat(entry.msRecord, flat, sErrIgnored))
+            {
+                const auto it = mLastSeen.find(entry.mID);
+                const std::string sDiff =
+                    DescribeChange(it != mLastSeen.end() ? &it->second : nullptr, flat);
+                const std::string sPlain = entry.msSummary;
+                if (!sDiff.empty())
+                    entry.msSummary = sDiff;
+                mLastSeen[entry.mID] = { entry.msName, entry.msEditor, flat.msSummary,
+                                          sPlain, entry.msOrigin, flat.mTags,
+                                          flat.msText.size() };
+            }
+        }
+
+        mRecent.push_back(std::move(entry));
+        while (mRecent.size() > mConfig.mnMemory)
+            mRecent.pop_front();
+        return true;
+    });
+}
+
+
+//====================================================================================================
 // Lifecycle
 //====================================================================================================
 
 std::error_code History::Open(const HistoryConfig& config)
 {
+    namespace fs = std::filesystem;
+
     Close();
 
+    std::unique_lock rot(mRotateMutex);
     std::unique_lock lock(mMutex);
     mConfig   = config;
     mnNextSeq   = 1;
@@ -246,90 +469,84 @@ std::error_code History::Open(const HistoryConfig& config)
     mRecent.clear();
     mQueue.clear();
     mLastSeen.clear();
+    mSegments.clear();
+    mnNextSegment = 1;
 
     if (mConfig.msPath.empty())
         return LoomOK();
 
-    // Rotate BEFORE reading. An oversized log is about to be replaced by an empty one, so reading
-    // all of it first would be work thrown away - and the generation being retired is still on disk
-    // as .1 if anybody wants it.
-    std::error_code ecSize;
-    const auto nSize = std::filesystem::file_size(mConfig.msPath, ecSize);
-    if (!ecSize && nSize > mConfig.mnMaxBytes)
+    const std::string& sPath = mConfig.msPath;
+
+    // An older build kept one previous generation as .1 and overwrote it on every rotation. Whatever
+    // it still holds is the oldest history there is, so it becomes the first segment rather than
+    // being left where the next rotation used to destroy it. If numbered segments somehow already
+    // exist it is left in place and read as the oldest file, never renamed over one of them.
+    auto vNumbered = NumberedSegments(sPath);
+    std::error_code ec;
+    if (vNumbered.empty() && fs::exists(sPath + ".1", ec))
     {
-        // The generation about to be retired holds the highest sequence number issued so far. Read
-        // it before the rename, or the counter below would restart at 1 and reissue numbers the
-        // retired generation already used - two different entries answering to the same seq, with
-        // /history/restore having no way to tell them apart.
-        HistoryEntry tail;
-        if (ScanLastLine(mConfig.msPath, tail) && tail.mnSeq >= mnNextSeq)
-            mnNextSeq = tail.mnSeq + 1;
+        std::error_code ecMove;
+        fs::rename(sPath + ".1", SegmentPath(sPath, 1), ecMove);
+        if (!ecMove)
+            vNumbered = NumberedSegments(sPath);
+    }
+
+    if (fs::exists(sPath + ".1", ec))
+        mSegments.push_back(IndexSegment(sPath + ".1"));
+    for (const auto& [nNumber, sSegment] : vNumbered)
+    {
+        mSegments.push_back(IndexSegment(sSegment));
+        mnNextSegment = nNumber + 1;
+    }
+
+    // Seal BEFORE reading, so an oversized active file is not read in full only to be retired.
+    std::error_code ecSize;
+    const auto nSize = fs::file_size(sPath, ecSize);
+    if (!ecSize && mConfig.mnMaxBytes != 0 && nSize >= mConfig.mnMaxBytes)
+    {
+        std::string sTo = SegmentPath(sPath, mnNextSegment);
+        while (fs::exists(sTo, ec))
+            sTo = SegmentPath(sPath, ++mnNextSegment);
 
         std::error_code ecMove;
-        std::filesystem::rename(mConfig.msPath, mConfig.msPath + ".1", ecMove);
-    }
-
-    if (FILE* pRead = std::fopen(mConfig.msPath.c_str(), "rb"))
-    {
-        std::string sLine;
-        int ch = 0;
-        while ((ch = std::fgetc(pRead)) != EOF)
+        fs::rename(sPath, sTo, ecMove);
+        if (!ecMove)
         {
-            if (ch != '\n')
-            {
-                sLine.push_back(static_cast<char>(ch));
-                continue;
-            }
-
-            HistoryEntry entry;
-            if (!sLine.empty() && ParseLine(sLine, entry))
-            {
-                ++mnEntries;
-                if (entry.mnSeq >= mnNextSeq)
-                    mnNextSeq = entry.mnSeq + 1;
-                if (!entry.mbDelete)
-                {
-                    // ParseLine already computed the plain summary/text clip into entry.msSummary.
-                    // Diff it against the running mLastSeen - built up in the same seq order the
-                    // live path sees - before overwriting it with the change caption, exactly as
-                    // OnPut does, so a restart does not revert older entries to the flat caption.
-                    FlatJot flat;
-                    std::string sErrIgnored;
-                    if (JOTJSON::ParseFlat(entry.msRecord, flat, sErrIgnored))
-                    {
-                        const auto it = mLastSeen.find(entry.mID);
-                        const std::string sDiff =
-                            DescribeChange(it != mLastSeen.end() ? &it->second : nullptr, flat);
-                        const std::string sPlain = entry.msSummary;
-                        if (!sDiff.empty())
-                            entry.msSummary = sDiff;
-                        mLastSeen[entry.mID] = { entry.msName, entry.msEditor, flat.msSummary,
-                                                  sPlain, entry.msOrigin, flat.mTags,
-                                                  flat.msText.size() };
-                    }
-                }
-
-                mRecent.push_back(std::move(entry));
-                while (mRecent.size() > mConfig.mnMemory)
-                    mRecent.pop_front();
-            }
-            sLine.clear();
+            mSegments.push_back(IndexSegment(sTo));
+            ++mnNextSegment;
         }
-        // A torn final line is the expected residue of a crash, exactly as in the WAL - it is
-        // dropped rather than treated as corruption.
-        std::fclose(pRead);
     }
 
-    mpFile = std::fopen(mConfig.msPath.c_str(), "ab");
+    // The counter continues from the highest seq ANY file reached. Reading it from the sealed
+    // segments too means a fresh active file - just sealed, or removed by hand - still cannot
+    // reissue a number an older entry answers to, which /history/restore could not tell apart.
+    for (const HistorySegment& seg : mSegments)
+        if (seg.mnLastSeq >= mnNextSeq)
+            mnNextSeq = seg.mnLastSeq + 1;
+
+    // Seed memory from the newest sealed segment as well when the active file alone cannot fill the
+    // window - otherwise every seal, and every restart after one, would leave the History view
+    // looking nearly empty while the entries sit one file over.
+    if (!mSegments.empty())
+    {
+        size_t nActiveLines = 0;
+        ForEachLine(sPath, [&](const std::string&) { return ++nActiveLines < mConfig.mnMemory; });
+        if (nActiveLines < mConfig.mnMemory)
+            Locked_Load(mSegments.back().msPath);
+    }
+    Locked_Load(sPath);
+
+    mpFile = std::fopen(sPath.c_str(), "ab");
     if (!mpFile)
         return MakeLoomError(eLoomErr::kInvalidArgument);
 
     std::error_code ecNow;
-    const auto nNow = std::filesystem::file_size(mConfig.msPath, ecNow);
+    const auto nNow = fs::file_size(sPath, ecNow);
     mnBytes = ecNow ? 0 : static_cast<uint64_t>(nNow);
 
     mbRunning = true;
     lock.unlock();
+    rot.unlock();
 
     mCommitter = std::thread([this] { CommitterLoop(); });
     return LoomOK();
@@ -388,18 +605,44 @@ void History::CommitterLoop()
         if (vBatch.empty())
             continue;
 
-        std::unique_lock lock(mMutex);
-        if (!mpFile)
-            return;
-        for (const std::string& sLine : vBatch)
+        bool bSeal = false;
         {
-            std::fwrite(sLine.data(), 1, sLine.size(), static_cast<FILE*>(mpFile));
-            mnBytes += sLine.size();
+            std::unique_lock lock(mMutex);
+            if (!mpFile)
+                return;
+            for (const std::string& sLine : vBatch)
+            {
+                std::fwrite(sLine.data(), 1, sLine.size(), static_cast<FILE*>(mpFile));
+                mnBytes += sLine.size();
+            }
+            std::fflush(static_cast<FILE*>(mpFile));
+            bSeal = mConfig.mnMaxBytes != 0 && mnBytes >= mConfig.mnMaxBytes;
         }
-        std::fflush(static_cast<FILE*>(mpFile));
+
+        // Sealed here, while running, and only ever between whole batches - so a file never ends
+        // part-way through a line and a transaction is never split by anything but a file boundary,
+        // which every reader already crosses. Waiting for a restart instead let one file grow without
+        // limit on a service that stays up for months.
+        if (bSeal)
+        {
+            std::unique_lock rot(mRotateMutex);
+            std::string sSealed;
+            {
+                std::unique_lock lock(mMutex);
+                if (mpFile)
+                    sSealed = Locked_Seal();
+            }
+            if (!sSealed.empty())
+            {
+                // Indexed outside mMutex, which OnPut needs under the store's write lock. Nothing can
+                // look for the segment in between: every scan waits on mRotateMutex, held here.
+                HistorySegment seg = IndexSegment(sSealed);
+                std::unique_lock lock(mMutex);
+                mSegments.push_back(std::move(seg));
+            }
+        }
     }
 }
-
 
 //====================================================================================================
 // Sink - under the store's write lock. Serialize, queue, return.
@@ -680,81 +923,49 @@ void History::ListTransaction(uint64_t nTxnID, std::vector<HistoryEntry>& outEnt
 
 void History::ScanFileForTransaction(uint64_t nTxnID, std::vector<HistoryEntry>& outEntries) const
 {
-    std::string sPath;
-    {
-        std::unique_lock lock(mMutex);
-        sPath = mConfig.msPath;
-    }
-    if (sPath.empty())
-        return;
+    std::shared_lock rot(mRotateMutex);
 
-    // Both generations, oldest first, exactly as ScanFileFor - and for the same reason it is linear:
-    // a group old enough to have left memory is being undone by hand, once.
-    //
-    // A group can straddle the rotation boundary, so this does NOT stop at the end of the first
-    // generation that contains a member; it stops only when it has seen a later seq than the group.
-    for (const std::string& sTry : { sPath + ".1", sPath })
+    // Oldest first, from the segment holding the group's first entry. A group can straddle a segment
+    // boundary, so reaching the end of a file that held members does not end the search; seeing a
+    // later seq that is not in the group does - the group is a contiguous run.
+    for (const std::string& sFile : FilesSpanning(nTxnID, UINT64_MAX))
     {
-        FILE* pFile = std::fopen(sTry.c_str(), "rb");
-        if (!pFile)
-            continue;
-
-        std::string sLine;
-        int ch = 0;
-        while ((ch = std::fgetc(pFile)) != EOF)
+        bool bDone = false;
+        ForEachLine(sFile, [&](const std::string& sLine)
         {
-            if (ch != '\n')
-            {
-                sLine.push_back(static_cast<char>(ch));
-                continue;
-            }
             HistoryEntry entry;
-            if (!sLine.empty() && ParseLine(sLine, entry) && entry.mnTxnID == nTxnID)
+            if (!ParseLine(sLine, entry))
+                return true;
+            if (entry.mnTxnID == nTxnID)
                 outEntries.push_back(std::move(entry));
-            sLine.clear();
-        }
-        std::fclose(pFile);
+            else if (entry.mnSeq > nTxnID)
+                bDone = true;
+            return !bDone;
+        });
+        if (bDone)
+            break;
     }
 }
 
 bool History::ScanFileFor(uint64_t nSeq, HistoryEntry& outEntry) const
 {
-    std::string sPath;
-    {
-        std::unique_lock lock(mMutex);
-        sPath = mConfig.msPath;
-    }
-    if (sPath.empty())
-        return false;
+    std::shared_lock rot(mRotateMutex);
 
-    // Both generations, oldest first. Linear, and deliberately not indexed: this only runs for an
-    // entry older than the in-memory window, which is a rare manual act, not a hot path.
-    for (const std::string& sTry : { sPath + ".1", sPath })
+    // Linear within a file, but the index has already narrowed it to the one segment whose seq range
+    // holds nSeq. This only runs for an entry older than the in-memory window - a manual act.
+    bool bFound = false;
+    for (const std::string& sFile : FilesSpanning(nSeq, nSeq))
     {
-        FILE* pFile = std::fopen(sTry.c_str(), "rb");
-        if (!pFile)
-            continue;
-
-        std::string sLine;
-        int ch = 0;
-        bool bFound = false;
-        while ((ch = std::fgetc(pFile)) != EOF)
+        ForEachLine(sFile, [&](const std::string& sLine)
         {
-            if (ch != '\n')
-            {
-                sLine.push_back(static_cast<char>(ch));
-                continue;
-            }
             HistoryEntry entry;
-            if (!sLine.empty() && ParseLine(sLine, entry) && entry.mnSeq == nSeq)
+            if (ParseLine(sLine, entry) && entry.mnSeq == nSeq)
             {
                 outEntry = std::move(entry);
-                bFound = true;
-                break;
+                bFound   = true;
             }
-            sLine.clear();
-        }
-        std::fclose(pFile);
+            return !bFound;
+        });
         if (bFound)
             return true;
     }
@@ -763,54 +974,33 @@ bool History::ScanFileFor(uint64_t nSeq, HistoryEntry& outEntry) const
 
 bool History::ScanFileForPrevious(uint64_t nSeq, tJotID id, HistoryEntry& outEntry) const
 {
-    std::string sPath;
-    {
-        std::unique_lock lock(mMutex);
-        sPath = mConfig.msPath;
-    }
-    if (sPath.empty())
-        return false;
+    std::shared_lock rot(mRotateMutex);
 
-    // Both generations, oldest first, same as ScanFileFor - lines within and across generations are
-    // in increasing seq order, so the last match seen before hitting nSeq is the one immediately
-    // before it, and hitting nSeq itself means every later line can only be later still.
-    bool bFound = false;
-    for (const std::string& sTry : { sPath + ".1", sPath })
+    // NEWEST file first. Lines are in increasing seq order within and across files, so the last
+    // match below nSeq in the newest file that has one is the entry immediately before it - and the
+    // search stops there instead of reading every year of history behind it.
+    const std::vector<std::string> vFiles = FilesSpanning(1, nSeq);
+    for (auto it = vFiles.rbegin(); it != vFiles.rend(); ++it)
     {
-        FILE* pFile = std::fopen(sTry.c_str(), "rb");
-        if (!pFile)
-            continue;
-
-        std::string sLine;
-        int ch = 0;
-        bool bStop = false;
-        while (!bStop && (ch = std::fgetc(pFile)) != EOF)
+        bool bFound = false;
+        ForEachLine(*it, [&](const std::string& sLine)
         {
-            if (ch != '\n')
-            {
-                sLine.push_back(static_cast<char>(ch));
-                continue;
-            }
             HistoryEntry entry;
-            if (!sLine.empty() && ParseLine(sLine, entry))
+            if (!ParseLine(sLine, entry))
+                return true;
+            if (entry.mnSeq >= nSeq)
+                return false;   // nothing earlier follows in this file
+            if (entry.mID == id && !entry.mbDelete)
             {
-                if (entry.mnSeq >= nSeq)
-                {
-                    bStop = true;   // no earlier lines follow in either file from here on
-                }
-                else if (entry.mID == id && !entry.mbDelete)
-                {
-                    outEntry = std::move(entry);
-                    bFound = true;
-                }
+                outEntry = std::move(entry);
+                bFound   = true;
             }
-            sLine.clear();
-        }
-        std::fclose(pFile);
-        if (bStop)
-            break;
+            return true;
+        });
+        if (bFound)
+            return true;
     }
-    return bFound;
+    return false;
 }
 
 HistoryStats History::Stats() const
@@ -821,9 +1011,11 @@ HistoryStats History::Stats() const
     st.mnEntries  = mnEntries;
     st.mnInMemory = mRecent.size();
     st.mnBytes    = mnBytes;
+    st.mnSegments = mSegments.size();
+    for (const HistorySegment& seg : mSegments)
+        st.mnSealedBytes += seg.mnBytes;
     return st;
 }
-
 
 //====================================================================================================
 // Offline purge

@@ -97,6 +97,14 @@ Every mutation is also appended to `DIR/loom.history` — which, unlike the WAL,
 by a snapshot**. Because a journal put already carries the complete record, the previous entry for a
 jot *is* its before-image, so restoring is just re-applying a line that is already in the log.
 
+**History is kept forever.** Nothing ages out of it. When `loom.history` passes 16 MB it is sealed
+and renamed to `loom.history.000001`, then `.000002` and so on, and a new active file is started.
+Sealed segments are never written to or deleted again. The size only decides how the log is cut
+into files, small enough to scan, grep and back up, never how much of it is kept. A small index of
+each segment's sequence and time range sends a restore straight to the file that holds the entry.
+A `loom.history.1` left by an older build, which used to be overwritten on every rotation, becomes
+segment `000001` on the next start. Only `--purge` removes lines, from every segment.
+
 - `GET /history?limit=&offset=&id=` — every change, newest first.
 - `POST /history/restore` `{"seq":N}` — put that version back. A `del` entry restores whatever was in
   force immediately before it, which is what "undo this delete" means.
@@ -151,9 +159,9 @@ because every kind except `added` is a statement about a *difference*, and nothi
 its own can recover it. A jot carrying `due:2026-09-20` cannot tell you whether that date was just
 set or just pushed back a week.
 
-The history log does hold before-images, but it is bounded and rotated by size: it answers "what
-changed this week", not "what last happened to this jot in March". Keeping the one-byte answer on
-the record is what makes the question survive rotation. Like `origin` it is server-derived and the
+The history log does hold before-images, and keeps them forever, but it is a log: answering "what
+last happened to this jot" from it means walking back through years of entries. Keeping the one-byte
+answer on the record makes that question free. Like `origin` it is server-derived and the
 codec reads no `last_change` key from a request body, and like `origin` it is not part of a record's
 content — so re-asserting an unchanged memory neither writes nor overwrites the label, and a todo
 finished on Monday still reads `done` after any number of no-op saves. The field is optional and
@@ -179,7 +187,7 @@ Purge is the other thing, and it is deliberately a two-step procedure:
    `DIR/loom.purge-request.json` naming the jots, why, and what they looked like at the time.
    **Nothing is erased.** `DELETE /purge/request` cancels it.
 2. `loom --purge=DIR` does the work with the service **stopped**. On its own it is a dry run; add
-   `--yes` to erase. It rewrites the snapshot, empties the WAL and scrubs both history generations.
+   `--yes` to erase. It rewrites the snapshot, empties the WAL and scrubs every history segment.
 
 It cannot run inside a live server — the snapshot, WAL and history log are all open and being
 appended to, and there is no correct ordering for rewriting them underneath that. The interlock is

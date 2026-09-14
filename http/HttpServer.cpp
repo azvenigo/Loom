@@ -995,6 +995,8 @@ struct HttpServer::Impl
             out["total"]    = nTotal;
             out["recorded"] = st.mnEntries;
             out["bytes"]    = st.mnBytes;
+            out["segments"] = st.mnSegments;
+            out["sealed_bytes"] = st.mnSealedBytes;
             return Ok(out.dump());
         });
 

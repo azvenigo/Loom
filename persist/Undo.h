@@ -65,8 +65,8 @@ namespace UNDO
     // sOrigin is stamped onto each restored record, because the restore is a write happening now
     // from there - the same rule the single-seq paths follow. Empty leaves the logged origin alone.
     //
-    // kNotFound, with outError set to something a person can act on, when no such group survives in
-    // either generation of the log. Anything else is reported per record in the report; the call
+    // kNotFound, with outError set to something a person can act on, when no such group is in the
+    // log - it never existed, or it was purged. Anything else is reported per record in the report; the call
     // itself succeeds as long as the group was found, even if every record in it was refused.
     //
     // NO expect_updated. The caller holds one transaction id, not N per-jot revisions, so there is

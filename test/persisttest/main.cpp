@@ -21,13 +21,18 @@
 #include "codec/JotJson.h"
 #include "core/JotStore.h"
 #include "core/Ops.h"
+#include "persist/History.h"
 #include "persist/Journal.h"
+#include "vendor/json.hpp"
 #include "persist/Snapshot.h"
 
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace
@@ -361,6 +366,174 @@ namespace
         Check(!ops.Delete(r.mJot.mID), "delete works with no sink");
         Check(store.Size() == 0, "store is consistent");
     }
+
+    FlatJot HistJot(tJotID id, const std::string& sText)
+    {
+        FlatJot jot;
+        jot.mID     = id;
+        jot.msName  = "jot-" + std::to_string(id);
+        jot.msText  = sText + std::string(200, 'x');
+        jot.mTags   = { "segmenttest" };
+        return jot;
+    }
+
+    void TestHistorySegments()
+    {
+        Section("history is kept forever, in sealed segments");
+        Reset();
+
+        const std::string sPath = gsDir + "/loom.history";
+
+        // What an older build left behind: one previous generation, which it would have overwritten
+        // at the next rotation.
+        if (FILE* p = std::fopen((sPath + ".1").c_str(), "wb"))
+        {
+            std::fputs("{\"seq\":1,\"at\":1000,\"op\":\"del\",\"id\":42,\"name\":\"legacy-entry\"}\n", p);
+            std::fclose(p);
+        }
+
+        HistoryConfig hc;
+        hc.msPath            = sPath;
+        hc.mnMaxBytes        = 4096;   // a few entries per file, so the test crosses many boundaries
+        hc.mnMemory          = 4;      // so almost every lookup has to go to the files
+        hc.mnFlushIntervalMS = 5;
+
+        std::error_code ec;
+        uint64_t nTxnID = 0;
+        {
+            History history;
+            Check(!history.Open(hc), "the log opens beside a legacy .1");
+            Check(!std::filesystem::exists(sPath + ".1", ec) &&
+                  std::filesystem::exists(sPath + ".000001", ec),
+                  "the legacy .1 becomes segment 000001 instead of waiting to be overwritten");
+
+            // seqs 2..61
+            for (int i = 0; i < 60; ++i)
+                history.OnPut(HistJot(1000 + i, "version one of " + std::to_string(i)));
+            // seq 62
+            history.OnDelete(1005);
+
+            // seqs 63..82, one batch each, so the group is cut by at least one seal.
+            history.BeginTransaction();
+            for (int i = 0; i < 20; ++i)
+            {
+                history.OnPut(HistJot(2000 + i, "merged " + std::to_string(i)));
+                std::this_thread::sleep_for(std::chrono::milliseconds(15));
+            }
+            nTxnID = history.EndTransaction();
+            Check(nTxnID == 63, "the transaction is named after its first seq");
+
+            // seq 83: the oldest jot again, so it now lives in the first segment AND the last file.
+            history.OnPut(HistJot(1000, "version two of 0"));
+
+            bool bSealedLive = false;
+            for (int i = 0; i < 200 && !bSealedLive; ++i)
+            {
+                bSealedLive = history.Stats().mnSegments >= 5;
+                if (!bSealedLive)
+                    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            }
+            Check(bSealedLive, "the active file is sealed while running, not only at a restart");
+        }
+
+        // Every file, in order: contiguous numbering and a gapless, increasing seq across all of them.
+        const std::vector<std::string> vFiles = History::AllFiles(sPath);
+        std::vector<uint64_t> vSeqs;
+        size_t nTxnFiles = 0;
+        for (const std::string& sFile : vFiles)
+        {
+            bool bHasTxn = false;
+            std::ifstream in(sFile);
+            std::string sLine;
+            while (std::getline(in, sLine))
+            {
+                const nlohmann::json j = nlohmann::json::parse(sLine, nullptr, false);
+                if (j.is_discarded())
+                    continue;
+                vSeqs.push_back(j.value("seq", 0ull));
+                if (j.value("txn", 0ull) == nTxnID)
+                    bHasTxn = true;
+            }
+            if (bHasTxn)
+                ++nTxnFiles;
+        }
+
+        bool bNumbered = vFiles.size() >= 3 && vFiles.back() == sPath;
+        for (size_t i = 0; bNumbered && i + 1 < vFiles.size(); ++i)
+        {
+            char sz[32];
+            std::snprintf(sz, sizeof(sz), ".%06zu", i + 1);
+            bNumbered = vFiles[i] == sPath + sz;
+        }
+        Check(bNumbered, "segments are numbered 000001 upward with no gaps, active file last");
+
+        bool bGapless = vSeqs.size() == 83;
+        for (size_t i = 0; bGapless && i < vSeqs.size(); ++i)
+            bGapless = vSeqs[i] == i + 1;
+        Check(bGapless, "all 83 entries survive, seq 1..83 in order across every file");
+        Check(nTxnFiles >= 2, "the transaction really does straddle a segment boundary");
+
+        {
+            History history;
+            Check(!history.Open(hc), "the segmented log reopens");
+
+            HistoryStats st = history.Stats();
+            Check(st.mnSegments == vFiles.size() - 1, "every sealed segment is indexed");
+
+            HistoryEntry e;
+            Check(history.Get(1, e) && e.mbDelete && e.mID == 42,
+                  "the legacy generation's entry is still reachable by seq");
+            Check(history.Get(2, e) && e.mID == 1000 && e.msRecord.find("version one of 0") != std::string::npos,
+                  "the first entry of the first sealed segment is reachable by seq");
+            Check(history.Previous(62, e) && e.mID == 1005 && !e.mbDelete,
+                  "undo of a delete finds the put before it in an older segment");
+            Check(history.Previous(83, e) && e.mnSeq == 2,
+                  "the previous version is found even when every file in between lacks it");
+
+            std::vector<HistoryEntry> vTxn;
+            history.ListTransaction(nTxnID, vTxn);
+            bool bWhole = vTxn.size() == 20;
+            for (size_t i = 0; bWhole && i < vTxn.size(); ++i)
+                bWhole = vTxn[i].mnSeq == nTxnID + i;
+            Check(bWhole, "a transaction split across segments comes back whole, oldest first");
+
+            std::vector<HistoryEntry> vRows;
+            size_t nTotal = 0;
+            history.List(kInvalidJotID, 100, 0, vRows, nTotal);
+            Check(vRows.size() == 4 && vRows[0].mnSeq == 83,
+                  "a restart fills the memory window even when the active file is nearly empty");
+
+            history.OnPut(HistJot(3000, "after the restart"));
+        }
+
+        {
+            History history;
+            Check(!history.Open(hc), "reopens again");
+            HistoryEntry e;
+            Check(history.Get(84, e) && e.mID == 3000, "the counter continued across the restart");
+        }
+
+        // The purge tool's one sanctioned exception: a purged jot leaves every segment.
+        size_t nRemoved = 0, nKept = 0;
+        bool   bRewrote = true;
+        for (const std::string& sFile : History::AllFiles(sPath))
+        {
+            size_t nR = 0, nK = 0;
+            bRewrote = !History::PurgeFile(sFile, { 1000 }, nR, nK) && bRewrote;
+            nRemoved += nR;
+            nKept    += nK;
+        }
+        Check(bRewrote, "purge rewrites every file of the log");
+        Check(nRemoved == 2 && nKept == 82, "purge removes the jot from the first segment and the last");
+
+        {
+            History history;
+            Check(!history.Open(hc), "reopens after the purge");
+            HistoryEntry e;
+            Check(!history.Get(2, e) && !history.Get(83, e), "neither purged version is reachable");
+            Check(history.Get(3, e) && e.mID == 1001, "its neighbours are untouched");
+        }
+    }
 }
 
 
@@ -375,6 +548,7 @@ int main(int argc, char** argv)
     TestSnapshotCycle();
     TestLastChangeSurvivesRestart();
     TestNoPersistIsSilent();
+    TestHistorySegments();
 
     std::error_code ec;
     std::filesystem::remove_all(gsDir, ec);
