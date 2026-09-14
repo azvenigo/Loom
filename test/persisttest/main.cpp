@@ -534,6 +534,80 @@ namespace
             Check(history.Get(3, e) && e.mID == 1001, "its neighbours are untouched");
         }
     }
+
+    void TestHistoryActivity()
+    {
+        Section("activity tallies: who did what, across all of history");
+        Reset();
+
+        HistoryConfig hc;
+        hc.msPath            = gsDir + "/loom.history";
+        hc.mnMaxBytes        = 1024;   // sealed often, so a reopen has to tally from sealed segments
+        hc.mnMemory          = 2;
+        hc.mnFlushIntervalMS = 5;
+
+        const auto Put = [](History& h, tJotID id, const char* pEditor, const char* pOrigin,
+                            const char* pChange, std::vector<std::string> vTags)
+        {
+            FlatJot jot = HistJot(id, "activity");
+            jot.msEditor     = pEditor;
+            jot.msOrigin     = pOrigin;
+            jot.msLastChange = pChange;
+            jot.mTags        = std::move(vTags);
+            h.OnPut(jot);
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        };
+
+        const auto Expect = [](const ActivitySummary& sum, const char* pWhen)
+        {
+            const auto Is = [&](eActivity k, uint64_t nHuman, uint64_t nAgent)
+            { return sum.mTotals[0][k] == nHuman && sum.mTotals[1][k] == nAgent; };
+            std::string s = pWhen;
+            Check(Is(kActAdded, 2, 1),     (s + ": added - two by a person, one by an agent").c_str());
+            Check(Is(kActUpdated, 2, 1),   (s + ": updated - a run of edits by one editor counts once").c_str());
+            Check(Is(kActDeleted, 1, 0),   (s + ": deleted").c_str());
+            Check(Is(kActTodoAdded, 0, 2), (s + ": todos added, and a restore is not a new one").c_str());
+            Check(Is(kActTodoDone, 1, 0),  (s + ": todos done, counted once through delete and restore").c_str());
+            Check(Is(kActTriaged, 0, 2),   (s + ": triaged - an unsigned in-process write is the agent").c_str());
+        };
+
+        {
+            History h;
+            Check(!h.Open(hc), "the log opens");
+            const tJotID A = 5000, B = 5001, C = 5002;
+            // Newer ids than the log's start would be, so the pre-label rule is not what decides.
+            Put(h, A, "",            "10.0.0.1", "added",   { "status:unprocessed" });
+            Put(h, A, "loom-triage", "",         "updated", { "todo" });
+            Put(h, A, "loom-triage", "",         "updated", { "todo", "priority:high" });
+            Put(h, B, "claude",      "10.0.0.2", "added",   { "todo" });
+            Put(h, B, "user",        "10.0.0.1", "done",    { "todo", "status:done" });
+            h.OnDelete(B);
+            Put(h, B, "user",        "10.0.0.1", "restored", { "todo", "status:done" });
+            Put(h, C, "",            "",         "added",   { "status:unprocessed" });
+            Put(h, C, "",            "",         "updated", { "journal" });
+
+            ActivitySummary sum;
+            h.Activity(0, INT64_MAX, sum);
+            Expect(sum, "live");
+            Check(!sum.mHours.empty() && sum.mnFirstAtUS > 0, "hours and the log's start are reported");
+
+            std::vector<HistoryEntry> vDay;
+            h.ListRange(0, INT64_MAX, vDay);
+            Check(vDay.size() == 7 && vDay[0].mID == C, "a range lists coalesced rows, newest first");
+        }
+        {
+            History h;
+            Check(!h.Open(hc), "reopens across sealed segments");
+            Check(h.Stats().mnSegments >= 2, "the tally really is spread over several files");
+            ActivitySummary sum;
+            h.Activity(0, INT64_MAX, sum);
+            Expect(sum, "after a restart");
+
+            std::vector<HistoryEntry> vDay;
+            h.ListRange(0, INT64_MAX, vDay);
+            Check(vDay.size() == 7, "a range older than memory is read back from the segments");
+        }
+    }
 }
 
 
@@ -549,6 +623,7 @@ int main(int argc, char** argv)
     TestLastChangeSurvivesRestart();
     TestNoPersistIsSilent();
     TestHistorySegments();
+    TestHistoryActivity();
 
     std::error_code ec;
     std::filesystem::remove_all(gsDir, ec);

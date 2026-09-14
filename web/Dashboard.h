@@ -936,37 +936,76 @@ mark{background:var(--mark);color:inherit;border-radius:2px;padding:0 1px}
 .cardgrid.list .mfoot{margin-top:0;flex:0 0 auto;flex-wrap:nowrap}
 
 /* ---------- dashboard: overview ----------
-   Four stat cards, then two rows of two panels - distribution/signals, activity/health. Nothing
-   here needs its own page: it's what you'd want visible before deciding where to dig in, which is
-   also why the periodic refresh (see viewDashboard) keeps it live without a manual reload. */
-.ov-grid{display:grid;grid-template-columns:1.3fr 1fr 1fr 1fr;gap:12px;margin-bottom:20px}
-@media(max-width:900px){.ov-grid{grid-template-columns:repeat(2,1fr)}}
-.ov-card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);
-  padding:16px 18px;display:flex;flex-direction:column;gap:9px;min-height:100px}
-.ov-card .top{display:flex;align-items:center;gap:10px}
-.ov-card .ic{width:28px;height:28px;border-radius:8px;background:var(--sunk);color:var(--dim);
-  display:flex;align-items:center;justify-content:center;flex:none}
-.ov-card .ic svg{width:14px;height:14px}
-/* Not .ov-card .eyebrow - the panel kickers (DISTRIBUTION, ACTIVITY, STORE HEALTH, TODOS &
-   REMINDERS) carry the same class and were matching nothing, so they rendered as plain 14px body
-   text next to the 10px mono ones on the stat cards. One rule, both places. */
+   Panels, then the activity card. Nothing here needs its own page: it's what you'd want visible
+   before deciding where to dig in, which is also why the periodic refresh (see viewDashboard) keeps
+   it live without a manual reload. */
+/* The panel kickers (DISTRIBUTION, ACTIVITY, STORE HEALTH, TODOS & REMINDERS) all carry this. */
 .eyebrow{font:10px var(--mono);text-transform:uppercase;letter-spacing:.07em;
   color:var(--eyebrow-ink)}
-.ov-card .num{font-size:26px;font-weight:600;color:var(--ink);line-height:1}
-.ov-card .cap{font-size:11.5px;color:var(--faint)}
-.ov-card.hi{background:linear-gradient(var(--hi-ang),var(--hi-a),var(--hi-b));
-  border-color:var(--hi-a)}
-.ov-card.hi .ic{background:rgba(255,255,255,.2);color:#fff}
-.ov-card.hi .eyebrow,.ov-card.hi .cap{color:rgba(255,255,255,.78)}
-.ov-card.hi .num{color:#fff}
-.ov-card.clickable{cursor:pointer;transition:transform .12s ease,box-shadow .12s ease}
-.ov-card.clickable:hover{transform:translateY(-1px);box-shadow:0 4px 14px -6px rgba(0,0,0,.25)}
-.ov-card.clickable:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-/* Same accent the TODO panel uses for "this wants a look" - unprocessed jots are exactly that,
-   just surfaced as a card instead of a panel because there's nothing to triage inline here. */
-.ov-card.warn{border-color:var(--warn-line)}
-.ov-card.warn .ic{background:var(--warn-wash);color:var(--warn)}
-.ov-card.warn .num{color:var(--warn)}
+
+/* ---------- dashboard: activity card ----------
+   YOU AND AGENTS ARE THE CARD'S TWO COLOURS, AND ONLY THOSE TWO. Indigo and teal, checked with the
+   dataviz palette validator against white and against the Twilight Dark panel - both pairs pass the
+   colour-blind separation and contrast checks - with a separate, lighter pair for dark grounds
+   because the light pair sinks into them. They are fixed rather than taken from --accent because
+   several palettes set --hi-a and --hi-b to the same colour, and a split bar whose halves match is
+   no bar at all. The numbers and captions stay in ink; a swatch beside them carries the identity. */
+:root{--act-you:#5b4ce6;--act-agent:#0f9d8e}
+:root[data-palette="twilight-dark"],:root[data-palette="midnight"],:root[data-palette="nord-dark"],
+:root[data-palette="earth-dark"],:root[data-palette="aurora"],:root[data-palette="nebula"],
+:root[data-palette="synth"]{--act-you:#8f74ee;--act-agent:#28a896}
+.ov-act{position:relative;overflow:hidden;margin-bottom:20px}
+/* The pop: the palette's own highlight gradient as a rule across the top, where it carries no data
+   and so cannot be mistaken for the you/agent pair. */
+.ov-act::before{content:"";position:absolute;left:0;right:0;top:0;height:3px;
+  background:linear-gradient(90deg,var(--hi-a),var(--hi-b),var(--accent2))}
+.ov-act .phead{align-items:center;gap:12px;flex-wrap:wrap}
+.ov-actlegend{display:flex;gap:14px;font:10.5px var(--mono);color:var(--faint)}
+.ov-actlegend span{display:flex;align-items:center;gap:5px}
+.ov-actlegend i,.ov-tipline i{width:9px;height:9px;border-radius:2px;display:block;flex:none}
+i.you{background:var(--act-you)}
+i.agent{background:var(--act-agent)}
+.ov-acttiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:20px}
+@media(max-width:900px){.ov-acttiles{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.ov-acttile{border-radius:var(--r);padding:12px 14px 11px;display:flex;flex-direction:column;gap:7px;
+  border:1px solid var(--line-soft);
+  background:linear-gradient(155deg,color-mix(in srgb,var(--act-you) 7%,var(--panel)),
+                             color-mix(in srgb,var(--act-agent) 6%,var(--sunk)))}
+.ov-actlbl{font:10px var(--mono);text-transform:uppercase;letter-spacing:.07em;color:var(--dim)}
+.ov-actnum{font-size:26px;font-weight:600;color:var(--ink);line-height:1;font-variant-numeric:tabular-nums}
+.ov-actsplit{display:flex;gap:2px;height:6px;border-radius:3px;overflow:hidden;background:var(--line-soft)}
+.ov-actsplit i{display:block;min-width:3px}
+.ov-actcap{font-size:11.5px;color:var(--body)}
+.ov-act30{font:10.5px var(--mono);color:var(--faint)}
+.ov-actchead{display:flex;justify-content:space-between;align-items:baseline;font-size:12px;
+  color:var(--dim);margin-bottom:6px}
+.ov-actchead .n{font:10.5px var(--mono);color:var(--faint)}
+/* 30 columns, each the full plot height so the hover target is the whole slot and not a sliver of
+   bar. Stacked bottom-up with column-reverse; a 2px gap separates the two segments, and only the
+   topmost segment gets the rounded data-end. */
+.ov-actplot{position:relative;height:120px;display:flex;align-items:stretch;gap:3px;
+  padding-top:16px;border-bottom:1px solid var(--line)}
+.ov-actcol{flex:1;min-width:0;display:flex;flex-direction:column-reverse;gap:2px;border-radius:4px 4px 0 0}
+.ov-actcol i{display:block;flex:none}
+.ov-actcol i:last-child{border-radius:4px 4px 0 0}
+.ov-actcol:hover{background:color-mix(in srgb,var(--ink) 6%,transparent)}
+.ov-actcol.today{box-shadow:inset 0 -2px 0 var(--accent)}
+.ov-actmax{position:absolute;left:0;right:0;top:16px;border-top:1px dashed var(--line);pointer-events:none}
+.ov-actmax span{position:absolute;right:0;top:-14px;font:9.5px var(--mono);color:var(--faint)}
+.ov-actx{display:flex;justify-content:space-between;font:9.5px var(--mono);color:var(--faint);margin-top:5px}
+.ov-acttip{position:absolute;top:10px;z-index:5;pointer-events:none;white-space:nowrap;
+  background:var(--ink);color:var(--bg);font-size:11px;line-height:1.45;padding:7px 10px;
+  border-radius:6px;box-shadow:0 6px 18px -8px rgba(0,0,0,.45)}
+.ov-tiphead{font-weight:600;margin-bottom:2px}
+.ov-tipline{display:flex;align-items:center;gap:6px}
+.ov-actfoot{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px;padding-top:13px;
+  border-top:1px solid var(--line-soft)}
+.ov-actchip{font-size:11.5px;color:var(--dim);background:var(--sunk);border:1px solid var(--line-soft);
+  border-radius:999px;padding:3px 10px}
+.ov-actchip.warn{color:var(--warn);background:var(--warn-wash);border-color:var(--warn-line)}
+.ov-actchip.click{cursor:pointer}
+.ov-actchip.click:hover{border-color:var(--warn)}
+.ov-actchip.click:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
 /* align-items:start so a panel is only as tall as its content - a 10-row distribution chart next
    to an 8-pill tag cloud was stretching the tag panel to match and leaving half of it blank. */
@@ -1195,6 +1234,82 @@ mark{background:var(--mark);color:inherit;border-radius:2px;padding:0 1px}
   overflow:hidden;text-overflow:ellipsis}
 .ov-asub{font-size:11px;color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ov-awhen{margin-left:auto;font:10.5px var(--mono);color:var(--faint);flex:none}
+
+/* ---------- dashboard: change calendar ----------
+   A month grid of what happened to the store on each day: how much, and of what kind. The ACTIVITY
+   panel above answers "what moved last"; this answers "when did the work happen", which is the one
+   question a list of the newest eight cannot.
+
+   THE CELL CARRIES TWO INDEPENDENT READINGS, and they must not be collapsed into one. The tint is
+   VOLUME - a ramp of --accent scaled against the busiest day in view, so a heavy day is legible
+   from across the panel without reading a single digit. The 3px strip along the bottom is
+   COMPOSITION - added/updated/deleted in proportion, in the same three semantic colors the legend
+   and the day list use. Tinting by "dominant kind" instead would have thrown the mix away and let
+   a one-event difference flip a day's entire color, which is a worse lie than no color at all.
+
+   FOUR LEVELS, NOT A CONTINUOUS RAMP. Adjacent shades of one hue stop being distinguishable well
+   before the eye runs out of steps, and a day that is merely darker than its neighbour reads as
+   noise; four means every step is a real difference you can name.
+
+   .nolog IS NOT .quiet, AND THAT DISTINCTION IS THE POINT. The history log is kept forever, but it
+   still began somewhere, so there is a date before which Loom simply has no record - and a day with no record rendered the
+   same as a day with no activity would be the panel quietly asserting that nothing happened on it.
+   A dashed empty box says "not covered"; a filled flat box says "covered, and nothing happened".
+   The grid shows a page of months and pages back through the whole log: see viewDashboard. */
+.ov-cal .phead{margin-bottom:12px;align-items:center;gap:12px;flex-wrap:wrap}
+.ov-calnav{display:flex;align-items:center;gap:6px}
+.ov-calrange{font:10.5px var(--mono);color:var(--faint);margin-right:4px}
+.ov-calmonths{display:flex;flex-wrap:wrap;gap:20px 26px}
+.ov-calmonth{flex:none}
+.ov-calmname{font:10px var(--mono);text-transform:uppercase;letter-spacing:.07em;
+  color:var(--eyebrow-ink);margin-bottom:7px}
+.ov-caldows,.ov-calweeks{display:grid;grid-template-columns:repeat(7,34px);gap:4px}
+.ov-caldows{margin-bottom:5px}
+.ov-caldow{font:9px var(--mono);color:var(--faint);text-align:center}
+.ov-calday{position:relative;height:34px;border-radius:5px;background:var(--sunk);overflow:hidden;
+  display:flex;align-items:center;justify-content:center;font:10.5px var(--mono);color:var(--dim)}
+/* BOTH NUMBERS ARE IN THE BOX, at deliberately different weights. The count is the reading this
+   panel exists for, so it gets the middle and the weight; the date is what makes the grid
+   navigable at all ("what happened on the 9th" needs the 9 findable without counting columns), so
+   it stays but shrinks into the corner. A cell showing only one of them fails one of those two
+   jobs. */
+.ov-calday .dnum{position:absolute;top:2px;left:3px;font:8px var(--mono);color:var(--faint);
+  line-height:1}
+.ov-calday .cnum{font:11px var(--mono);font-weight:600;line-height:1}
+.ov-calday.has .dnum{color:var(--dim)}
+/* Leading blanks before the 1st and trailing ones after the 31st - structure, not days. */
+.ov-calday.pad{background:transparent}
+.ov-calday.future,.ov-calday.nolog{background:transparent;border:1px dashed var(--line)}
+.ov-calday.future{border-color:var(--line-soft)}
+.ov-calday.has{cursor:pointer;color:var(--ink);font-weight:600;padding-bottom:3px;
+  background:color-mix(in srgb,var(--accent) calc(var(--lvl)*1%),var(--sunk))}
+.ov-calday.has:hover,.ov-calday.on{outline:2px solid var(--accent);outline-offset:-2px}
+.ov-calday.today{box-shadow:inset 0 0 0 1px var(--accent)}
+.ov-calmix{position:absolute;left:0;right:0;bottom:0;height:3px;display:flex}
+.ov-calmix i{display:block}
+.ov-calmix i.add{background:var(--good)}
+.ov-calmix i.upd{background:var(--info)}
+.ov-calmix i.del{background:var(--bad)}
+.ov-callegend{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;margin-top:15px;
+  font:10.5px var(--mono);color:var(--faint)}
+.ov-callegend span{display:flex;align-items:center;gap:5px}
+.ov-callegend i{width:9px;height:9px;border-radius:2px;display:block;flex:none}
+/* The coverage note earns the far end of the legend rather than a line of its own: it qualifies
+   the grid in exactly the way the three swatches do. */
+.ov-calcover{margin-left:auto;text-align:right;color:var(--faint)}
+.ov-caldetail{margin-top:14px;border-top:1px solid var(--line);padding-top:11px}
+.ov-caldetailhead{display:flex;align-items:baseline;gap:10px;margin-bottom:4px}
+.ov-caldetailhead h4{margin:0;font-size:13px;font-weight:600;color:var(--ink)}
+.ov-caldetailhead .n{font:10.5px var(--mono);color:var(--faint)}
+.ov-caldetailhead button{margin-left:auto}
+/* Same three colors as the strip and the legend. NOT .chgchip: those spell the stored ChangeKind
+   of a jot as it stands now, and these three spell what one logged entry DID - a jot whose
+   last_change is `done` can perfectly well appear here as the update that finished it. */
+.ov-calk{font:10px var(--mono);text-transform:uppercase;letter-spacing:.04em;padding:2px 6px;
+  border-radius:4px;flex:none;font-weight:600}
+.ov-calk.add{background:var(--good-wash);color:var(--good)}
+.ov-calk.upd{background:var(--info-wash);color:var(--info)}
+.ov-calk.del{background:var(--bad-wash);color:var(--bad)}
 
 .taskbits{display:flex;gap:6px;align-items:center}
 .priochip{font:10px var(--mono);text-transform:uppercase;letter-spacing:.04em;padding:2px 6px;
@@ -1617,6 +1732,19 @@ let hideDoneTodos=true;try{hideDoneTodos=localStorage.getItem('loom-hide-done')!
    like hideDoneTodos, remembered the same way, and defaulting to 'all' because a filter nobody
    asked for that hides work is how a todo goes missing. */
 let todoAudience='all';try{todoAudience=localStorage.getItem('loom-todo-audience')||'all';}catch(e){}
+/* Which day of the change calendar is expanded, as a Date.toDateString() key, or null for none.
+   Module scope rather than a local in viewDashboard for the same reason todoAudience is: the
+   dashboard re-renders itself every 15s, and a selection that lived inside the render would
+   collapse on its own every quarter minute while being read. NOT persisted, unlike the palette -
+   "show me what happened last Tuesday" is a question you finish answering in the same sitting. */
+let calDay=null;
+/* The rest of the calendar's module state, for the same reason. calDayAt is the open day's local
+   midnight in ms - kept beside the key so nothing has to parse a toDateString() back into a date.
+   calDayData holds that day's rows once fetched; calDayLoading stops the 15s re-render from firing
+   a second fetch for a day already on its way. calMonthOffset is how many months back the grid's
+   last month is: 0 ends on this month. */
+let calDayAt=0,calDayData=null,calDayLoading=null,calMonthOffset=0;
+const CAL_MONTHS=3;
 /* The detail dialog opens minimal (summary/priority/due) or full, and detailExpanded says which.
    It is a PREFERENCE, not per-jot state: someone who works in the full form wants the full form on
    the next jot too, and having to click "More details" on every single open was the complaint.
@@ -2596,9 +2724,24 @@ const OV_ICONS={
 async function viewDashboard(target){
   const L=target;
   try{
-    const [tags,sim,recent,health,watch]=await Promise.all([
+    /* The calendar's page - CAL_MONTHS months ending calMonthOffset months back - and the activity
+       card's 30 days decide how far back the activity fetch has to reach. */
+    const nowD=new Date();
+    const calEnd=new Date(nowD.getFullYear(),nowD.getMonth()-calMonthOffset+1,1);
+    const calStart=new Date(calEnd.getFullYear(),calEnd.getMonth()-CAL_MONTHS,1);
+    const d30=new Date(nowD.getFullYear(),nowD.getMonth(),nowD.getDate()-29);
+    const [tags,sim,recent,health,watch,act]=await Promise.all([
       api('/tags'), api('/tags/similar'),
-      api('/jots?order=newest&limit=200&brief=1'), api('/stats'), api('/watch')
+      api('/jots?order=newest&limit=200&brief=1'), api('/stats'), api('/watch'),
+      /* The calendar's and the activity card's source, and the ONE fetch here allowed to fail
+         without taking the page with it: /history/activity answers 403 when Loom is running without
+         persistence, and a dashboard that went blank because one optional panel has no data would be
+         a poor trade. Caught to null; the calendar doesn't render and the card says why.
+
+         Totals in the response are all-time regardless of the range; the range only bounds which
+         hours come back, and the server keeps the tallies in memory, so this costs no disk. */
+      api('/history/activity?from='+Math.min(calStart.getTime(),d30.getTime())*1000+
+          '&to='+Math.max(calEnd.getTime(),Date.now())*1000).catch(()=>null)
     ]);
     const topTags=tags.tags.slice().sort((a,b)=>b.count-a.count);
     const p=health.persistence||{};
@@ -2872,70 +3015,337 @@ async function viewDashboard(target){
       });
     }
 
-    /* ---- stat cards ---- */
-    const grid=el('div','ov-grid');L.append(grid);
-    const card=function(cls,icon,eyebrow,num,cap,onclick){
-      const c=el('div','ov-card'+(cls?' '+cls:'')+(onclick?' clickable':''));
-      const top=el('div','top');
-      const ic=el('div','ic');ic.innerHTML=OV_ICONS[icon];top.append(ic);
-      top.append(el('div','eyebrow',eyebrow));c.append(top);
-      c.append(el('div','num',String(num)));
-      c.append(el('div','cap',cap));
-      if(onclick){c.onclick=onclick;c.tabIndex=0;
+    /* ---- change calendar ----
+       Built from /history/activity: counts the server tallied over the WHOLE log, in hours, bucketed
+       here into the viewer's own days. The log is kept forever, so the grid pages back through it
+       with Earlier / Later rather than being capped at whatever the newest N entries happened to
+       reach. Rendered only when the fetch answered - see above. */
+    const midnight=d=>new Date(d.getFullYear(),d.getMonth(),d.getDate());
+    const today=midnight(new Date());
+    /* KIND ORDER IS THE SERVER'S: added, updated, deleted, todo_added, todo_done, triaged - a
+       person's six, then an agent's six (http/HttpServer.cpp, /history/activity). */
+    const byDay={};
+    if(act)(act.hours||[]).forEach(function(r){
+      const k=dayKey(r[0]*3600e6);
+      const b=byDay[k]||(byDay[k]={h:[0,0,0,0,0,0],a:[0,0,0,0,0,0]});
+      for(let i=0;i<6;i++){b.h[i]+=r[1+i];b.a[i]+=r[7+i];}
+    });
+    const kindOf=(b,i)=>b?b.h[i]+b.a[i]:0;
+    const changesOf=(b,who)=>b?b[who][0]+b[who][1]+b[who][2]:0;
+    const fmtN=n=>Number(n||0).toLocaleString();
+
+    if(act){
+      const logFrom=act.first_at?midnight(D(act.first_at)):today;
+      const logFromMo=new Date(logFrom.getFullYear(),logFrom.getMonth(),1);
+
+      const calP=el('div','ov-panel ov-cal');L.append(calP);
+      const ch=el('div','phead');const ch1=el('div');
+      ch1.append(el('div','eyebrow','CALENDAR'));
+      ch1.append(el('h3',null,'Changes by day'));
+      ch.append(ch1);
+      const nav=el('div','ov-calnav');
+      const lastShown=new Date(calEnd.getFullYear(),calEnd.getMonth()-1,1);
+      const moName=d=>d.toLocaleDateString(undefined,{month:'short',year:'numeric'});
+      nav.append(el('span','ov-calrange',moName(calStart)+' – '+moName(lastShown)));
+      const navBtn=function(label,disabled,step){
+        const b=el('button','btn tiny',label);b.type='button';b.disabled=disabled;
+        /* The open day belongs to the page it was opened on; carrying it to a page where it is
+           not drawn would leave a detail list under a grid that doesn't show its day. */
+        b.onclick=function(){calMonthOffset=Math.max(0,calMonthOffset+step);calDay=null;render();};
+        nav.append(b);
+      };
+      navBtn('‹ Earlier',calStart<=logFromMo,CAL_MONTHS);
+      navBtn('Later ›',calMonthOffset===0,-CAL_MONTHS);
+      if(calMonthOffset>CAL_MONTHS)navBtn('Now',false,-calMonthOffset);
+      ch.append(nav);calP.append(ch);
+
+      /* Scaled over the days this page SHOWS: a monster day on another page would otherwise go on
+         compressing every visible day into the bottom step of a ramp it isn't even in. */
+      let maxDay=0;
+      for(let dt=new Date(calStart);dt<calEnd;dt=new Date(dt.getFullYear(),dt.getMonth(),dt.getDate()+1)){
+        const b=byDay[dt.toDateString()];
+        if(b)maxDay=Math.max(maxDay,changesOf(b,'h')+changesOf(b,'a'));
+      }
+
+      /* Four steps, scaled against the busiest day currently in view rather than an absolute
+         count: a quiet week and a frantic one should each use the full ramp, because the question
+         is always "heavy for this store", never "heavy in some universal unit". */
+      const lvlOf=n=>n?Math.min(4,1+Math.floor(4*(n-1)/Math.max(maxDay,1))):0;
+      const LVL=[0,18,34,52,72];
+
+      const dayCell=function(dt){
+        const c=el('div','ov-calday');
+        c.append(el('span','dnum',String(dt.getDate())));
+        if(dt>today){
+          c.className='ov-calday future';
+          c.title=dt.toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'});
+          return c;
+        }
+        if(dt<logFrom){
+          c.className='ov-calday nolog';
+          c.title=dayLabel(dt.getTime()*1000)+
+                  ' — before the change log began. Loom has no record either way for this day.';
+          return c;
+        }
+        const b=byDay[dt.toDateString()];
+        const add=kindOf(b,0),upd=kindOf(b,1),del=kindOf(b,2),tot=add+upd+del;
+        if(dt.getTime()===today.getTime())c.className+=' today';
+        if(!tot){
+          c.title=dayLabel(dt.getTime()*1000)+' — nothing changed';
+          return c;
+        }
+        c.className+=' has';
+        if(calDay===dt.toDateString())c.className+=' on';
+        c.style.setProperty('--lvl',String(LVL[lvlOf(tot)]));
+        c.append(el('span','cnum',String(tot)));
+        const mix=el('div','ov-calmix');
+        [['add',add],['upd',upd],['del',del]].forEach(function(pair){
+          if(!pair[1])return;
+          const seg=el('i',pair[0]);seg.style.flex=pair[1];mix.append(seg);
+        });
+        c.append(mix);
+        const bits=[];
+        if(add)bits.push(add+' added');
+        if(upd)bits.push(upd+' updated');
+        if(del)bits.push(del+' deleted');
+        c.title=dayLabel(dt.getTime()*1000)+' — '+bits.join(', ')+
+          ' ('+changesOf(b,'h')+' by you, '+changesOf(b,'a')+' by agents)';
+        /* Toggling, so a second click on the open day closes it rather than silently doing
+           nothing. render() rather than a local DOM patch: every other click on this dashboard
+           redraws, and calDay lives at module scope precisely so it survives that. */
+        c.onclick=function(){
+          if(calDay===dt.toDateString()){calDay=null;}
+          else{calDay=dt.toDateString();calDayAt=dt.getTime();}
+          render();
+        };
+        return c;
+      };
+
+      const months=el('div','ov-calmonths');calP.append(months);
+      const DOW=['S','M','T','W','T','F','S'];
+      for(let mo=new Date(calStart);mo<calEnd;mo=new Date(mo.getFullYear(),mo.getMonth()+1,1)){
+        const blk=el('div','ov-calmonth');
+        blk.append(el('div','ov-calmname',mo.toLocaleDateString(undefined,
+          {month:'long',year:mo.getFullYear()===today.getFullYear()?undefined:'numeric'})));
+        const dows=el('div','ov-caldows');
+        DOW.forEach(d=>dows.append(el('div','ov-caldow',d)));
+        blk.append(dows);
+        const weeks=el('div','ov-calweeks');
+        const firstDow=mo.getDay();
+        const nDays=new Date(mo.getFullYear(),mo.getMonth()+1,0).getDate();
+        for(let i=0;i<firstDow;i++)weeks.append(el('div','ov-calday pad'));
+        for(let dd=1;dd<=nDays;dd++)
+          weeks.append(dayCell(new Date(mo.getFullYear(),mo.getMonth(),dd)));
+        blk.append(weeks);months.append(blk);
+      }
+
+      const leg=el('div','ov-callegend');
+      [['add','Added'],['upd','Updated'],['del','Deleted']].forEach(function(pair){
+        const sp=el('span');const sw=el('i');sw.style.background='var(--'+
+          ({add:'good',upd:'info',del:'bad'}[pair[0]])+')';
+        sp.append(sw);sp.append(document.createTextNode(pair[1]));leg.append(sp);
+      });
+      /* Says what the grid is evidence OF. Without it the dashed cells read as a styling quirk
+         instead of as the start of the record. */
+      const T=act.totals||{};
+      const allChanges=['added','updated','deleted'].reduce((s,k)=>s+((T[k]||[0,0])[0]+(T[k]||[0,0])[1]),0);
+      leg.append(el('div','ov-calcover',fmtN(allChanges)+' changes recorded since '+
+        logFrom.toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'})));
+      calP.append(leg);
+
+      /* The expanded day, fetched on demand from whichever history files hold it - so a day from
+         years back opens the same way yesterday does. The rows are the log entries themselves, so
+         this is the one place on the dashboard that shows several changes to the SAME jot as
+         several lines. */
+      if(calDay){
+        const det=el('div','ov-caldetail');calP.append(det);
+        const dayUS=calDayAt*1000;
+        const ready=calDayData&&calDayData.key===calDay;
+        const rows=ready?calDayData.rows:[];
+        const dh2=el('div','ov-caldetailhead');
+        dh2.append(el('h4',null,dayLabel(dayUS)));
+        dh2.append(el('div','n',ready?rows.length+' change'+(rows.length===1?'':'s'):'Loading…'));
+        const close=el('button','btn tiny','Close');close.type='button';
+        close.onclick=function(){calDay=null;render();};
+        dh2.append(close);det.append(dh2);
+        if(!ready&&calDayLoading!==calDay){
+          const key=calDay,from=dayUS;
+          const to=new Date(D(dayUS).getFullYear(),D(dayUS).getMonth(),D(dayUS).getDate()+1).getTime()*1000-1;
+          calDayLoading=key;
+          api('/history?from='+from+'&to='+to)
+            .then(function(r){calDayData={key:key,rows:r.entries||[]};})
+            .catch(function(err){calDayData={key:key,rows:[]};toast(err.message,'err');})
+            .finally(function(){calDayLoading=null;if(calDay===key)render();});
+        }
+        const list=el('div','ov-activity');det.append(list);
+        rows.forEach(function(e){
+          /* ADDED when the row's jot was born that day: its id is its creation microsecond, and a
+             row folding a creation with the edits right after it still carries that id. */
+          const kind=e.op==='del'?'del':(e.id>=dayUS&&e.id<=e.at?'add':'upd');
+          const row=el('div','ov-arow');
+          row.append(el('span','ov-calk '+kind,
+            kind==='add'?'ADDED':kind==='del'?'DELETED':'UPDATED'));
+          const mid=el('div','ov-amid');
+          mid.append(el('div','ov-atitle',e.name||e.summary||'(untitled)'));
+          /* edits>1 means this row stands for a run that was folded into one entry; saying so is
+             what stops the day's total reading as an undercount to anyone who was there. */
+          mid.append(el('div','ov-asub',(e.editor||'user')+
+            (e.origin?' · '+e.origin:'')+
+            (e.edits>1?' · '+e.edits+' edits folded':'')));
+          row.append(mid);
+          row.append(el('span','ov-awhen',
+            D(e.at).toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit'})));
+          if(kind==='del'){
+            row.style.cursor='default';
+            row.title='This jot was deleted. Its last version is still in the history log.';
+          }else{
+            row.onclick=async function(){
+              try{sel=await api('/jots/'+e.id);render();}
+              catch(err){toast(err.message,'err');}
+            };
+          }
+          list.append(row);
+        });
+      }
+    }
+
+    /* ---- activity ----
+       ONE CARD FOR WHAT USED TO BE SIX. The headline figures are all-time and come from the whole
+       history log, split into what you did and what agents did - the rule is the editor name: the
+       default "user" is you, anything else is an agent (persist/History.h, ActivityCounts). The
+       store-shape counts and the triage health that had cards of their own survive as the chip row
+       along the bottom, where a warning still turns the chip amber and Needs Attention still opens
+       its dialog. */
+    const actCard=el('div','ov-panel ov-act');L.append(actCard);
+    const acH=el('div','phead');const acH1=el('div');
+    acH1.append(el('div','eyebrow','ACTIVITY'));
+    acH1.append(el('h3',null,'Everything Loom has seen'));
+    acH.append(acH1);
+    const whoLeg=el('div','ov-actlegend');
+    [['you','You'],['agent','Agents']].forEach(function(p){
+      const sp=el('span');sp.append(el('i',p[0]));sp.append(document.createTextNode(p[1]));whoLeg.append(sp);
+    });
+    acH.append(whoLeg);actCard.append(acH);
+
+    if(!act){
+      actCard.append(el('div','empty','No history log - Loom is running without persistence, so there is nothing to count.'));
+    }else{
+      const T=act.totals||{};
+      const d30US=d30.getTime()*1000;
+      const last30={h:[0,0,0,0,0,0],a:[0,0,0,0,0,0]};
+      (act.hours||[]).forEach(function(r){
+        if(r[0]*3600e6<d30US)return;
+        for(let i=0;i<6;i++){last30.h[i]+=r[1+i];last30.a[i]+=r[7+i];}
+      });
+
+      const tiles=el('div','ov-acttiles');actCard.append(tiles);
+      [['added',0,'Jots created'],['todo_added',3,'Todos created'],
+       ['todo_done',4,'Todos completed'],['triaged',5,'Jots triaged']].forEach(function(t){
+        const pair=T[t[0]]||[0,0],you=pair[0],agent=pair[1],tot=you+agent;
+        const tile=el('div','ov-acttile');
+        tile.append(el('div','ov-actlbl',t[2]));
+        tile.append(el('div','ov-actnum',fmtN(tot)));
+        const split=el('div','ov-actsplit');
+        if(you){const s=el('i','you');s.style.flex=you;split.append(s);}
+        if(agent){const s=el('i','agent');s.style.flex=agent;split.append(s);}
+        tile.append(split);
+        tile.append(el('div','ov-actcap',fmtN(you)+' you · '+fmtN(agent)+' agents'));
+        const n30=last30.h[t[1]]+last30.a[t[1]];
+        tile.append(el('div','ov-act30',n30?'+'+fmtN(n30)+' in the last 30 days':'none in the last 30 days'));
+        tiles.append(tile);
+      });
+
+      /* THE 30-DAY CHART stacks WHO, not what kind. The calendar right above already carries the
+         added/updated/deleted mix in its own three colours; a second encoding of the same thing in
+         this card would put five hues in one panel and make "blue" mean two things. Here the
+         question is the card's question - how much of the work was yours - and the kinds are in
+         the hover. */
+      const chart=el('div','ov-actchart');actCard.append(chart);
+      const days30=[];
+      for(let i=0;i<30;i++){
+        const dt=new Date(d30.getFullYear(),d30.getMonth(),d30.getDate()+i);
+        const b=byDay[dt.toDateString()];
+        days30.push({dt:dt,b:b,you:changesOf(b,'h'),agent:changesOf(b,'a')});
+      }
+      const max30=Math.max(1,...days30.map(d=>d.you+d.agent));
+      const sum30=days30.reduce((s,d)=>s+d.you+d.agent,0);
+      const chd=el('div','ov-actchead');
+      chd.append(el('span',null,'Changes, last 30 days'));
+      chd.append(el('span','n',fmtN(sum30)+' total'));
+      chart.append(chd);
+
+      const plot=el('div','ov-actplot');chart.append(plot);
+      const maxLine=el('div','ov-actmax');maxLine.append(el('span',null,String(max30)));plot.append(maxLine);
+      const tip=el('div','ov-acttip');tip.hidden=true;plot.append(tip);
+      days30.forEach(function(d,i){
+        const col=el('div','ov-actcol'+(d.dt.getTime()===today.getTime()?' today':''));
+        if(d.you){const s=el('i','you');s.style.height=(100*d.you/max30)+'%';col.append(s);}
+        if(d.agent){const s=el('i','agent');s.style.height=(100*d.agent/max30)+'%';col.append(s);}
+        const show=function(){
+          tip.textContent='';
+          tip.append(el('div','ov-tiphead',dayLabel(d.dt.getTime()*1000)));
+          if(!d.b||!(d.you+d.agent)){tip.append(el('div',null,'Nothing changed'));}
+          else[['you','You','h',d.you],['agent','Agents','a',d.agent]].forEach(function(w){
+            if(!w[3])return;
+            const line=el('div','ov-tipline');line.append(el('i',w[0]));
+            const k=d.b[w[2]],bits=[];
+            if(k[0])bits.push(k[0]+' added');
+            if(k[1])bits.push(k[1]+' updated');
+            if(k[2])bits.push(k[2]+' deleted');
+            line.append(document.createTextNode(w[1]+' '+w[3]+' — '+bits.join(', ')));
+            tip.append(line);
+          });
+          tip.hidden=false;
+          /* Anchored to the column, and pinned to the plot's edge near either end so it never
+             hangs off the card. */
+          const x=col.offsetLeft+col.offsetWidth/2;
+          tip.style.left=x+'px';
+          tip.style.transform=i<5?'translate(-12px,-100%)':i>24?'translate(calc(-100% + 12px),-100%)':'translate(-50%,-100%)';
+        };
+        col.onmouseenter=show;
+        col.onmouseleave=function(){tip.hidden=true;};
+        col.setAttribute('aria-label',dayLabel(d.dt.getTime()*1000)+': '+d.you+' by you, '+d.agent+' by agents');
+        plot.append(col);
+      });
+      const xs=el('div','ov-actx');
+      xs.append(el('span',null,d30.toLocaleDateString(undefined,{month:'short',day:'numeric'})));
+      xs.append(el('span',null,'Today'));
+      chart.append(xs);
+    }
+
+    const foot=el('div','ov-actfoot');actCard.append(foot);
+    const chip=function(text,warn,onclick){
+      const c=el('span','ov-actchip'+(warn?' warn':'')+(onclick?' click':''),text);
+      if(onclick){c.onclick=onclick;c.tabIndex=0;c.setAttribute('role','button');
         c.onkeydown=function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();onclick();}};}
-      grid.append(c);
+      foot.append(c);
     };
-    card('hi','dot','Active jots',health.jots??'—',
-      (health.named||0)+' named · '+Math.max((health.jots||0)-(health.named||0),0)+' unnamed');
-    card('','layers','Topics',topTags.length,'Bare-tag vocabulary');
-    card('','hash','Tags in use',health.tags??'—','Including structural tags');
-    /* Unprocessed rather than tag-drift: drift already has a permanent home (the Tags tab shows
-       the same sim.clusters at the top of its own page), and it never had a click-through here
-       anyway. What actually needs a human is a jot that came in with no summary, or a watched
-       source file with new content sitting in it - see the attention-dialog below. */
+    chip(fmtN(health.jots)+' active jots · '+fmtN(topTags.length)+' topics · '+fmtN(health.tags)+' tags');
+    /* Unprocessed jots and watched files with new content - what actually needs a human. */
     const needsAttention=unprocessed.length+pendingFiles.length;
-    card(needsAttention?'warn':'','flag','Needs attention',needsAttention,
-      needsAttention?[pendingFiles.length&&pendingFiles.length+' file'+(pendingFiles.length===1?'':'s')+' to ingest',
-                      unprocessed.length&&unprocessed.length+' to process'].filter(Boolean).join(', '):
-      'Nothing waiting',
-      needsAttention?function(){openAttention(unprocessed,pendingFiles);}:null);
-
-    /* TWO CARDS, BECAUSE THERE ARE TWO MECHANISMS AND THEY MUST NOT BE ADDED TOGETHER.
-       "Triage usage" is the billable cloud-agent path: a persisted ledger of `claude -p` runs with
-       real dollars attached (persist/RunLedger.h), straight off claude's own --output-format json
-       report - nothing there is estimated. "Offline triage" is the LAN call to zserver
-       (persist/TriageClient.h): free, unpersisted, counted since process start. Each is absent
-       entirely when its feature is unconfigured, same omit-empty rule as the JSON itself.
-
-       Most installs will now show only the second. That is the point of the work - but the first
-       stays wired up rather than being deleted, because it is the only thing that would show a
-       cloud path quietly coming back to life. */
+    if(needsAttention)
+      chip([pendingFiles.length&&pendingFiles.length+' file'+(pendingFiles.length===1?'':'s')+' to ingest',
+            unprocessed.length&&unprocessed.length+' to process'].filter(Boolean).join(', '),
+           true,function(){openAttention(unprocessed,pendingFiles);});
+    /* Cloud and offline triage stay two chips, never one sum: the first is billable and persisted
+       (persist/RunLedger.h), the second free and counted since start (persist/TriageClient.h). A
+       failure or a spend guardrail turns its chip amber, so neither can hide in a quiet total. */
     if(health.triage){
       const tr=health.triage;
-      const warn=tr.breaker_open||tr.budget_exceeded;
-      card(warn?'warn':'','hash','Triage usage','$'+(tr.cost_usd_24h||0).toFixed(2),
-        (tr.runs_24h||0)+' run'+(tr.runs_24h===1?'':'s')+' in 24h'+
-          (tr.breaker_open?' · PAUSED (failing)':tr.budget_exceeded?' · budget reached':''));
+      chip('Cloud triage $'+(tr.cost_usd_24h||0).toFixed(2)+' · '+(tr.runs_24h||0)+' run'+
+        (tr.runs_24h===1?'':'s')+' in 24h'+
+        (tr.breaker_open?' · PAUSED (failing)':tr.budget_exceeded?' · budget reached':''),
+        tr.breaker_open||tr.budget_exceeded);
     }
     if(health.resolver){
-      const rs=health.resolver;
-      const calls=rs.calls||0;
-      /* CALLS is the headline, not applied-or-declined, because it is the honest measure of how
-         much work moved off the cloud path - a declined call still answered a question Loom would
-         otherwise have had to ask a person or an agent.
-         The caption splits the three outcomes, which is the whole reason they are tracked apart:
-         "declined" is the service working correctly and "failed" is the box being unreachable, and
-         a card that only counted calls would render those identically. Failures are called out in
-         their own clause so a dead resolver cannot hide inside a healthy-looking total. */
-      const bits=[];
+      const rs=health.resolver,calls=rs.calls||0,bits=[];
       if(rs.applied)bits.push(rs.applied+' applied');
       if(rs.declined)bits.push(rs.declined+' declined');
       if(rs.avg_ms)bits.push(rs.avg_ms+'ms avg');
-      const warn=rs.breaker_open||rs.failed>0;
-      card(warn?'warn':'','zap','Offline triage',calls,
-        (calls?bits.join(' · '):'No calls yet')+
-          (rs.breaker_open?' · PAUSED ('+(rs.consecutive_failures||0)+' failures)':
-           rs.failed?' · '+rs.failed+' failed':''));
+      chip('Offline triage '+calls+' call'+(calls===1?'':'s')+(bits.length?' · '+bits.join(' · '):'')+
+        (rs.breaker_open?' · PAUSED ('+(rs.consecutive_failures||0)+' failures)':
+         rs.failed?' · '+rs.failed+' failed':''),
+        rs.breaker_open||rs.failed>0);
     }
 
     /* ---- distribution + signals ---- */

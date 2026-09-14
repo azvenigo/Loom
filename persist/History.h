@@ -7,7 +7,9 @@
 
 #include <condition_variable>
 #include <cstdint>
+#include <array>
 #include <deque>
+#include <map>
 #include <mutex>
 #include <shared_mutex>
 #include <string>
@@ -129,6 +131,38 @@ struct HistorySegment
     uint64_t    mnBytes     = 0;
 };
 
+// ACTIVITY - what the log adds up to, counted once as it is read and kept current as it grows.
+//
+// Every kind is split by WHO: [0] a person, [1] an agent. A person is the default editor ("user", or
+// none). Everything else is an agent - claude, codex, loom-triage, loom-watcher. The one exception is
+// kTriaged: a write with no connection behind it that clears status:unprocessed is Loom's own
+// background triage, which older builds logged under the jot author's name instead of its own.
+//
+// kAdded     a jot's first appearance - its birth, not merely the first time the log saw it
+// kUpdated   an edit, folded exactly the way List() folds them (one editor, one jot, within the
+//            coalescing window), so a day's count is acts rather than keystrokes
+// kDeleted   a delete
+// kTodoAdded a jot becoming `todo` - created as one, or tagged later
+// kTodoDone  a `todo` gaining `status:done`
+// kTriaged   a jot losing `status:unprocessed`
+enum eActivity : int { kActAdded, kActUpdated, kActDeleted, kActTodoAdded, kActTodoDone, kActTriaged,
+                       kActKinds };
+
+using ActivityCounts = std::array<std::array<uint64_t, kActKinds>, 2>;   // [who][kind]
+
+struct ActivityHour
+{
+    int64_t        mnHour = 0;      // whole hours since the epoch, UTC - the page buckets into its own days
+    ActivityCounts mCounts{};
+};
+
+struct ActivitySummary
+{
+    int64_t                   mnFirstAtUS = 0;   // the oldest entry anywhere in the log
+    ActivityCounts            mTotals{};         // all of history
+    std::vector<ActivityHour> mHours;            // only hours with activity, oldest first
+};
+
 class History : public IJournalSink
 {
 public:
@@ -176,6 +210,15 @@ public:
 
     HistoryStats Stats() const;
 
+    // All-time totals, plus the hours in [nFromUS, nToUS] that had any activity. No I/O: the tallies
+    // are built by Open() from every file of the log and kept current by the sink methods.
+    void Activity(int64_t nFromUS, int64_t nToUS, ActivitySummary& outSummary) const;
+
+    // Every change applied in [nFromUS, nToUS], coalesced the same way as List(), NEWEST FIRST. From
+    // memory when the window reaches back that far, otherwise from the segments the time index says
+    // overlap the range - which is what lets the calendar open a day from years ago.
+    void ListRange(int64_t nFromUS, int64_t nToUS, std::vector<HistoryEntry>& outEntries) const;
+
     // Rewrites a history file in place, dropping every entry belonging to one of the given ids.
     //
     // STATIC AND OFFLINE. It is only ever called with the service stopped, by the purge tool, which
@@ -215,7 +258,18 @@ private:
     bool ScanFileFor(uint64_t nSeq, HistoryEntry& outEntry) const;
     void ScanFileForTransaction(uint64_t nTxnID, std::vector<HistoryEntry>& outEntries) const;
     bool ScanFileForPrevious(uint64_t nSeq, tJotID id, HistoryEntry& outEntry) const;
-    static bool ParseLine(const std::string& sLine, HistoryEntry& outEntry);
+    // pOutFlat, when given, receives the parsed record of a put so a caller need not parse it again.
+    static bool ParseLine(const std::string& sLine, HistoryEntry& outEntry, FlatJot* pOutFlat = nullptr);
+    // Counts one entry into the activity tallies. Entries must arrive in seq order. pJot is the
+    // record of a put and null for a delete.
+    void Locked_Tally(const HistoryEntry& entry, const FlatJot* pJot);
+    // Tallies a file without keeping its entries in memory - for the segments older than the window.
+    void Locked_TallyFile(const std::string& sPath);
+    // The files whose time range overlaps [nFromUS, nToUS], oldest first.
+    std::vector<std::string> FilesSpanningTime(int64_t nFromUS, int64_t nToUS) const;
+    // List()'s folding, over any run of entries walked NEWEST FIRST. Rows come back newest first.
+    template <typename It>
+    static std::vector<HistoryEntry> Coalesce(It itNewest, It itEnd, tJotID idFilter, int64_t nWindowUS);
     // Reads just the last line of a log file - O(length of that line), not O(file) - so Open() can
     // learn the highest sequence number a generation reached without parsing the whole thing before
     // retiring it.
@@ -274,6 +328,21 @@ private:
     bool                      mbRunning   = false;
 
     std::unordered_map<tJotID, LastSeen> mLastSeen;
+
+    // What the tallies need to remember about each jot ever seen, to tell an edit that starts a new
+    // run from one that continues the last, and a tag being gained from one that was already there.
+    // Kept through a delete, so restoring a jot is not counted as it being born or re-tagged.
+    struct TallyState
+    {
+        int64_t     mnLastAtUS = 0;
+        uint64_t    mnTxnID    = 0;
+        std::string msEditor;
+        bool        mbTodo = false, mbDone = false, mbUnprocessed = false;
+    };
+    std::unordered_map<tJotID, TallyState> mTally;
+    std::map<int64_t, ActivityCounts>      mHours;
+    ActivityCounts                         mTotals{};
+    int64_t                                mnFirstAtUS = 0;
 
     std::thread               mCommitter;
 };

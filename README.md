@@ -106,6 +106,15 @@ A `loom.history.1` left by an older build, which used to be overwritten on every
 segment `000001` on the next start. Only `--purge` removes lines, from every segment.
 
 - `GET /history?limit=&offset=&id=` — every change, newest first.
+- `GET /history?from=&to=` — every change in a time range (microseconds), from whichever segments
+  hold it. The dashboard calendar opens a day with it, however far back.
+- `GET /history/activity?from=&to=` — what the whole log adds up to: all-time counts of jots
+  created, edits, deletes, todos created, todos completed and jots triaged, each split into **you**
+  (the default `user` editor) and **agents** (any other editor), plus hourly counts for the range.
+  The counts are built once when Loom starts and kept current in memory, so this costs no disk reads.
+  A write with no connection behind it that clears `status:unprocessed` counts as agent triage.
+  Background triage now signs its own edits as `loom-triage`; older ones were logged under the
+  jot author's name.
 - `POST /history/restore` `{"seq":N}` — put that version back. A `del` entry restores whatever was in
   force immediately before it, which is what "undo this delete" means.
 - `POST /history/restore` `{"txn":N,"undo":true}` — undo a whole **multi-record operation**. See

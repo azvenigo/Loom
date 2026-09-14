@@ -187,7 +187,7 @@ bool History::ScanLastLine(const std::string& sPath, HistoryEntry& outEntry)
     return bParsed;
 }
 
-bool History::ParseLine(const std::string& sLine, HistoryEntry& outEntry)
+bool History::ParseLine(const std::string& sLine, HistoryEntry& outEntry, FlatJot* pOutFlat)
 {
     json j = json::parse(sLine, nullptr, false);
     if (j.is_discarded() || !j.is_object() || !j.contains("seq"))
@@ -216,7 +216,8 @@ bool History::ParseLine(const std::string& sLine, HistoryEntry& outEntry)
     const json& jot = j["jot"];
     outEntry.msRecord = jot.dump();
 
-    FlatJot flat;
+    FlatJot localFlat;
+    FlatJot& flat = pOutFlat ? *pOutFlat : localFlat;
     std::string sError;
     if (!JOTJSON::ParseFlat(outEntry.msRecord, flat, sError))
         return false;
@@ -412,21 +413,20 @@ void History::Locked_Load(const std::string& sPath)
     ForEachLine(sPath, [this](const std::string& sLine)
     {
         HistoryEntry entry;
-        if (!ParseLine(sLine, entry))
+        FlatJot      flat;
+        if (!ParseLine(sLine, entry, &flat))
             return true;
 
         ++mnEntries;
         if (entry.mnSeq >= mnNextSeq)
             mnNextSeq = entry.mnSeq + 1;
+        Locked_Tally(entry, entry.mbDelete ? nullptr : &flat);
         if (!entry.mbDelete)
         {
             // ParseLine already computed the plain summary/text clip into entry.msSummary. Diff it
             // against the running mLastSeen - built up in the same seq order the live path sees -
             // before overwriting it with the change caption, exactly as OnPut does, so a restart
             // does not revert older entries to the flat caption.
-            FlatJot flat;
-            std::string sErrIgnored;
-            if (JOTJSON::ParseFlat(entry.msRecord, flat, sErrIgnored))
             {
                 const auto it = mLastSeen.find(entry.mID);
                 const std::string sDiff =
@@ -471,6 +471,10 @@ std::error_code History::Open(const HistoryConfig& config)
     mLastSeen.clear();
     mSegments.clear();
     mnNextSegment = 1;
+    mTally.clear();
+    mHours.clear();
+    mTotals      = ActivityCounts{};
+    mnFirstAtUS  = 0;
 
     if (mConfig.msPath.empty())
         return LoomOK();
@@ -527,12 +531,23 @@ std::error_code History::Open(const HistoryConfig& config)
     // Seed memory from the newest sealed segment as well when the active file alone cannot fill the
     // window - otherwise every seal, and every restart after one, would leave the History view
     // looking nearly empty while the entries sit one file over.
+    //
+    // Every older segment is still READ, once, for the activity tallies - which are all-time figures
+    // and have to see all of time - but none of it is held. Oldest first: a tally is a diff against
+    // what came before, so the order is load-bearing.
+    bool bSeedFromLast = false;
     if (!mSegments.empty())
     {
         size_t nActiveLines = 0;
         ForEachLine(sPath, [&](const std::string&) { return ++nActiveLines < mConfig.mnMemory; });
-        if (nActiveLines < mConfig.mnMemory)
-            Locked_Load(mSegments.back().msPath);
+        bSeedFromLast = nActiveLines < mConfig.mnMemory;
+    }
+    for (size_t i = 0; i < mSegments.size(); ++i)
+    {
+        if (bSeedFromLast && i + 1 == mSegments.size())
+            Locked_Load(mSegments[i].msPath);
+        else
+            Locked_TallyFile(mSegments[i].msPath);
     }
     Locked_Load(sPath);
 
@@ -705,6 +720,9 @@ void History::OnPut(const FlatJot& jot)
             return;
         entry.mnSeq   = mnNextSeq++;
         entry.mnTxnID = Locked_StampTransaction(entry.mnSeq);
+        entry.mnAtUS  = LOOMTIME::NowMicros();
+        entry.mID     = jot.mID;
+        Locked_Tally(entry, &jot);
 
         const auto it = mLastSeen.find(jot.mID);
         const std::string sDiff = DescribeChange(it != mLastSeen.end() ? &it->second : nullptr, jot);
@@ -716,8 +734,6 @@ void History::OnPut(const FlatJot& jot)
                                entry.msOrigin, jot.mTags, jot.msText.size() };
     }
 
-    entry.mnAtUS   = LOOMTIME::NowMicros();
-    entry.mID      = jot.mID;
     entry.msRecord = JOTJSON::ToJson(jot, false);
 
     Append(entry, PutLine(entry.mnSeq, entry.mnAtUS, entry.mnTxnID, entry.msRecord));
@@ -740,11 +756,11 @@ void History::OnDelete(tJotID id)
             entry.msOrigin  = it->second.msOrigin;
             entry.msSummary = it->second.msCaption;   // the display line, not the raw diff field
         }
+        entry.mnAtUS   = LOOMTIME::NowMicros();
+        entry.mbDelete = true;
+        entry.mID      = id;
+        Locked_Tally(entry, nullptr);
     }
-
-    entry.mnAtUS   = LOOMTIME::NowMicros();
-    entry.mbDelete = true;
-    entry.mID      = id;
 
     Append(entry, DelLine(entry.mnSeq, entry.mnAtUS, id, entry.msName, entry.msEditor,
                           entry.msSummary, entry.msOrigin, entry.mnTxnID));
@@ -755,22 +771,9 @@ void History::OnDelete(tJotID id)
 // Reads
 //====================================================================================================
 
-void History::List(tJotID idFilter, size_t nLimit, size_t nOffset,
-                   std::vector<HistoryEntry>& outEntries, size_t& outTotal) const
+template <typename It>
+std::vector<HistoryEntry> History::Coalesce(It itNewest, It itEnd, tJotID idFilter, int64_t nWindowUS)
 {
-    // outTotal counts ROWS - coalesced runs, not raw mutations - within the in-memory window, since
-    // that is what the offset/limit here page over and what a caller is showing "N of M" for. It is
-    // not a whole-log count: for an idFilter whose jot has changes old enough to have aged out of
-    // that window it undercounts, and HistoryStats::mnEntries remains the only honest total.
-    outEntries.clear();
-    outTotal = 0;
-
-    std::unique_lock lock(mMutex);
-    if (nLimit == 0)
-        nLimit = 100;
-
-    const int64_t nWindowUS = mConfig.mnCoalesceWindowMS * 1000;
-
     // COALESCE FIRST, PAGE SECOND. Offsets have to walk the same rows the caller can see, so folding
     // after slicing would hand back short pages and an offset that skips different amounts each time.
     //
@@ -783,7 +786,7 @@ void History::List(tJotID idFilter, size_t nLimit, size_t nOffset,
     std::unordered_map<tJotID, size_t>  mOpen;       // jot id -> index of its still-growing run
     std::unordered_map<tJotID, int64_t> mOldestAt;   // that run's oldest timestamp so far
 
-    for (auto it = mRecent.rbegin(); it != mRecent.rend(); ++it)
+    for (auto it = itNewest; it != itEnd; ++it)
     {
         const HistoryEntry& entry = *it;
         if (idFilter != kInvalidJotID && entry.mID != idFilter)
@@ -839,6 +842,26 @@ void History::List(tJotID idFilter, size_t nLimit, size_t nOffset,
         if (JOTJSON::ParseFlat(run.msRecord, flat, sErrIgnored))
             run.msSummary = Clip(flat.msSummary.empty() ? flat.msText : flat.msSummary, 110);
     }
+
+    return vRows;
+}
+
+void History::List(tJotID idFilter, size_t nLimit, size_t nOffset,
+                   std::vector<HistoryEntry>& outEntries, size_t& outTotal) const
+{
+    // outTotal counts ROWS - coalesced runs, not raw mutations - within the in-memory window, since
+    // that is what the offset/limit here page over and what a caller is showing "N of M" for. It is
+    // not a whole-log count: for an idFilter whose jot has changes old enough to have aged out of
+    // that window it undercounts, and HistoryStats::mnEntries remains the only honest total.
+    outEntries.clear();
+    outTotal = 0;
+
+    std::unique_lock lock(mMutex);
+    if (nLimit == 0)
+        nLimit = 100;
+
+    std::vector<HistoryEntry> vRows = Coalesce(mRecent.rbegin(), mRecent.rend(), idFilter,
+                                               mConfig.mnCoalesceWindowMS * 1000);
 
     outTotal = vRows.size();
     for (size_t i = nOffset; i < vRows.size() && outEntries.size() < nLimit; ++i)
@@ -1015,6 +1038,201 @@ HistoryStats History::Stats() const
     for (const HistorySegment& seg : mSegments)
         st.mnSealedBytes += seg.mnBytes;
     return st;
+}
+
+//====================================================================================================
+// Activity
+//====================================================================================================
+
+namespace
+{
+    bool HasTag(const std::vector<std::string>& vTags, const char* pTag)
+    {
+        return std::find(vTags.begin(), vTags.end(), pTag) != vTags.end();
+    }
+
+    int64_t HourOf(int64_t nAtUS)
+    {
+        const int64_t kHourUS = int64_t(3600) * 1000 * 1000;
+        return nAtUS >= 0 ? nAtUS / kHourUS : -((-nAtUS + kHourUS - 1) / kHourUS);
+    }
+}
+
+void History::Locked_Tally(const HistoryEntry& entry, const FlatJot* pJot)
+{
+    if (mnFirstAtUS == 0 || entry.mnAtUS < mnFirstAtUS)
+        mnFirstAtUS = entry.mnAtUS;
+
+    const bool bKnown = mTally.count(entry.mID) != 0;
+    TallyState& st = mTally[entry.mID];
+
+    const std::string sEditor = entry.msEditor.empty() ? std::string("user") : entry.msEditor;
+    const int nWho = sEditor == "user" ? 0 : 1;
+
+    ActivityCounts& hour = mHours[HourOf(entry.mnAtUS)];
+    const auto Count = [&](int nAs, eActivity kind)
+    {
+        ++hour[nAs][kind];
+        ++mTotals[nAs][kind];
+    };
+
+    if (entry.mbDelete || !pJot)
+    {
+        if (entry.mbDelete)
+            Count(nWho, kActDeleted);
+        st.mnLastAtUS = entry.mnAtUS;
+        st.msEditor.clear();   // a delete ends any run of edits
+        st.mnTxnID = 0;
+        return;
+    }
+
+    const bool bTodo        = HasTag(pJot->mTags, "todo");
+    const bool bDone        = bTodo && HasTag(pJot->mTags, "status:done");
+    const bool bUnprocessed = HasTag(pJot->mTags, "status:unprocessed");
+
+    // A BIRTH, NOT A FIRST SIGHTING. The label says so outright on anything written since labels
+    // existed. Before that, a jot's id is its creation microsecond, so a first sighting is a birth
+    // only if the id falls inside the log - otherwise it is a jot older than the log being edited
+    // for the first time since. The minute of slack is because the id is minted a moment before the
+    // write is stamped, which would otherwise disqualify the very first jot the log ever recorded.
+    const int64_t kSlackUS = int64_t(60) * 1000 * 1000;
+    const bool bAdded = !bKnown
+        && (pJot->msLastChange == "added"
+            || (pJot->msLastChange.empty() && entry.mID + kSlackUS >= mnFirstAtUS));
+
+    if (bAdded)
+    {
+        Count(nWho, kActAdded);
+    }
+    else
+    {
+        const bool bContinuesRun = bKnown && !st.msEditor.empty()
+                                && st.msEditor == sEditor
+                                && st.mnTxnID  == entry.mnTxnID
+                                && entry.mnAtUS - st.mnLastAtUS <= mConfig.mnCoalesceWindowMS * 1000;
+        if (!bContinuesRun)
+            Count(nWho, kActUpdated);
+    }
+
+    // Tag transitions only count against a state the log actually saw. A jot older than the log
+    // turning up already tagged `todo` did not become one here.
+    if (bTodo && (bAdded || (bKnown && !st.mbTodo)))
+        Count(nWho, kActTodoAdded);
+    if (bDone && (bAdded || (bKnown && !st.mbDone)))
+        Count(nWho, kActTodoDone);
+    if (bKnown && st.mbUnprocessed && !bUnprocessed)
+        Count((nWho == 1 || entry.msOrigin.empty()) ? 1 : 0, kActTriaged);
+
+    // The run's clock restarts only when a new row would; a run is measured from its start in List,
+    // and from its latest member here - close enough for a count, and never more than one off a day.
+    st.mnLastAtUS    = entry.mnAtUS;
+    st.mnTxnID       = entry.mnTxnID;
+    st.msEditor      = sEditor;
+    st.mbTodo        = bTodo;
+    st.mbDone        = bDone;
+    st.mbUnprocessed = bUnprocessed;
+}
+
+void History::Locked_TallyFile(const std::string& sPath)
+{
+    ForEachLine(sPath, [this](const std::string& sLine)
+    {
+        HistoryEntry entry;
+        FlatJot      flat;
+        if (ParseLine(sLine, entry, &flat))
+        {
+            ++mnEntries;
+            if (entry.mnSeq >= mnNextSeq)
+                mnNextSeq = entry.mnSeq + 1;
+            Locked_Tally(entry, entry.mbDelete ? nullptr : &flat);
+        }
+        return true;
+    });
+}
+
+void History::Activity(int64_t nFromUS, int64_t nToUS, ActivitySummary& outSummary) const
+{
+    outSummary = ActivitySummary();
+
+    std::unique_lock lock(mMutex);
+    outSummary.mnFirstAtUS = mnFirstAtUS;
+    outSummary.mTotals     = mTotals;
+    for (auto it = mHours.lower_bound(HourOf(nFromUS)); it != mHours.end() && it->first <= HourOf(nToUS); ++it)
+    {
+        ActivityHour hour;
+        hour.mnHour  = it->first;
+        hour.mCounts = it->second;
+        outSummary.mHours.push_back(hour);
+    }
+}
+
+std::vector<std::string> History::FilesSpanningTime(int64_t nFromUS, int64_t nToUS) const
+{
+    std::vector<std::string> vOut;
+    std::unique_lock lock(mMutex);
+    if (mConfig.msPath.empty())
+        return vOut;
+
+    for (const HistorySegment& seg : mSegments)
+    {
+        const bool bUnknown = seg.mnFirstAtUS == 0 || seg.mnLastAtUS == 0;
+        if (bUnknown || (seg.mnLastAtUS >= nFromUS && seg.mnFirstAtUS <= nToUS))
+            vOut.push_back(seg.msPath);
+    }
+    if (mSegments.empty() || mSegments.back().mnLastAtUS == 0 || nToUS >= mSegments.back().mnLastAtUS)
+        vOut.push_back(mConfig.msPath);
+    return vOut;
+}
+
+void History::ListRange(int64_t nFromUS, int64_t nToUS, std::vector<HistoryEntry>& outEntries) const
+{
+    outEntries.clear();
+    const int64_t nWindowUS = [this] { std::unique_lock lock(mMutex); return mConfig.mnCoalesceWindowMS * 1000; }();
+
+    {
+        // Memory answers with the captions the live path built, so it is preferred whenever its
+        // oldest entry is at or before the range - which is every day the window covers - or when it
+        // simply holds the whole log.
+        std::unique_lock lock(mMutex);
+        if (mRecent.size() == mnEntries || (!mRecent.empty() && mRecent.front().mnAtUS <= nFromUS))
+        {
+            std::vector<HistoryEntry> vIn;
+            for (const HistoryEntry& e : mRecent)
+                if (e.mnAtUS >= nFromUS && e.mnAtUS <= nToUS)
+                    vIn.push_back(e);
+            outEntries = Coalesce(vIn.rbegin(), vIn.rend(), kInvalidJotID, nWindowUS);
+            return;
+        }
+    }
+
+    // Older than memory. Captions are rebuilt against what the scan has seen, so an entry whose
+    // previous version fell before the range reads with its summary rather than a diff.
+    std::shared_lock rot(mRotateMutex);
+    std::vector<HistoryEntry> vIn;
+    std::unordered_map<tJotID, LastSeen> mSeen;
+    for (const std::string& sFile : FilesSpanningTime(nFromUS, nToUS))
+    {
+        ForEachLine(sFile, [&](const std::string& sLine)
+        {
+            HistoryEntry entry;
+            FlatJot      flat;
+            if (!ParseLine(sLine, entry, &flat) || entry.mnAtUS < nFromUS || entry.mnAtUS > nToUS)
+                return true;
+            if (!entry.mbDelete)
+            {
+                const auto it = mSeen.find(entry.mID);
+                const std::string sPlain = entry.msSummary;
+                const std::string sDiff  = DescribeChange(it != mSeen.end() ? &it->second : nullptr, flat);
+                if (!sDiff.empty())
+                    entry.msSummary = sDiff;
+                mSeen[entry.mID] = { entry.msName, entry.msEditor, flat.msSummary, sPlain,
+                                     entry.msOrigin, flat.mTags, flat.msText.size() };
+            }
+            vIn.push_back(std::move(entry));
+            return true;
+        });
+    }
+    outEntries = Coalesce(vIn.rbegin(), vIn.rend(), kInvalidJotID, nWindowUS);
 }
 
 //====================================================================================================

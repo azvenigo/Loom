@@ -952,7 +952,7 @@ struct HttpServer::Impl
             if (!Authorized(req)) return Fail(401, "missing or invalid bearer token");
             if (!mpHistory)       return Fail(403, "running without persistence - no history log");
 
-            const std::string sBad = UnknownParam(req, { "limit", "offset", "id" });
+            const std::string sBad = UnknownParam(req, { "limit", "offset", "id", "from", "to" });
             if (!sBad.empty())
                 return Fail(400, "unknown query parameter '" + sBad + "'");
 
@@ -960,8 +960,20 @@ struct HttpServer::Impl
 
             std::vector<HistoryEntry> vEntries;
             size_t nTotal = 0;
-            mpHistory->List(idFilter, ParamSize(req, "limit", 60), ParamSize(req, "offset", 0),
-                            vEntries, nTotal);
+            if (req.url_params.get("from") || req.url_params.get("to"))
+            {
+                // A time range - one calendar day, typically - read from whichever files hold it, so
+                // it reaches back past the in-memory window. Every row in the range; no paging.
+                if (idFilter != kInvalidJotID)
+                    return Fail(400, "'id' cannot be combined with 'from'/'to'");
+                mpHistory->ListRange(ParamI64(req, "from", 0), ParamI64(req, "to", INT64_MAX), vEntries);
+                nTotal = vEntries.size();
+            }
+            else
+            {
+                mpHistory->List(idFilter, ParamSize(req, "limit", 60), ParamSize(req, "offset", 0),
+                                vEntries, nTotal);
+            }
 
             std::vector<crow::json::wvalue> vOut;
             for (const HistoryEntry& e : vEntries)
@@ -997,6 +1009,56 @@ struct HttpServer::Impl
             out["bytes"]    = st.mnBytes;
             out["segments"] = st.mnSegments;
             out["sealed_bytes"] = st.mnSealedBytes;
+            return Ok(out.dump());
+        });
+
+        // What the whole log adds up to: all-time totals, and the hours in [from, to] that had any
+        // activity, each split into a person's writes and an agent's. Hours rather than days because
+        // a day is the VIEWER'S day - the page buckets them into its own calendar, DST and all.
+        // Compact on purpose: a year of busy hours is thousands of rows.
+        //
+        //   totals: { added: [human, agent], updated: [...], deleted, todo_added, todo_done, triaged }
+        //   hours:  [[hour, human x6, agent x6], ...]   hour = whole hours since the epoch, UTC,
+        //                                              kinds in the order totals lists them
+        CROW_ROUTE(mApp, "/history/activity").methods(crow::HTTPMethod::Get)
+        ([this](const crow::request& req)
+        {
+            if (!Authorized(req)) return Fail(401, "missing or invalid bearer token");
+            if (!mpHistory)       return Fail(403, "running without persistence - no history log");
+
+            const std::string sBad = UnknownParam(req, { "from", "to" });
+            if (!sBad.empty())
+                return Fail(400, "unknown query parameter '" + sBad + "'");
+
+            ActivitySummary sum;
+            mpHistory->Activity(ParamI64(req, "from", 0), ParamI64(req, "to", INT64_MAX), sum);
+
+            static const char* const kNames[kActKinds] =
+                { "added", "updated", "deleted", "todo_added", "todo_done", "triaged" };
+
+            crow::json::wvalue totals;
+            for (int k = 0; k < kActKinds; ++k)
+            {
+                totals[kNames[k]][0] = sum.mTotals[0][k];
+                totals[kNames[k]][1] = sum.mTotals[1][k];
+            }
+
+            std::vector<crow::json::wvalue> vHours;
+            vHours.reserve(sum.mHours.size());
+            for (const ActivityHour& h : sum.mHours)
+            {
+                crow::json::wvalue row;
+                row[0] = h.mnHour;
+                for (int nWho = 0; nWho < 2; ++nWho)
+                    for (int k = 0; k < kActKinds; ++k)
+                        row[1 + nWho * kActKinds + k] = h.mCounts[nWho][k];
+                vHours.push_back(std::move(row));
+            }
+
+            crow::json::wvalue out;
+            out["first_at"] = sum.mnFirstAtUS;
+            out["totals"]   = std::move(totals);
+            out["hours"]    = std::move(vHours);
             return Ok(out.dump());
         });
 
