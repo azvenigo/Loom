@@ -702,8 +702,8 @@ struct HttpServer::Impl
         //
         // SEPARATE FROM /stats rather than another block inside it, for two reasons that both
         // come down to shape. /stats is a status page polled every fifteen seconds; this is a
-        // graph polled every second, and folding them together would mean re-running the store
-        // query and the attention tally sixty times a minute to draw a line. And the payload is
+        // graph polled as often as every second, and folding them together would mean re-running
+        // the store query and the attention tally sixty times a minute to draw a line. And the payload is
         // an ARRAY OF SAMPLES, which is a different kind of answer from the flat scalars /stats
         // is made of - see core/ActivityMeter.h.
         //------------------------------------------------------------------------------------
@@ -713,19 +713,26 @@ struct HttpServer::Impl
         {
             if (!Authorized(req)) return Fail(401, "missing or invalid bearer token");
 
-            const std::string sBad = UnknownParam(req, { "seconds" });
+            const std::string sBad = UnknownParam(req, { "seconds", "step" });
             if (!sBad.empty())
                 return Fail(400, "unknown query parameter '" + sBad + "'");
 
             const int64_t nNowUS = LOOMTIME::NowMicros();
 
-            // Two minutes by default - the ring holds five, and a caller who wants the rest asks
-            // for it. Window() clamps rather than failing, because the useful behaviour for
-            // ?seconds=99999 is "everything I have", not an error about a constant the caller has
-            // no way to know.
+            // Two minutes of one-second buckets by default. The ring holds thirty minutes; a caller
+            // who wants a wider span asks for it, and asks for a coarser step with it, so the
+            // response stays a few hundred rows whatever the span - the dashboard's 30-minute view
+            // is 180 ten-second buckets, not 1800 rows re-sent every ten seconds.
+            //
+            // Window() clamps both rather than failing, because the useful answer to ?seconds=99999
+            // is "everything I have", not an error about a constant the caller has no way to know.
+            // The response then says what it actually returned (window.seconds, window.step).
             std::vector<ActivitySample> vSamples;
+            size_t nStep = ParamSize(req, "step", 1);
+            if (nStep == 0)                              nStep = 1;
+            if (nStep > ActivityMeter::kMaxStepSeconds)  nStep = ActivityMeter::kMaxStepSeconds;
             const size_t nSeconds = ParamSize(req, "seconds", 120);
-            mActivity.Window(nSeconds, vSamples, nNowUS);
+            mActivity.Window(nSeconds, vSamples, nNowUS, nStep);
 
             const ActivityTotals totals = mActivity.Totals();
 
@@ -756,7 +763,7 @@ struct HttpServer::Impl
             session["by_surface"] = std::move(by);
 
             // Short keys, and the only place in Loom that abbreviates them: this array is up to
-            // 300 entries long and is fetched once a second, so the field names are a real share
+            // a few hundred entries long and is fetched once a second, so the field names are a real share
             // of the bytes this endpoint is itself being measured by. "req" is the per-surface
             // split as an array for the same reason - and the order is DECLARED in the window
             // block below rather than left as something a reader has to know, because a bare
@@ -785,7 +792,10 @@ struct HttpServer::Impl
 
             crow::json::wvalue window;
             window["surfaces"] = std::move(vNames);   // what each sample's "req" array is indexed by
-            window["seconds"]  = vSamples.size();
+            // Seconds and step as RETURNED, after clamping, not as requested. Each sample's "t" is
+            // the first second of its bucket.
+            window["seconds"]  = vSamples.size() * nStep;
+            window["step"]     = nStep;
             window["capacity"] = ActivityMeter::kWindowSeconds;
             // The second the last sample belongs to is STILL ACCRUING. Said out loud so a client
             // can draw it as provisional instead of reporting every refresh as a sudden drop.

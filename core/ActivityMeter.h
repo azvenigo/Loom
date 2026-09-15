@@ -24,7 +24,7 @@
 //   picture of the running process, and a restart is exactly the event that should reset it. The
 //   same rule /stats already applies to jots_added and the resolver counters.
 //
-//   THE WINDOW is a ring of one-second buckets, kWindowSeconds of them, for the walking graph. A
+//   THE WINDOW is a ring of one-second buckets, kWindowSeconds of them (30 minutes), for the walking graph. A
 //   ring rather than a growing list because the memory has to be bounded by TIME and not by
 //   traffic: a busy hour must not cost more than a quiet one.
 //
@@ -150,9 +150,12 @@ struct ActivityTotals
 class ActivityMeter
 {
 public:
-    // Five minutes. Long enough that a graph shows a shape rather than a spike, short enough that
-    // the whole thing is one small allocation and one readable response.
-    static constexpr size_t kWindowSeconds = 300;
+    // Thirty minutes of one-second buckets - the widest span the dashboard offers. About 70 KB for
+    // the whole ring, fixed at construction. Wider views do not get coarser STORAGE; they get
+    // coarser READS (see Window's nStep), so the 2-minute view keeps its per-second detail even
+    // though the same ring also serves half an hour.
+    static constexpr size_t kWindowSeconds = 1800;
+    static constexpr size_t kMaxStepSeconds = 60;
 
     explicit ActivityMeter(int64_t nStartedUS = LOOMTIME::NowMicros())
         : mnStartedUS(nStartedUS)
@@ -164,7 +167,7 @@ public:
                 int64_t nNowUS = LOOMTIME::NowMicros())
     {
         const int64_t nSecond = nNowUS / LOOMTIME::kMicrosPerSecond;
-        const size_t  nSlot   = static_cast<size_t>(nSecond % static_cast<int64_t>(kWindowSeconds));
+        const size_t  nSlot   = SlotFor(nSecond);
         const size_t  nSurf   = static_cast<size_t>(surface);
 
         std::lock_guard<std::mutex> lock(mMutex);
@@ -192,47 +195,65 @@ public:
 
         // Exact rather than sampled: the peak is the busiest bucket the ring ever held, and it is
         // known the moment that bucket is incremented past the previous best. Computed here
-        // because the ring itself forgets it five minutes later.
+        // because the ring itself forgets it half an hour later.
         const uint32_t nThisSecond = bucket.Requests();
         if (nThisSecond > mTotals.mnPeakPerSecond)
             mTotals.mnPeakPerSecond = nThisSecond;
     }
 
-    // The last nSeconds buckets, OLDEST FIRST, ending with the second nNowUS falls in - which is
-    // still accruing, so the caller must expect its last row to be partial. Seconds with no
-    // traffic come back as explicit zero rows rather than being skipped: a graph needs one sample
-    // per tick, and "no row" and "a row of zeroes" are the same fact stated two ways, only one of
-    // which the drawing code can use.
+    // The last nSeconds of traffic, OLDEST FIRST, summed into buckets of nStep seconds each. The
+    // newest bucket contains the second nNowUS falls in and is still accruing, so the caller must
+    // expect it to be partial. Quiet buckets come back as explicit zero rows rather than being
+    // skipped: a graph needs one sample per tick, and "no row" and "a row of zeroes" are the same
+    // fact, only one of which the drawing code can use.
+    //
+    // BUCKETS ARE ALIGNED TO THE EPOCH, not to the moment of the call. A 10-second bucket always
+    // covers :00-:09, :10-:19 and so on, whenever it is asked for. Anchored to "now" instead, every
+    // poll would regroup the same seconds into different buckets, and a graph refreshed every ten
+    // seconds would reshape its whole history each time rather than only moving left.
+    //
+    // Each row's mnSecond is the FIRST second of its bucket. nSeconds is clamped to what the ring
+    // holds, rounded to whole buckets, and never reaches back past the oldest second still in the
+    // ring - a bucket straddling that edge would under-report, and look like a quiet spell.
     void Window(size_t nSeconds, std::vector<ActivitySample>& vOut,
-                int64_t nNowUS = LOOMTIME::NowMicros()) const
+                int64_t nNowUS = LOOMTIME::NowMicros(), size_t nStep = 1) const
     {
-        if (nSeconds == 0)        nSeconds = kWindowSeconds;
+        if (nStep == 0)                nStep = 1;
+        if (nStep > kMaxStepSeconds)   nStep = kMaxStepSeconds;
+        if (nSeconds == 0)             nSeconds = kWindowSeconds;
         if (nSeconds > kWindowSeconds) nSeconds = kWindowSeconds;
 
-        const int64_t nNow   = nNowUS / LOOMTIME::kMicrosPerSecond;
-        const int64_t nFirst = nNow - static_cast<int64_t>(nSeconds) + 1;
+        const int64_t nStepS   = static_cast<int64_t>(nStep);
+        const int64_t nNow     = nNowUS / LOOMTIME::kMicrosPerSecond;
+        const int64_t nLast    = nNow - (((nNow % nStepS) + nStepS) % nStepS);   // start of the live bucket
+        const int64_t nOldest  = nNow - static_cast<int64_t>(kWindowSeconds) + 1;  // oldest second the ring holds
+
+        int64_t nBuckets = (static_cast<int64_t>(nSeconds) + nStepS - 1) / nStepS;
+        const int64_t nFits = (nLast - nOldest) / nStepS + 1;
+        if (nBuckets > nFits)
+            nBuckets = nFits;
 
         vOut.clear();
-        vOut.reserve(nSeconds);
+        vOut.reserve(static_cast<size_t>(nBuckets));
 
         std::lock_guard<std::mutex> lock(mMutex);
-        for (int64_t nSecond = nFirst; nSecond <= nNow; ++nSecond)
+        for (int64_t nB = nBuckets - 1; nB >= 0; --nB)
         {
-            const size_t nSlot = static_cast<size_t>(
-                ((nSecond % static_cast<int64_t>(kWindowSeconds)) + static_cast<int64_t>(kWindowSeconds))
-                % static_cast<int64_t>(kWindowSeconds));
+            ActivitySample sum;
+            sum.mnSecond = nLast - nB * nStepS;
 
-            const ActivitySample& bucket = mRing[nSlot];
-            if (bucket.mnSecond == nSecond)
+            for (int64_t nSecond = sum.mnSecond; nSecond < sum.mnSecond + nStepS; ++nSecond)
             {
-                vOut.push_back(bucket);
+                const ActivitySample& bucket = mRing[SlotFor(nSecond)];
+                if (bucket.mnSecond != nSecond)
+                    continue;
+                for (size_t n = 0; n < kSurfaceCount; ++n)
+                    sum.mnRequests[n] += bucket.mnRequests[n];
+                sum.mnErrors   += bucket.mnErrors;
+                sum.mnBytesIn  += bucket.mnBytesIn;
+                sum.mnBytesOut += bucket.mnBytesOut;
             }
-            else
-            {
-                ActivitySample empty;
-                empty.mnSecond = nSecond;
-                vOut.push_back(empty);
-            }
+            vOut.push_back(sum);
         }
     }
 
@@ -245,6 +266,14 @@ public:
     }
 
 private:
+    // Seconds before the epoch never reach here in practice, but a negative modulo would index
+    // outside the ring, and "in practice" is not what a bounds check is for.
+    static size_t SlotFor(int64_t nSecond)
+    {
+        const int64_t nCap = static_cast<int64_t>(kWindowSeconds);
+        return static_cast<size_t>(((nSecond % nCap) + nCap) % nCap);
+    }
+
     mutable std::mutex                              mMutex;
     std::array<ActivitySample, kWindowSeconds>      mRing{};
     ActivityTotals                                  mTotals;

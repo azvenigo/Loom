@@ -3595,9 +3595,31 @@ async function viewTags(target){
    Loom with this tab open reads as roughly one request per second rather than zero. That is why
    the surfaces are stacked rather than summed: the teal band is the one that answers "is anything
    actually using this", and it is unaffected by the operator watching. */
-let amRange=120,amTimer=null;
+/* THE THREE SPANS, each with its own bucket size - and the bucket size IS the refresh interval.
+   That pairing is the design, not a coincidence of numbers: a poll that arrives more often than a
+   bucket fills just redraws the same picture, and one that arrives less often skips buckets, so
+   the graph walks left one bucket per tick at every span. It also keeps every span to 120-180
+   points, which is about what a plot this wide can show before a bucket gets narrower than a
+   pixel - thirty minutes at one second each would be 1800 rows re-sent to draw the same line.
+   The server aligns buckets to the epoch (core/ActivityMeter.h), so the history does not
+   regroup between polls either. */
+const AM_RANGES=[{s:120,step:1,label:'2m'},{s:300,step:2,label:'5m'},{s:1800,step:10,label:'30m'}];
+let amRange=AM_RANGES[0],amTimer=null;
+/* Stored by span in seconds. Anything else, including the 60 and 300-with-1s-buckets an earlier
+   build stored, falls back to the first span rather than to a range this build cannot draw. */
 try{const r=parseInt(localStorage.getItem('loom-act-range'),10);
-    if(r===60||r===120||r===300)amRange=r;}catch(e){}
+    amRange=AM_RANGES.find(x=>x.s===r)||AM_RANGES[0];}catch(e){}
+const amQuery=()=>'/activity?seconds='+amRange.s+'&step='+amRange.step;
+/* "2 minutes", "30 minutes", "90 seconds" - spans are whole minutes in practice, but a clamped
+   response need not be, and a caption that rounds a span to a length it is not is wrong. */
+function amSpan(sec,bShort){
+  if(sec%60===0){const m=sec/60;return bShort?m+'m':m+(m===1?' minute':' minutes');}
+  if(sec>60&&bShort)return Math.floor(sec/60)+'m '+(sec%60)+'s';
+  return bShort?sec+'s':sec+(sec===1?' second':' seconds');
+}
+/* A rate with the precision it deserves: 0.4/s over a 10-second bucket is a real figure, and
+   rounding it to 0 would draw a quiet spell that was not quiet. */
+const amRate=v=>(v>=10||Number.isInteger(v))?String(Math.round(v)):v.toFixed(1);
 
 const SVGNS='http://www.w3.org/2000/svg';
 const svgEl=(t,c)=>{const e=document.createElementNS(SVGNS,t);if(c)e.setAttribute('class',c);return e;};
@@ -3723,7 +3745,7 @@ async function viewActivity(target){
   clearInterval(amTimer);amTimer=null;
 
   let first;
-  try{first=await api('/activity?seconds='+amRange);}
+  try{first=await api(amQuery());}
   catch(e){L.append(el('div','note bad',e.message));return;}
 
   /* Index of each surface inside a sample's "req" array. Read from the payload rather than
@@ -3771,15 +3793,16 @@ async function viewActivity(target){
     const sp=el('span');sp.append(el('i',q[0]));sp.append(document.createTextNode(q[1]));leg.append(sp);
   });
   ch.append(leg);
-  /* The "past n seconds" control, in one row above the plots. Three fixed spans rather than a free
-     field: the ring behind it holds five minutes (core/ActivityMeter.h), so an arbitrary number
-     would mostly be a way of asking for data that does not exist. */
+  /* The span control, in one row above the plots. Three fixed spans rather than a free field: the
+     ring behind it holds thirty minutes (core/ActivityMeter.h), and each span carries the bucket
+     size that suits it - see AM_RANGES. */
   const range=el('div','am-range');
-  [[60,'60s'],[120,'2m'],[300,'5m']].forEach(function(q){
-    const b=el('button',amRange===q[0]?'on':'',q[1]);
+  AM_RANGES.forEach(function(q){
+    const b=el('button',amRange===q?'on':'',q.label);
+    b.title='Last '+amSpan(q.s)+', updated every '+amSpan(q.step);
     b.onclick=function(){
-      amRange=q[0];
-      try{localStorage.setItem('loom-act-range',String(amRange));}catch(e){}
+      amRange=q;
+      try{localStorage.setItem('loom-act-range',String(q.s));}catch(e){}
       render();
     };
     range.append(b);
@@ -3802,7 +3825,8 @@ async function viewActivity(target){
   xs.append(xa,xb,el('span',null,'now'));
   const idle=el('div','am-idle','');card.append(idle);
 
-  let samples=[];
+  /* step and span as the server RETURNED them, which after clamping need not be what was asked. */
+  let samples=[],step=1,span=0;
 
   const showTip=function(ev){
     if(!samples.length)return;
@@ -3814,7 +3838,11 @@ async function viewActivity(target){
 
     const total=at(s,iMcp)+at(s,iRest)+at(s,iDash);
     tip.innerHTML='';
-    tip.append(el('b',null,new Date(s.t*1000).toLocaleTimeString()));
+    /* A bucket wider than a second is a span, and its totals are totals OVER that span - say
+       both, or "12 transactions" reads as twelve in one second on a plot drawn in rates. */
+    const t0=new Date(s.t*1000).toLocaleTimeString();
+    tip.append(el('b',null,step>1?t0+' – '+new Date((s.t+step)*1000).toLocaleTimeString()+
+      ' ('+step+'s)':t0));
     const g=el('div','am-tipgrid');
     const pair=function(k,v){g.append(el('span',null,k));g.append(el('span',null,v));};
     pair('Transactions',String(total));
@@ -3837,14 +3865,16 @@ async function viewActivity(target){
 
   const paint=function(d){
     samples=d.samples||[];
+    step=(d.window||{}).step||1;
+    span=(d.window||{}).seconds||samples.length*step;
     const n=samples.length;
     const S=d.session||{},by=S.by_surface||{};
     const mcp=by.mcp||{},dash=by.dashboard||{},rest=by.rest||{};
 
-    /* Labelled off the number of samples that CAME BACK, not the number asked for. The ring
+    /* Labelled off the span that CAME BACK, not the span asked for. The ring
        clamps a request wider than it holds (core/ActivityMeter.h), so the two can differ, and the
        caption that differs from the plot beneath it is the one that is wrong. */
-    chTitle.textContent='The last '+n+' seconds';
+    chTitle.textContent='The last '+amSpan(span);
     T.req.num.textContent=Number(S.requests||0).toLocaleString();
     ['mcp','dash','rest'].forEach(function(k){
       const v=(k==='mcp'?mcp:k==='dash'?dash:rest).requests||0;
@@ -3882,28 +3912,33 @@ async function viewActivity(target){
       if(s.out>maxOut)maxOut=s.out;
       if(s.in>maxIn)maxIn=s.in;
     });
-    amStack(pReq,[samples.map(s=>at(s,iMcp)),samples.map(s=>at(s,iDash)),
-                  samples.map(s=>at(s,iRest))],amNice(maxReq),n,maxReq+'/s');
-    amStack(pOut,[samples.map(s=>s.out)],amNice(maxOut),n,amBytes(maxOut)+'/s');
-    amStack(pIn ,[samples.map(s=>s.in )],amNice(maxIn ),n,amBytes(maxIn )+'/s');
+    /* PLOTTED AS RATES. A wider bucket holds more requests, so raw bucket totals would make the
+       30-minute view look ten times busier than the 2-minute one for identical traffic, and the
+       "/s" beside every peak would be false. Dividing by the step keeps all three spans on one
+       unit. The tooltip is the one place totals are shown, and it names the span it covers. */
+    const per=v=>v/step;
+    amStack(pReq,[samples.map(s=>per(at(s,iMcp))),samples.map(s=>per(at(s,iDash))),
+                  samples.map(s=>per(at(s,iRest)))],amNice(per(maxReq)),n,amRate(per(maxReq))+'/s');
+    amStack(pOut,[samples.map(s=>per(s.out))],amNice(per(maxOut)),n,amBytes(Math.round(per(maxOut)))+'/s');
+    amStack(pIn ,[samples.map(s=>per(s.in ))],amNice(per(maxIn )),n,amBytes(Math.round(per(maxIn )))+'/s');
 
-    xa.textContent='−'+n+'s';
-    xb.textContent='−'+Math.round(n/2)+'s';
+    xa.textContent='−'+amSpan(span,true);
+    xb.textContent='−'+amSpan(Math.round(span/2/step)*step,true);
 
     const seen=samples.reduce((a,s)=>a+at(s,iMcp)+at(s,iRest)+at(s,iDash),0);
-    idle.textContent=seen?'':'Nothing has called Loom in the last '+n+' seconds.';
+    idle.textContent=seen?'':'Nothing has called Loom in the last '+amSpan(span)+'.';
   };
 
   paint(first);
 
   amTimer=setInterval(async function(){
     /* A guard rather than a teardown hook: render() is called from a dozen places and none of them
-       know this view left a timer running. One check a second is cheaper than a contract every
+       know this view left a timer running. One check per tick is cheaper than a contract every
        caller has to keep. */
     if(view!=='activity'){clearInterval(amTimer);amTimer=null;return;}
-    try{paint(await api('/activity?seconds='+amRange));}
+    try{paint(await api(amQuery()));}
     catch(e){idle.textContent='Not answering — '+e.message;}
-  },1000);
+  },amRange.step*1000);
 }
 
 /* ---------- health ---------- */

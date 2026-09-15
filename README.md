@@ -191,14 +191,14 @@ which is a different question, and one a growing jot count cannot answer: four j
 identical whether one agent wrote them in a burst or four agents have been polling since Tuesday.
 
 ```
-GET /activity?seconds=120
+GET /activity?seconds=120&step=1
 {
   "session": { "requests": 8412, "bytes_in": 940113, "bytes_out": 86220154, "peak_rps": 31,
                "errors": 0, "uptime_s": 91840, "started_at": 1789412001234567,
                "by_surface": { "mcp":  {"requests":7990,"bytes_in":921004,"bytes_out":81004221},
                                "rest": {"requests":221, "bytes_in":19109, "bytes_out":1440221},
                                "dashboard": {"requests":201,"bytes_in":0,"bytes_out":3775712} } },
-  "window":  { "seconds":120, "capacity":300, "now":1789503991, "surfaces":["mcp","rest","dashboard"] },
+  "window":  { "seconds":120, "step":1, "capacity":1800, "now":1789503991, "surfaces":["mcp","rest","dashboard"] },
   "samples": [ {"t":1789503872,"req":[3,0,1],"err":0,"in":321,"out":1869}, … ]
 }
 ```
@@ -208,8 +208,11 @@ Two kinds of number, kept apart on purpose:
 - **`session`** is since this process started. Not lifetime and not persisted — a restart zeroes it,
   which is right, because it describes *the running process*. Same rule `/stats` already applies to
   `jots_added`.
-- **`samples`** is a ring of one-second buckets, `capacity` of them (five minutes), for a walking
-  graph. Each `req` is the per-surface split, indexed by the `surfaces` array the response declares
+- **`samples`** is a ring of one-second buckets, `capacity` of them (thirty minutes), for a walking
+  graph. `step` sums them into wider buckets on the way out — up to 60 seconds, aligned to the epoch
+  so a bucket covers the same seconds on every poll, and each row's `t` is its first second. The
+  dashboard's 2m, 5m and 30m views ask for 1, 2 and 10-second steps and refresh at exactly that
+  interval, so every span is 120–180 points and the graph moves one bucket per tick. Each `req` is the per-surface split, indexed by the `surfaces` array the response declares
   rather than by an order you have to know. A second that saw no traffic comes back as an explicit
   row of zeroes, and a second the ring has aged out reads as zero too — never as the traffic that
   slot used to hold, which is the specific way a naive ring lies, and it lies most convincingly when
@@ -230,7 +233,8 @@ graph and by nothing that decides anything. A call to `/mcp` is counted as an ag
 calls itself.
 
 The dashboard's **Activity** view is this endpoint drawn: session tiles, and three plots stacked over
-one shared time axis — transactions split by surface, bytes out, bytes in. Three plots and not one,
+one shared time axis — transactions split by surface, bytes out, bytes in, all plotted as per-second
+rates so the three spans stay comparable (the tooltip gives totals for the bucket under the cursor). Three plots and not one,
 because transactions and bytes cannot share a y-axis without the scaling factor inventing a
 correlation, and because bytes-in is routinely two orders of magnitude under bytes-out. Each row
 prints its own peak, which is what keeps the rows from being read against each other.

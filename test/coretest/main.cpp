@@ -1189,6 +1189,56 @@ namespace
             Check(meter.Totals().mnPeakPerSecond == 2,
                   "the peak tracks the busiest bucket across seconds");
         }
+
+        {
+            // STEPPED WINDOWS - the dashboard's 5- and 30-minute views. nT0 is a whole multiple of
+            // ten seconds, so the buckets below have known edges.
+            const int64_t nS = LOOMTIME::kMicrosPerSecond;
+            ActivityMeter meter(nT0);
+            meter.Record(eSurface::kMcp,  10, 100, 200, nT0 + 0 * nS);
+            meter.Record(eSurface::kMcp,  10, 100, 200, nT0 + 9 * nS);
+            meter.Record(eSurface::kRest,  5,  50, 500, nT0 + 10 * nS);
+            meter.Record(eSurface::kMcp,   1,   1, 200, nT0 + 23 * nS);
+
+            std::vector<ActivitySample> vWindow;
+            meter.Window(30, vWindow, nT0 + 23 * nS, 10);
+            Check(vWindow.size() == 3, "30 seconds in 10-second steps is three buckets");
+            Check(vWindow[0].mnSecond == nT0 / nS && vWindow[1].mnSecond == nT0 / nS + 10 &&
+                  vWindow[2].mnSecond == nT0 / nS + 20,
+                  "each bucket is stamped with its first second, on epoch-aligned edges");
+            Check(vWindow[0].mnRequests[static_cast<size_t>(eSurface::kMcp)] == 2 &&
+                  vWindow[0].mnBytesIn == 20 && vWindow[0].mnBytesOut == 200,
+                  "a bucket sums every second inside it, both ends included");
+            Check(vWindow[1].mnRequests[static_cast<size_t>(eSurface::kRest)] == 1 &&
+                  vWindow[1].mnErrors == 1,
+                  "the next bucket starts clean, errors included");
+            Check(vWindow[2].Requests() == 1, "the live bucket holds what has arrived so far");
+
+            // The same traffic, asked for a few seconds later, must group identically. Buckets
+            // anchored to the call time would regroup on every poll and reshape the whole graph.
+            std::vector<ActivitySample> vLater;
+            meter.Window(30, vLater, nT0 + 27 * nS, 10);
+            Check(vLater.size() == 3 && vLater[0].mnSecond == vWindow[0].mnSecond &&
+                  vLater[0].Requests() == vWindow[0].Requests() &&
+                  vLater[1].Requests() == vWindow[1].Requests(),
+                  "a later poll inside the same bucket groups the history the same way");
+
+            meter.Window(25, vWindow, nT0 + 23 * nS, 10);
+            Check(vWindow.size() == 3, "a span that is not a whole number of steps rounds up to one");
+
+            meter.Window(ActivityMeter::kWindowSeconds, vWindow, nT0 + 23 * nS, 10);
+            const int64_t nOldest = (nT0 + 23 * nS) / nS - static_cast<int64_t>(ActivityMeter::kWindowSeconds) + 1;
+            Check(!vWindow.empty() && vWindow.front().mnSecond >= nOldest,
+                  "no bucket reaches back past the oldest second the ring still holds");
+            Check(vWindow.size() == ActivityMeter::kWindowSeconds / 10,
+                  "the full ring in 10-second steps is kWindowSeconds / 10 buckets");
+
+            meter.Window(60, vWindow, nT0 + 23 * nS, 0);
+            Check(vWindow.size() == 60, "a zero step is one second, not a division by zero");
+            meter.Window(ActivityMeter::kWindowSeconds, vWindow, nT0 + 23 * nS, 100000);
+            Check(vWindow.size() == ActivityMeter::kWindowSeconds / ActivityMeter::kMaxStepSeconds,
+                  "an oversized step is clamped to the largest the meter allows");
+        }
     }
 
     //--------------------------------------------------------------------------------------------
