@@ -8,6 +8,7 @@
 
 #include "http/HttpServer.h"
 
+#include "core/ActivityMeter.h"
 #include "core/LoomTime.h"
 #include "codec/JotJson.h"
 #include "mcp/McpHandler.h"
@@ -212,6 +213,41 @@ namespace
 
 
 //====================================================================================================
+// ActivityTap - one line of bookkeeping per request, feeding core/ActivityMeter.h.
+//
+// A MIDDLEWARE for the same reason AclGuard is: a meter that only counts the routes somebody
+// remembered to instrument is worse than no meter, because the number still looks like a total.
+// after_handle sees the response body after the handler has filled it in, which is the only point
+// at which "bytes out" is a fact rather than a prediction.
+//
+// DECLARED AHEAD OF AclGuard, and that ordering is load-bearing. Crow runs before_handle in
+// declaration order and, when a middleware completes the response itself, unwinds after_handle
+// only through the middlewares it had already entered. Registered first, this one therefore still
+// counts the requests AclGuard refuses - which are precisely the requests an operator most wants
+// to see on the graph. Registered second, a machine hammering a service it is not allowed to talk
+// to would show up as perfect silence.
+//====================================================================================================
+
+struct ActivityTap
+{
+    struct context {};
+
+    ActivityMeter* mpMeter = nullptr;
+
+    void before_handle(crow::request&, crow::response&, context&) {}
+
+    void after_handle(crow::request& req, crow::response& res, context&)
+    {
+        if (!mpMeter)
+            return;
+
+        mpMeter->Record(SurfaceFor(req.url, req.get_header_value("X-Loom-Client")),
+                        req.body.size(), res.body.size(), res.code);
+    }
+};
+
+
+//====================================================================================================
 // AclGuard - the address allow list, enforced ahead of routing.
 //
 // A MIDDLEWARE AND NOT A LINE IN EVERY HANDLER. The token check is the latter, and it shows why:
@@ -268,7 +304,8 @@ struct HttpServer::Impl
     const TriageClient*  mpResolver      = nullptr;
     McpHandler           mMcp;
     SnapshotConfig       mSnapConfig;
-    crow::App<AclGuard>  mApp;
+    crow::App<ActivityTap, AclGuard>  mApp;
+    ActivityMeter        mActivity;
     std::atomic<bool>    mbStopping{ false };
     // Resolved once, here, and not per request: the answer cannot change while we are bound, and
     // a wildcard bind makes it a routing-table lookup that has no business being on a hot path.
@@ -285,9 +322,10 @@ struct HttpServer::Impl
           mMcp(ops, store, pHistory), mSnapConfig(snapConfig),
           msOrigin(ResolveAdvertisedOrigin(config))
     {
-        // The middleware instance is owned by the app, so it is wired here rather than constructed
-        // with a reference.
-        mApp.get_middleware<AclGuard>().mpAcl = &mAcl;
+        // The middleware instances are owned by the app, so they are wired here rather than
+        // constructed with a reference.
+        mApp.get_middleware<AclGuard>().mpAcl     = &mAcl;
+        mApp.get_middleware<ActivityTap>().mpMeter = &mActivity;
     }
 
     // The purge request file sits beside the snapshot. Derived rather than passed so there is one
@@ -657,6 +695,107 @@ struct HttpServer::Impl
                                            triage ? &*triage : nullptr, &attention,
                                            jotpost ? &*jotpost : nullptr,
                                            resolver ? &*resolver : nullptr));
+        });
+
+        //------------------------------------------------------------------------------------
+        // Activity - how this process is being used, as opposed to what is in the store.
+        //
+        // SEPARATE FROM /stats rather than another block inside it, for two reasons that both
+        // come down to shape. /stats is a status page polled every fifteen seconds; this is a
+        // graph polled every second, and folding them together would mean re-running the store
+        // query and the attention tally sixty times a minute to draw a line. And the payload is
+        // an ARRAY OF SAMPLES, which is a different kind of answer from the flat scalars /stats
+        // is made of - see core/ActivityMeter.h.
+        //------------------------------------------------------------------------------------
+
+        CROW_ROUTE(mApp, "/activity").methods(crow::HTTPMethod::Get)
+        ([this](const crow::request& req)
+        {
+            if (!Authorized(req)) return Fail(401, "missing or invalid bearer token");
+
+            const std::string sBad = UnknownParam(req, { "seconds" });
+            if (!sBad.empty())
+                return Fail(400, "unknown query parameter '" + sBad + "'");
+
+            const int64_t nNowUS = LOOMTIME::NowMicros();
+
+            // Two minutes by default - the ring holds five, and a caller who wants the rest asks
+            // for it. Window() clamps rather than failing, because the useful behaviour for
+            // ?seconds=99999 is "everything I have", not an error about a constant the caller has
+            // no way to know.
+            std::vector<ActivitySample> vSamples;
+            const size_t nSeconds = ParamSize(req, "seconds", 120);
+            mActivity.Window(nSeconds, vSamples, nNowUS);
+
+            const ActivityTotals totals = mActivity.Totals();
+
+            crow::json::wvalue session;
+            session["started_at"]   = totals.mnStartedUS;
+            session["started"]      = LOOMTIME::FormatUS(totals.mnStartedUS);
+            session["uptime_s"]     = (nNowUS - totals.mnStartedUS) / LOOMTIME::kMicrosPerSecond;
+            session["requests"]     = totals.mnRequests;
+            session["errors"]       = totals.mnErrors;
+            session["bytes_in"]     = totals.mnBytesIn;
+            session["bytes_out"]    = totals.mnBytesOut;
+            session["peak_rps"]     = totals.mnPeakPerSecond;
+            if (totals.mnLastRequestUS != 0)
+                session["last_request_at"] = totals.mnLastRequestUS;
+
+            // Broken out per front door rather than summed, same argument as the resolver/triage
+            // split in /stats: "an agent called" and "the page refreshed" are not units of the
+            // same quantity, and a total invites adding them up as though they were.
+            crow::json::wvalue by;
+            for (size_t n = 0; n < kSurfaceCount; ++n)
+            {
+                crow::json::wvalue one;
+                one["requests"]  = totals.mnRequestsBy[n];
+                one["bytes_in"]  = totals.mnBytesInBy[n];
+                one["bytes_out"] = totals.mnBytesOutBy[n];
+                by[SurfaceName(static_cast<eSurface>(n))] = std::move(one);
+            }
+            session["by_surface"] = std::move(by);
+
+            // Short keys, and the only place in Loom that abbreviates them: this array is up to
+            // 300 entries long and is fetched once a second, so the field names are a real share
+            // of the bytes this endpoint is itself being measured by. "req" is the per-surface
+            // split as an array for the same reason - and the order is DECLARED in the window
+            // block below rather than left as something a reader has to know, because a bare
+            // [4,1,2] whose meaning lives only in a comment is how a graph ends up mislabelled.
+            std::vector<crow::json::wvalue> vOut;
+            vOut.reserve(vSamples.size());
+            for (const ActivitySample& smp : vSamples)
+            {
+                std::vector<crow::json::wvalue> vBy;
+                vBy.reserve(kSurfaceCount);
+                for (size_t n = 0; n < kSurfaceCount; ++n)
+                    vBy.push_back(crow::json::wvalue(smp.mnRequests[n]));
+
+                crow::json::wvalue e;
+                e["t"]   = smp.mnSecond;
+                e["req"] = std::move(vBy);
+                e["err"] = smp.mnErrors;
+                e["in"]  = smp.mnBytesIn;
+                e["out"] = smp.mnBytesOut;
+                vOut.push_back(std::move(e));
+            }
+
+            std::vector<crow::json::wvalue> vNames;
+            for (size_t n = 0; n < kSurfaceCount; ++n)
+                vNames.push_back(crow::json::wvalue(SurfaceName(static_cast<eSurface>(n))));
+
+            crow::json::wvalue window;
+            window["surfaces"] = std::move(vNames);   // what each sample's "req" array is indexed by
+            window["seconds"]  = vSamples.size();
+            window["capacity"] = ActivityMeter::kWindowSeconds;
+            // The second the last sample belongs to is STILL ACCRUING. Said out loud so a client
+            // can draw it as provisional instead of reporting every refresh as a sudden drop.
+            window["now"]      = nNowUS / LOOMTIME::kMicrosPerSecond;
+
+            crow::json::wvalue out;
+            out["session"] = std::move(session);
+            out["window"]  = std::move(window);
+            out["samples"] = std::move(vOut);
+            return Ok(out.dump());
         });
 
         //------------------------------------------------------------------------------------

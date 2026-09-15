@@ -84,6 +84,7 @@ add_library(loomcore STATIC
     persist/TriageClient.cpp
     mcp/McpHandler.cpp
 
+    core/ActivityMeter.h
     core/FairSharedMutex.h
     core/FlatJot.h  core/Interner.h  core/IpAcl.h    core/Jot.h      core/JotStore.h
     core/LoomError.h core/LoomTime.h core/Ops.h      core/Query.h

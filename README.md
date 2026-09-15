@@ -55,7 +55,8 @@ loom --port=7700 --data=./data
 ```
 
 - Dashboard: `http://127.0.0.1:7700/`
-- REST: `GET/POST /jots`, `GET /tags`, `GET /tags/similar`, `POST /tags/merge`, `GET /stats`, …
+- REST: `GET/POST /jots`, `GET /tags`, `GET /tags/similar`, `POST /tags/merge`, `GET /stats`,
+  `GET /activity`, …
 - MCP: `POST /mcp` (Streamable HTTP). Connect an agent with:
   ```
   claude mcp add --transport http loom http://127.0.0.1:7700/mcp
@@ -183,6 +184,60 @@ dashboard's TODO panel filters on it, and a todo with neither tag stays unrouted
 **All** rather than being defaulted into either bucket, so an untriaged pile shows up as the gap
 between All and the other two counts.
 
+### Activity
+
+`GET /stats` says what is in the store. `GET /activity` says how the service is being **used** —
+which is a different question, and one a growing jot count cannot answer: four jots added today look
+identical whether one agent wrote them in a burst or four agents have been polling since Tuesday.
+
+```
+GET /activity?seconds=120
+{
+  "session": { "requests": 8412, "bytes_in": 940113, "bytes_out": 86220154, "peak_rps": 31,
+               "errors": 0, "uptime_s": 91840, "started_at": 1789412001234567,
+               "by_surface": { "mcp":  {"requests":7990,"bytes_in":921004,"bytes_out":81004221},
+                               "rest": {"requests":221, "bytes_in":19109, "bytes_out":1440221},
+                               "dashboard": {"requests":201,"bytes_in":0,"bytes_out":3775712} } },
+  "window":  { "seconds":120, "capacity":300, "now":1789503991, "surfaces":["mcp","rest","dashboard"] },
+  "samples": [ {"t":1789503872,"req":[3,0,1],"err":0,"in":321,"out":1869}, … ]
+}
+```
+
+Two kinds of number, kept apart on purpose:
+
+- **`session`** is since this process started. Not lifetime and not persisted — a restart zeroes it,
+  which is right, because it describes *the running process*. Same rule `/stats` already applies to
+  `jots_added`.
+- **`samples`** is a ring of one-second buckets, `capacity` of them (five minutes), for a walking
+  graph. Each `req` is the per-surface split, indexed by the `surfaces` array the response declares
+  rather than by an order you have to know. A second that saw no traffic comes back as an explicit
+  row of zeroes, and a second the ring has aged out reads as zero too — never as the traffic that
+  slot used to hold, which is the specific way a naive ring lies, and it lies most convincingly when
+  the service is idle.
+
+Counting happens in a crow middleware rather than per route, so a route added later is measured
+whether or not its author knew the meter existed — the same argument the address allow list is
+enforced by. Requests refused by the allow list are counted too; a machine hammering a service it is
+not allowed to talk to should not show up as silence. **Bytes are request and response bodies**, not
+headers or TCP framing.
+
+**The three surfaces are the point.** `mcp` is agents, `dashboard` is somebody with the page open,
+`rest` is anything else scripted. A single request total cannot tell you whether the memory is being
+used or just watched. Because the page calls the *same* REST routes an agent would, it identifies
+itself with `X-Loom-Client: dashboard`; that is a label and not a credential — anything can claim it,
+exactly as anything can put `claude` in a jot's `editor` — and, like `editor`, it is believed by a
+graph and by nothing that decides anything. A call to `/mcp` is counted as an agent whatever it
+calls itself.
+
+The dashboard's **Activity** view is this endpoint drawn: session tiles, and three plots stacked over
+one shared time axis — transactions split by surface, bytes out, bytes in. Three plots and not one,
+because transactions and bytes cannot share a y-axis without the scaling factor inventing a
+correlation, and because bytes-in is routinely two orders of magnitude under bytes-out. Each row
+prints its own peak, which is what keeps the rows from being read against each other.
+
+Note that the view counts itself: it polls once a second, so an otherwise idle Loom with the tab open
+reads as about one request per second. The agent band is the one that is unaffected by watching.
+
 ### Purge
 
 `DELETE /jots/<id>` removes a jot from RAM and appends a tombstone. The text is still in the
@@ -209,7 +264,8 @@ answerable after the content is gone, which is the point of the confirmation ste
 Working: core store, persistence, REST, MCP, dashboard, an importer for simple `{"ts","entry"}`
 JSONL logs, a runtime address allow list, an append-only history log with per-jot restore,
 transaction-grouped undo for multi-record operations, server-stamped write origins, a per-jot
-record of what the last change actually was, duplicate detection on create, an offline purge, and service packaging with health-checked updates and
+record of what the last change actually was, duplicate detection on create, a live per-second
+activity meter, an offline purge, and service packaging with health-checked updates and
 rollback, on both Windows and Linux. Not yet built: a design for backing a shared
 markdown-based memory store (files-as-source-of-truth, offline reconcile, conflict review) sketched
 but not implemented.

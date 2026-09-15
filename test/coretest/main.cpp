@@ -17,6 +17,7 @@
 //////////////////////////////////////////////////////////////////////////////////////////////////
 
 #include "codec/JotJson.h"
+#include "core/ActivityMeter.h"
 #include "core/ChangeKind.h"
 #include "core/IpAcl.h"
 #include "core/JotStore.h"
@@ -1092,6 +1093,128 @@ namespace
         Check(vPaths2.size() == 1 && vPaths2[0] == filePath.string(),
               "the watch list itself persists across a reload");
     }
+
+    //--------------------------------------------------------------------------------------------
+    // ActivityMeter - the per-second traffic ring behind GET /activity and the dashboard's
+    // Activity view. Worth asserting on rather than eyeballing for one reason above all: the
+    // failure this is written against is INVISIBLE ON THE GRAPH. A ring that hands back a stale
+    // slot when asked for a second it no longer holds does not draw an error - it draws last
+    // week's traffic, confidently, and it does so most convincingly when the service is idle.
+    //
+    // A FIXED CLOCK throughout. Every entry point takes the time explicitly precisely so this can
+    // walk the meter across a wrap without sleeping for five minutes.
+    //--------------------------------------------------------------------------------------------
+    void TestActivityMeter()
+    {
+        Section("activity meter");
+
+        const int64_t nT0 = 1700000000LL * LOOMTIME::kMicrosPerSecond;
+
+        {
+            ActivityMeter meter(nT0);
+            meter.Record(eSurface::kMcp,  100, 900, 200, nT0);
+            meter.Record(eSurface::kMcp,   50, 400, 200, nT0);
+            meter.Record(eSurface::kRest,  10,  20, 404, nT0);
+
+            const ActivityTotals tot = meter.Totals();
+            Check(tot.mnRequests == 3,  "every request is counted once");
+            Check(tot.mnErrors == 1,    "a 404 counts as an error and a 200 does not");
+            Check(tot.mnBytesIn == 160, "bytes in are summed across surfaces");
+            Check(tot.mnBytesOut == 1320, "bytes out are summed across surfaces");
+            Check(tot.mnRequestsBy[static_cast<size_t>(eSurface::kMcp)] == 2 &&
+                  tot.mnRequestsBy[static_cast<size_t>(eSurface::kRest)] == 1 &&
+                  tot.mnRequestsBy[static_cast<size_t>(eSurface::kDashboard)] == 0,
+                  "requests are split by the surface they arrived on");
+            Check(tot.mnBytesOutBy[static_cast<size_t>(eSurface::kMcp)] == 1300,
+                  "bytes are split by surface too");
+            Check(tot.mnPeakPerSecond == 3, "the peak is the busiest second, not the busiest call");
+
+            std::vector<ActivitySample> vWindow;
+            meter.Window(3, vWindow, nT0);
+            Check(vWindow.size() == 3, "the window is exactly as many seconds as were asked for");
+            Check(vWindow[2].mnSecond == nT0 / LOOMTIME::kMicrosPerSecond,
+                  "the window ends at the second the caller asked about");
+            Check(vWindow[2].Requests() == 3, "the newest bucket holds this second's traffic");
+            Check(vWindow[0].Requests() == 0 && vWindow[1].Requests() == 0,
+                  "seconds before the first request come back as explicit zero rows");
+            Check(vWindow[0].mnSecond == vWindow[2].mnSecond - 2,
+                  "zero rows still carry the second they stand for");
+        }
+
+        {
+            // THE ONE THAT MATTERS. Write a second, then ask again a full lap later, when the same
+            // slot is being reused for a different second. A ring without a per-slot stamp answers
+            // with the old traffic.
+            ActivityMeter meter(nT0);
+            meter.Record(eSurface::kMcp, 1, 1, 200, nT0);
+
+            const int64_t nLater = nT0 + static_cast<int64_t>(ActivityMeter::kWindowSeconds) *
+                                          LOOMTIME::kMicrosPerSecond;
+            std::vector<ActivitySample> vWindow;
+            meter.Window(1, vWindow, nLater);
+            Check(vWindow.size() == 1 && vWindow[0].Requests() == 0,
+                  "a slot reused by a later second reads as empty, not as the traffic it used to hold");
+            Check(vWindow[0].mnSecond == nLater / LOOMTIME::kMicrosPerSecond,
+                  "and it is stamped with the second that was asked for");
+
+            // Totals are since start and deliberately survive the ring forgetting.
+            Check(meter.Totals().mnRequests == 1,
+                  "the session total keeps what the ring has aged out");
+        }
+
+        {
+            // A window longer than the ring is clamped rather than refused: the useful answer to
+            // "give me an hour" is everything there is.
+            ActivityMeter meter(nT0);
+            std::vector<ActivitySample> vWindow;
+            meter.Window(100000, vWindow, nT0);
+            Check(vWindow.size() == ActivityMeter::kWindowSeconds,
+                  "a window wider than the ring is clamped to the ring");
+            meter.Window(0, vWindow, nT0);
+            Check(vWindow.size() == ActivityMeter::kWindowSeconds,
+                  "zero seconds means the whole ring rather than nothing");
+        }
+
+        {
+            // Buckets are per second, so traffic one second apart must not land in one bar.
+            ActivityMeter meter(nT0);
+            meter.Record(eSurface::kRest, 0, 0, 200, nT0);
+            meter.Record(eSurface::kRest, 0, 0, 200, nT0 + LOOMTIME::kMicrosPerSecond);
+            meter.Record(eSurface::kRest, 0, 0, 200, nT0 + LOOMTIME::kMicrosPerSecond);
+
+            std::vector<ActivitySample> vWindow;
+            meter.Window(2, vWindow, nT0 + LOOMTIME::kMicrosPerSecond);
+            Check(vWindow[0].Requests() == 1 && vWindow[1].Requests() == 2,
+                  "traffic lands in the second it happened in");
+            Check(meter.Totals().mnPeakPerSecond == 2,
+                  "the peak tracks the busiest bucket across seconds");
+        }
+    }
+
+    //--------------------------------------------------------------------------------------------
+    // Surface classification. The dashboard and an agent call the SAME REST routes, so the split
+    // that makes the Activity view worth looking at rests entirely on these rules.
+    //--------------------------------------------------------------------------------------------
+    void TestSurfaceClassification()
+    {
+        Section("activity surfaces");
+
+        Check(SurfaceFor("/mcp") == eSurface::kMcp, "/mcp is an agent call");
+        Check(SurfaceFor("/jots?tag=todo") == eSurface::kRest,
+              "a query string does not stop a path being recognized");
+        Check(SurfaceFor("/") == eSurface::kDashboard, "the page itself is the dashboard");
+        Check(SurfaceFor("/icon.png") == eSurface::kDashboard, "so is the art the page loads");
+        Check(SurfaceFor("/stats") == eSurface::kRest,
+              "a REST route with no client header is REST, whoever called it");
+        Check(SurfaceFor("/stats", "dashboard") == eSurface::kDashboard,
+              "the page saying so is what moves its own polling out of the REST column");
+        Check(SurfaceFor("/mcp", "dashboard") == eSurface::kMcp,
+              "and it cannot claim an MCP call was the page");
+        Check(SurfaceFor("/stats", "something-else") == eSurface::kRest,
+              "an unrecognized client name changes nothing");
+        Check(SurfaceFor("/nope") == eSurface::kRest,
+              "a path that routes nowhere is still counted, as REST");
+    }
 }
 
 int main()
@@ -1114,6 +1237,8 @@ int main()
     TestIpAclParsing();
     TestIpAclMatching();
     TestWatchList();
+    TestActivityMeter();
+    TestSurfaceClassification();
     // LAST on purpose: this one is known to hang (4 spinning readers starve both writers on
     // JotStore's shared_mutex), so anything sequenced after it never runs.
     TestConcurrentReadWrite();

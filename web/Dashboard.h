@@ -1007,6 +1007,82 @@ i.agent{background:var(--act-agent)}
 .ov-actchip.click:hover{border-color:var(--warn)}
 .ov-actchip.click:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
+/* ---------- activity monitor (the Activity view) ----------
+   A DIFFERENT KIND OF ACTIVITY FROM THE CARD ABOVE, and the two must not be confused. That card
+   counts what the store has accumulated over months, from the history log. This counts what the
+   PROCESS is handling, per second, since it started - see core/ActivityMeter.h. One is the
+   library's catalogue, the other is the door being opened.
+
+   COLOURS ARE BORROWED, NOT INVENTED. Agents are --act-agent and the operator is --act-you, the
+   same validated indigo/teal pair (and the same MEANING) the activity card already uses, so a
+   reader who learned "teal is the agents" upstairs does not have to learn it twice. The bytes
+   plots are one hue - they are two views of one measure, and giving them separate identities
+   would invite reading them as two competing series. */
+.am-tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:14px}
+@media(max-width:900px){.am-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.am-tile{border-radius:var(--r);padding:12px 14px 11px;display:flex;flex-direction:column;gap:7px;
+  border:1px solid var(--line-soft);background:var(--panel)}
+.am-lbl{font:10px var(--mono);text-transform:uppercase;letter-spacing:.07em;color:var(--dim)}
+.am-num{font-size:26px;font-weight:600;color:var(--ink);line-height:1;font-variant-numeric:tabular-nums}
+.am-num small{font-size:13px;font-weight:500;color:var(--dim);margin-left:3px}
+.am-cap{font-size:11.5px;color:var(--body)}
+.am-sub{font:10.5px var(--mono);color:var(--faint)}
+.am-split{display:flex;gap:2px;height:6px;border-radius:3px;overflow:hidden;background:var(--line-soft)}
+.am-split i{display:block;min-width:3px}
+i.mcp{background:var(--act-agent)}
+i.dash{background:var(--act-you)}
+i.rest{background:var(--faint)}
+i.bytes{background:var(--accent)}
+
+.am-panel{position:relative;margin-bottom:20px}
+.am-panel .phead{align-items:center;gap:12px;flex-wrap:wrap}
+.am-range{display:flex;gap:2px;margin-left:auto}
+.am-range button{font:10.5px var(--mono);background:var(--sunk);border:1px solid var(--line-soft);
+  color:var(--dim);padding:3px 9px;border-radius:999px;cursor:pointer}
+.am-range button.on{background:var(--accent-wash);border-color:var(--accent);color:var(--accent-ink)}
+.am-range button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.am-legend{display:flex;gap:14px;font:10.5px var(--mono);color:var(--faint)}
+.am-legend span{display:flex;align-items:center;gap:5px}
+.am-legend i{width:9px;height:9px;border-radius:2px;display:block;flex:none}
+
+/* THREE PLOTS, ONE X AXIS. Transactions and bytes cannot share a y-scale - aligning two unrelated
+   units on one axis invents a correlation out of the scaling factor - so they are stacked as small
+   multiples over a single shared time axis instead, which is also how bytes-in and bytes-out stay
+   readable when one of them is routinely a hundred times the other. Each row therefore prints its
+   OWN peak at its own right edge; that label is what stops the rows being read against each other. */
+.am-plots{position:relative}
+.am-row{position:relative;margin-bottom:10px}
+.am-rowhead{display:flex;justify-content:space-between;align-items:baseline;font-size:12px;
+  color:var(--dim);margin-bottom:4px}
+.am-rowhead .n{font:10.5px var(--mono);color:var(--faint)}
+.am-plot{display:block;width:100%;height:74px;background:var(--sunk);border-radius:4px;
+  border-bottom:1px solid var(--line)}
+.am-plot .grid{stroke:var(--line);stroke-width:1;vector-effect:non-scaling-stroke;
+  stroke-dasharray:3 3;opacity:.7}
+/* SOLID FILLS, separated by a 2px stroke in the panel colour rather than by transparency. Stacked
+   translucent bands mix into colours that are in neither the legend nor the palette, and the
+   mixture is exactly where the colour-blind separation that was validated stops holding. */
+.am-plot .seam{stroke:var(--panel);stroke-width:2;fill:none;vector-effect:non-scaling-stroke}
+.am-fill-mcp{fill:var(--act-agent)}
+.am-fill-dash{fill:var(--act-you)}
+.am-fill-rest{fill:var(--faint)}
+.am-fill-bytes{fill:var(--accent)}
+/* The newest bucket is the second still being filled, so it is drawn as provisional. Without this
+   every refresh shows the live edge dipping and recovering, which reads as a stall that isn't
+   there. */
+.am-partial{fill:var(--panel);opacity:.55}
+.am-cross{position:absolute;top:0;bottom:0;width:1px;background:var(--ink);opacity:.35;
+  pointer-events:none}
+.am-x{display:flex;justify-content:space-between;font:9.5px var(--mono);color:var(--faint);
+  margin-top:2px}
+.am-tip{position:absolute;z-index:5;pointer-events:none;white-space:nowrap;
+  background:var(--ink);color:var(--bg);font-size:11px;line-height:1.5;padding:7px 10px;
+  border-radius:6px;box-shadow:0 6px 18px -8px rgba(0,0,0,.45)}
+.am-tip b{font-weight:600}
+.am-tipgrid{display:grid;grid-template-columns:auto auto;gap:1px 10px;margin-top:3px}
+.am-tipgrid span:nth-child(even){font:10.5px var(--mono);text-align:right}
+.am-idle{text-align:center;color:var(--faint);font-size:12px;padding:6px 0 2px}
+
 /* align-items:start so a panel is only as tall as its content - a 10-row distribution chart next
    to an 8-pill tag cloud was stretching the tag panel to match and leaving half of it blank. */
 .ov-row{display:grid;grid-template-columns:1.7fr 1fr;gap:12px;margin-bottom:12px;align-items:start}
@@ -1777,8 +1853,15 @@ function toast(msg,kind,undoFn){
   clearTimeout(t._t);t._t=setTimeout(()=>t.className='',undoFn?6000:3200);
 }
 
+/* EVERY call says it is the dashboard. The server needs that to tell the page apart from an agent:
+   both talk to the same REST routes, so without a word from the client the Activity view's agent
+   share would be diluted by the operator's own polling - see core/ActivityMeter.h's SurfaceFor().
+   A label, not a credential; it grants nothing and is believed only by a graph. Merged into any
+   headers the caller passed rather than replacing them, or every POST would lose its content type. */
 async function api(path,opts){
-  const r=await fetch(path,opts);const text=await r.text();
+  const o=Object.assign({},opts);
+  o.headers=Object.assign({'X-Loom-Client':'dashboard'},o.headers||{});
+  const r=await fetch(path,o);const text=await r.text();
   let body=null;try{body=text?JSON.parse(text):null;}catch(e){body={error:text};}
   if(!r.ok)throw Object.assign(new Error(body&&body.error?body.error:r.statusText),
                                {status:r.status,body});
@@ -1853,10 +1936,14 @@ const NAV_ICONS={
   health:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">'+
     '<path d="M1.8 8h3l1.6-4 2.6 8 1.7-4h3.5"/></svg>',
   history:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">'+
-    '<path d="M2.4 8a5.6 5.6 0 1 0 1.7-4"/><path d="M2 2.6V6h3.4"/><path d="M8 5.2V8l2 1.4"/></svg>'
+    '<path d="M2.4 8a5.6 5.6 0 1 0 1.7-4"/><path d="M2 2.6V6h3.4"/><path d="M8 5.2V8l2 1.4"/></svg>',
+  /* Bars stepping up, not the Health view's heartbeat trace: this is throughput over time, and the
+     two views sit next to each other in the rail where a second squiggle would read as a duplicate. */
+  activity:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">'+
+    '<path d="M2.2 13.2V9.4M6.1 13.2V5.6M10 13.2V7.8M13.9 13.2V3.2"/></svg>'
 };
 const VIEWS=[['dashboard','Dashboard'],['search','Search'],['tags','Tags'],
-             ['history','History'],['health','Health']];
+             ['history','History'],['activity','Activity'],['health','Health']];
 /* A bare refresh used to always reopen Dashboard, discarding whatever tab you'd actually been on -
    restore the last one instead of defaulting past it. Checked against VIEWS rather than trusted
    outright: a name a nav click stored before some LATER version renamed or dropped that view must
@@ -3489,6 +3576,336 @@ async function viewTags(target){
   }catch(e){L.append(el('div','note bad',e.message));}
 }
 
+/* ---------- activity monitor ----------
+   WHAT IS TALKING TO THIS PROCESS, RIGHT NOW. Everything else in this dashboard describes the
+   store; this describes the service. It reads GET /activity, which answers with both halves of
+   that question at once - counters since the process started, and a ring of one-second buckets -
+   so the whole view costs one request per tick. See core/ActivityMeter.h.
+
+   NOT THE ACTIVITY CARD ON THE DASHBOARD, and the distinction matters. That card counts what the
+   store has accumulated over months, out of the history log. This counts what the process is
+   handling per second since it started, and a restart zeroes it.
+
+   THE ONLY LIVE VIEW IN HERE, which is why it is built differently from the others. Every other
+   view is rebuilt wholesale by render(); this one builds its shell once and then mutates path
+   data in place on a one-second timer, because replacing the SVG sixty times a minute would throw
+   away the crosshair, the tooltip and the hover position along with it.
+
+   THE GRAPH COUNTS ITSELF. This page polls once a second and that poll is traffic, so a resting
+   Loom with this tab open reads as roughly one request per second rather than zero. That is why
+   the surfaces are stacked rather than summed: the teal band is the one that answers "is anything
+   actually using this", and it is unaffected by the operator watching. */
+let amRange=120,amTimer=null;
+try{const r=parseInt(localStorage.getItem('loom-act-range'),10);
+    if(r===60||r===120||r===300)amRange=r;}catch(e){}
+
+const SVGNS='http://www.w3.org/2000/svg';
+const svgEl=(t,c)=>{const e=document.createElementNS(SVGNS,t);if(c)e.setAttribute('class',c);return e;};
+
+/* Bytes at the precision the number deserves - three significant figures is noise on a counter
+   that moves every second. */
+function amBytes(n){
+  n=Number(n||0);
+  if(n<1024)return n+' B';
+  if(n<1048576)return (n/1024).toFixed(n<10240?1:0)+' KB';
+  if(n<1073741824)return (n/1048576).toFixed(n<10485760?1:0)+' MB';
+  return (n/1073741824).toFixed(2)+' GB';
+}
+function amDur(s){
+  s=Math.max(0,Math.floor(Number(s)||0));
+  if(s<60)return s+'s';
+  if(s<3600)return Math.floor(s/60)+'m '+(s%60)+'s';
+  if(s<86400)return Math.floor(s/3600)+'h '+Math.floor((s%3600)/60)+'m';
+  return Math.floor(s/86400)+'d '+Math.floor((s%86400)/3600)+'h';
+}
+/* THE AXIS CEILING, which is not the same number as the peak and must never be printed as one.
+   On a plot that rescales every second, a top edge pinned to the exact busiest sample breathes
+   with the traffic - every new high redraws all three rows - so the ceiling is rounded up to 1/2/5
+   times a power of ten and only moves when the traffic changes magnitude. The label beside it
+   still reports the REAL peak; the tallest band simply does not touch the top, which is what an
+   axis with a rounded maximum looks like everywhere else. */
+function amNice(n){
+  if(!(n>0))return 1;
+  const p=Math.pow(10,Math.floor(Math.log10(n))),f=n/p;
+  return (f<=1?1:f<=2?2:f<=5?5:10)*p;
+}
+
+/* STEPPED, NOT INTERPOLATED. Each sample is a bucket covering one whole second, so the value holds
+   flat across its second and jumps at the boundary. A diagonal between two buckets would draw
+   traffic at instants that were never measured. */
+function amPath(vals,max,n,bClose){
+  let d='';
+  for(let i=0;i<n;i++){
+    const y=(100-Math.min(1,(vals[i]||0)/max)*100).toFixed(2);
+    d+=(i?'L':(bClose?'M0 100L':'M'))+i+' '+y+'L'+(i+1)+' '+y;
+  }
+  return bClose?d+'L'+n+' 100Z':d;
+}
+
+/* The seam between two stacked bands - the same stepped outline, but BROKEN WHERE THE BAND ABOVE IT
+   IS EMPTY. Without that break it is drawn the whole width regardless, and at every second where
+   the upper band happens to be zero the two outlines coincide: the seam then strokes the panel
+   colour along the top of the band BELOW, capping it with 2px of background. Which is the ordinary
+   case here, not a corner one - most seconds are all agents and nothing else, so an unbroken seam
+   would shave the top off the only band with anything in it. */
+function amSeam(cum,upper,max,n){
+  let d='',bOpen=false;
+  for(let i=0;i<n;i++){
+    if(!(upper[i]>0)){bOpen=false;continue;}
+    const y=(100-Math.min(1,(cum[i]||0)/max)*100).toFixed(2);
+    d+=(bOpen?'L':'M')+i+' '+y+'L'+(i+1)+' '+y;
+    bOpen=true;
+  }
+  return d;
+}
+
+/* One plot row: a caption, its OWN peak at the right edge, and the plot.
+   vClasses is the stack BOTTOM FIRST. The paths go into the DOM top-band-first so the bottom band
+   paints last and therefore on top, which is what lets every band be drawn as a plain area from
+   the baseline - each one covering the cumulative total beneath it - instead of as a ribbon whose
+   two outlines have to be kept in lockstep.
+   THE PEAK IS PER ROW because the rows are small multiples on independent scales: transactions and
+   bytes cannot share a y-axis, and bytes-in is routinely two orders of magnitude under bytes-out.
+   That right-edge number is what stops the rows being read against each other, so it is never
+   omitted, not even when the row is flat. */
+function amPlot(sTitle,vClasses){
+  const p={node:el('div','am-row'),fills:[],seams:[]};
+  const head=el('div','am-rowhead');
+  head.append(el('span',null,sTitle));
+  p.peak=el('span','n','');head.append(p.peak);
+  p.node.append(head);
+
+  const svg=svgEl('svg','am-plot');
+  svg.setAttribute('preserveAspectRatio','none');
+  svg.setAttribute('viewBox','0 0 1 100');
+  p.grid=svgEl('line','grid');
+  p.grid.setAttribute('x1',0);p.grid.setAttribute('y1',50);p.grid.setAttribute('y2',50);
+  svg.append(p.grid);
+  for(let i=vClasses.length-1;i>=0;i--){
+    const q=svgEl('path',vClasses[i]);svg.append(q);p.fills[i]=q;
+  }
+  for(let i=0;i+1<vClasses.length;i++){
+    const q=svgEl('path','seam');svg.append(q);p.seams.push(q);
+  }
+  p.partial=svgEl('rect','am-partial');
+  p.partial.setAttribute('y',0);p.partial.setAttribute('height',100);
+  p.partial.setAttribute('width',1);
+  svg.append(p.partial);
+  p.node.append(svg);
+  p.svg=svg;
+  return p;
+}
+
+/* vBands is bottom-first; each entry is that band's own per-second values. They are turned into
+   RUNNING TOTALS here, once, rather than at every call site - a stacked area is a set of
+   cumulative areas and getting that wrong is the classic way a stack silently under-reports. */
+function amStack(p,vBands,max,n,sPeak){
+  p.svg.setAttribute('viewBox','0 0 '+n+' 100');
+  p.grid.setAttribute('x2',n);
+  p.partial.setAttribute('x',n-1);
+  p.peak.textContent='peak '+sPeak;
+
+  const run=new Array(n).fill(0);
+  const cumulative=vBands.map(function(vals){
+    for(let i=0;i<n;i++)run[i]+=(vals[i]||0);
+    return run.slice();
+  });
+  for(let b=0;b<vBands.length;b++){
+    p.fills[b].setAttribute('d',amPath(cumulative[b],max,n,true));
+    /* A seam per boundary BETWEEN bands - the topmost band's outline is the edge of the data, not
+       a join, and stroking it in the panel colour would erase it. */
+    if(b+1<vBands.length)p.seams[b].setAttribute('d',amSeam(cumulative[b],vBands[b+1],max,n));
+  }
+}
+
+async function viewActivity(target){
+  const L=target;
+  clearInterval(amTimer);amTimer=null;
+
+  let first;
+  try{first=await api('/activity?seconds='+amRange);}
+  catch(e){L.append(el('div','note bad',e.message));return;}
+
+  /* Index of each surface inside a sample's "req" array. Read from the payload rather than
+     hardcoded: the server declares the order precisely so this does not have to guess it, and a
+     band drawn against the wrong index is a mislabelled graph, not a visible error. */
+  const SURF=(first.window||{}).surfaces||['mcp','rest','dashboard'];
+  const iOf=k=>SURF.indexOf(k);
+  const iMcp=iOf('mcp'),iRest=iOf('rest'),iDash=iOf('dashboard');
+  const at=(s,i)=>(i<0?0:(s.req||[])[i]||0);
+
+  /* ---- session counters ---- */
+  const tiles=el('div','am-tiles');L.append(tiles);
+  const T={};
+  const tile=function(key,sLabel){
+    const t=el('div','am-tile');
+    t.append(el('div','am-lbl',sLabel));
+    const num=el('div','am-num');t.append(num);
+    const cap=el('div','am-cap','');t.append(cap);
+    const sub=el('div','am-sub','');t.append(sub);
+    T[key]={num:num,cap:cap,sub:sub,tile:t};
+    tiles.append(t);
+    return T[key];
+  };
+  const reqTile=tile('req','Requests');
+  /* The split bar lives inside the Requests tile rather than becoming a fourth plot: the session
+     breakdown is a composition of ONE total, which a 6px bar says completely and a chart would
+     need a whole panel to say worse. Its caption carries the same three swatches, so identity is
+     never colour alone. */
+  const split=el('div','am-split');
+  reqTile.tile.insertBefore(split,reqTile.cap);
+  const segs={};
+  ['mcp','dash','rest'].forEach(function(k){segs[k]=el('i',k);split.append(segs[k]);});
+  tile('in','Bytes in');
+  tile('out','Bytes out');
+  tile('rate','Busiest second');
+
+  /* ---- the walking graph ---- */
+  const card=el('div','ov-panel am-panel');L.append(card);
+  const ch=el('div','phead');const ch1=el('div');
+  ch1.append(el('div','eyebrow','LIVE TRAFFIC'));
+  const chTitle=el('h3',null,'');ch1.append(chTitle);
+  ch.append(ch1);
+  const leg=el('div','am-legend');
+  [['mcp','Agents'],['dash','Dashboard'],['rest','Other']].forEach(function(q){
+    const sp=el('span');sp.append(el('i',q[0]));sp.append(document.createTextNode(q[1]));leg.append(sp);
+  });
+  ch.append(leg);
+  /* The "past n seconds" control, in one row above the plots. Three fixed spans rather than a free
+     field: the ring behind it holds five minutes (core/ActivityMeter.h), so an arbitrary number
+     would mostly be a way of asking for data that does not exist. */
+  const range=el('div','am-range');
+  [[60,'60s'],[120,'2m'],[300,'5m']].forEach(function(q){
+    const b=el('button',amRange===q[0]?'on':'',q[1]);
+    b.onclick=function(){
+      amRange=q[0];
+      try{localStorage.setItem('loom-act-range',String(amRange));}catch(e){}
+      render();
+    };
+    range.append(b);
+  });
+  ch.append(range);
+  card.append(ch);
+
+  const plots=el('div','am-plots');card.append(plots);
+  const pReq=amPlot('Transactions',['am-fill-mcp','am-fill-dash','am-fill-rest']);
+  const pOut=amPlot('Bytes out',['am-fill-bytes']);
+  const pIn =amPlot('Bytes in',['am-fill-bytes']);
+  plots.append(pReq.node,pOut.node,pIn.node);
+
+  /* ONE crosshair for all three rows, spanning the block rather than living inside a plot: the
+     question at a given second is "what was happening", and that is all three rows at once. */
+  const cross=el('div','am-cross');cross.hidden=true;plots.append(cross);
+  const tip=el('div','am-tip');tip.hidden=true;plots.append(tip);
+  const xs=el('div','am-x');card.append(xs);
+  const xa=el('span',null,'');const xb=el('span',null,'');
+  xs.append(xa,xb,el('span',null,'now'));
+  const idle=el('div','am-idle','');card.append(idle);
+
+  let samples=[];
+
+  const showTip=function(ev){
+    if(!samples.length)return;
+    const box=plots.getBoundingClientRect();
+    let i=Math.floor((ev.clientX-box.left)/box.width*samples.length);
+    i=Math.max(0,Math.min(samples.length-1,i));
+    const s=samples[i],px=(i+0.5)/samples.length*box.width;
+    cross.hidden=false;cross.style.left=px+'px';
+
+    const total=at(s,iMcp)+at(s,iRest)+at(s,iDash);
+    tip.innerHTML='';
+    tip.append(el('b',null,new Date(s.t*1000).toLocaleTimeString()));
+    const g=el('div','am-tipgrid');
+    const pair=function(k,v){g.append(el('span',null,k));g.append(el('span',null,v));};
+    pair('Transactions',String(total));
+    pair('Agents',String(at(s,iMcp)));
+    pair('Dashboard',String(at(s,iDash)));
+    pair('Other',String(at(s,iRest)));
+    pair('Bytes out',amBytes(s.out));
+    pair('Bytes in',amBytes(s.in));
+    if(s.err)pair('Errors',String(s.err));
+    tip.append(g);
+    tip.hidden=false;
+    /* Flip to the left of the cursor near the right edge, or the tooltip clips off the panel -
+       which is exactly where the cursor sits when you are watching the live end. */
+    const w=tip.offsetWidth;
+    tip.style.left=(px+12+w>box.width?Math.max(0,px-12-w):px+12)+'px';
+    tip.style.top='4px';
+  };
+  plots.addEventListener('mousemove',showTip);
+  plots.addEventListener('mouseleave',function(){cross.hidden=true;tip.hidden=true;});
+
+  const paint=function(d){
+    samples=d.samples||[];
+    const n=samples.length;
+    const S=d.session||{},by=S.by_surface||{};
+    const mcp=by.mcp||{},dash=by.dashboard||{},rest=by.rest||{};
+
+    /* Labelled off the number of samples that CAME BACK, not the number asked for. The ring
+       clamps a request wider than it holds (core/ActivityMeter.h), so the two can differ, and the
+       caption that differs from the plot beneath it is the one that is wrong. */
+    chTitle.textContent='The last '+n+' seconds';
+    T.req.num.textContent=Number(S.requests||0).toLocaleString();
+    ['mcp','dash','rest'].forEach(function(k){
+      const v=(k==='mcp'?mcp:k==='dash'?dash:rest).requests||0;
+      segs[k].style.flex=v;segs[k].hidden=!v;
+    });
+    T.req.cap.innerHTML='';
+    [['mcp',mcp.requests,'agents'],['dash',dash.requests,'page'],
+     ['rest',rest.requests,'other']].forEach(function(q,ix){
+      if(ix)T.req.cap.append(document.createTextNode(' · '));
+      T.req.cap.append(el('i',q[0]));
+      T.req.cap.append(document.createTextNode(' '+Number(q[1]||0).toLocaleString()+' '+q[2]));
+    });
+    T.req.sub.textContent=S.errors
+      ?Number(S.errors).toLocaleString()+' answered with an error'
+      :'none answered with an error';
+
+    T.in.num.textContent=amBytes(S.bytes_in);
+    T.in.cap.textContent=amBytes(mcp.bytes_in)+' of it from agents';
+    T.in.sub.textContent='what callers sent';
+    T.out.num.textContent=amBytes(S.bytes_out);
+    T.out.cap.textContent=amBytes(mcp.bytes_out)+' of it to agents';
+    T.out.sub.textContent='what Loom answered with';
+
+    T.rate.num.innerHTML='';
+    T.rate.num.append(document.createTextNode(String(S.peak_rps||0)));
+    T.rate.num.append(el('small',null,'/s'));
+    T.rate.cap.textContent='since this process started';
+    T.rate.sub.textContent='up '+amDur(S.uptime_s)+
+      (S.last_request_at?' · last call '+ago(S.last_request_at):'');
+
+    let maxReq=0,maxOut=0,maxIn=0;
+    samples.forEach(function(s){
+      const t=at(s,iMcp)+at(s,iRest)+at(s,iDash);
+      if(t>maxReq)maxReq=t;
+      if(s.out>maxOut)maxOut=s.out;
+      if(s.in>maxIn)maxIn=s.in;
+    });
+    amStack(pReq,[samples.map(s=>at(s,iMcp)),samples.map(s=>at(s,iDash)),
+                  samples.map(s=>at(s,iRest))],amNice(maxReq),n,maxReq+'/s');
+    amStack(pOut,[samples.map(s=>s.out)],amNice(maxOut),n,amBytes(maxOut)+'/s');
+    amStack(pIn ,[samples.map(s=>s.in )],amNice(maxIn ),n,amBytes(maxIn )+'/s');
+
+    xa.textContent='−'+n+'s';
+    xb.textContent='−'+Math.round(n/2)+'s';
+
+    const seen=samples.reduce((a,s)=>a+at(s,iMcp)+at(s,iRest)+at(s,iDash),0);
+    idle.textContent=seen?'':'Nothing has called Loom in the last '+n+' seconds.';
+  };
+
+  paint(first);
+
+  amTimer=setInterval(async function(){
+    /* A guard rather than a teardown hook: render() is called from a dozen places and none of them
+       know this view left a timer running. One check a second is cheaper than a contract every
+       caller has to keep. */
+    if(view!=='activity'){clearInterval(amTimer);amTimer=null;return;}
+    try{paint(await api('/activity?seconds='+amRange));}
+    catch(e){idle.textContent='Not answering — '+e.message;}
+  },1000);
+}
+
 /* ---------- health ---------- */
 async function viewHealth(target){
   const L=target;
@@ -3570,6 +3987,16 @@ async function viewHealth(target){
     L.append(el('div','sect','Endpoints'));
     L.append(el('div','note','REST at /jots · MCP at /mcp — connect an agent with: '+
       'claude mcp add --transport http loom '+location.origin+'/mcp'));
+    /* Health counts what the STORE gained this run; how much traffic it took to gain it lives one
+       tab over. Said here because the two are easily confused and only one of them is on this
+       page - a reader looking for request rates should be sent, not left to conclude Loom does
+       not measure them. */
+    const actLink=el('div','note','Request and byte rates, per second, are in the Activity view.');
+    const ab=el('a',null,' Open it →');
+    ab.style.cssText='color:var(--accent-ink);cursor:pointer';
+    ab.onclick=function(){view='activity';drawNav();render();};
+    actLink.append(ab);
+    L.append(actLink);
   }catch(e){L.append(el('div','note bad',e.message));}
 }
 
@@ -4192,6 +4619,7 @@ async function render(){
   else if(view==='search')await viewSearch(D);
   else if(view==='tags')await viewTags(D);
   else if(view==='history')await viewHistory(D);
+  else if(view==='activity')await viewActivity(D);
   else await viewHealth(D);
   const L=$('#list');
   const keepScroll=(view===lastRenderedView);
