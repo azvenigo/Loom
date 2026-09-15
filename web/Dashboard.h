@@ -1013,9 +1013,11 @@ i.agent{background:var(--act-agent)}
    PROCESS is handling, per second, since it started - see core/ActivityMeter.h. One is the
    library's catalogue, the other is the door being opened.
 
-   COLOURS ARE BORROWED, NOT INVENTED. Agents are --act-agent and the operator is --act-you, the
-   same validated indigo/teal pair (and the same MEANING) the activity card already uses, so a
-   reader who learned "teal is the agents" upstairs does not have to learn it twice. The bytes
+   COLOURS ARE BORROWED, NOT INVENTED. Agents are --act-agent, the same validated teal (and the
+   same MEANING) the activity card already uses, so a reader who learned "teal is the agents"
+   upstairs does not have to learn it twice. Other REST callers are a neutral: there are only two
+   bands, and a second saturated hue would compete with the one the view is about. The operator's
+   indigo is absent because the dashboard's own traffic is not counted at all. The bytes
    plots are one hue - they are two views of one measure, and giving them separate identities
    would invite reading them as two competing series. */
 .am-tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:14px}
@@ -1030,7 +1032,6 @@ i.agent{background:var(--act-agent)}
 .am-split{display:flex;gap:2px;height:6px;border-radius:3px;overflow:hidden;background:var(--line-soft)}
 .am-split i{display:block;min-width:3px}
 i.mcp{background:var(--act-agent)}
-i.dash{background:var(--act-you)}
 i.rest{background:var(--faint)}
 i.bytes{background:var(--accent)}
 
@@ -1064,7 +1065,6 @@ i.bytes{background:var(--accent)}
    mixture is exactly where the colour-blind separation that was validated stops holding. */
 .am-plot .seam{stroke:var(--panel);stroke-width:2;fill:none;vector-effect:non-scaling-stroke}
 .am-fill-mcp{fill:var(--act-agent)}
-.am-fill-dash{fill:var(--act-you)}
 .am-fill-rest{fill:var(--faint)}
 .am-fill-bytes{fill:var(--accent)}
 /* The newest bucket is the second still being filled, so it is drawn as provisional. Without this
@@ -1854,8 +1854,10 @@ function toast(msg,kind,undoFn){
 }
 
 /* EVERY call says it is the dashboard. The server needs that to tell the page apart from an agent:
-   both talk to the same REST routes, so without a word from the client the Activity view's agent
-   share would be diluted by the operator's own polling - see core/ActivityMeter.h's SurfaceFor().
+   both talk to the same REST routes, and the activity meter leaves the dashboard's traffic out
+   entirely - watching Loom is not using it, and this page's polling used to be most of what the
+   Activity view drew. Without the header it would be counted as scripted REST. See
+   core/ActivityMeter.h, eSurface and SurfaceFor().
    A label, not a credential; it grants nothing and is believed only by a graph. Merged into any
    headers the caller passed rather than replacing them, or every POST would lose its content type. */
 async function api(path,opts){
@@ -3591,10 +3593,12 @@ async function viewTags(target){
    data in place on a one-second timer, because replacing the SVG sixty times a minute would throw
    away the crosshair, the tooltip and the hover position along with it.
 
-   THE GRAPH COUNTS ITSELF. This page polls once a second and that poll is traffic, so a resting
-   Loom with this tab open reads as roughly one request per second rather than zero. That is why
-   the surfaces are stacked rather than summed: the teal band is the one that answers "is anything
-   actually using this", and it is unaffected by the operator watching. */
+   THE GRAPH DOES NOT COUNT ITSELF, or anything else this page does. It polls as often as once a
+   second, the rest of the dashboard polls /stats, and a page load is a quarter of a megabyte - all
+   of which used to be drawn here, so a quiet Loom with the tab open looked busy and every reload
+   was the tallest spike on the bytes plot. The server now drops anything identified as the
+   dashboard (core/ActivityMeter.h), so what is left is agents over MCP and other REST callers:
+   traffic from actually using Loom. */
 /* THE THREE SPANS, each with its own bucket size - and the bucket size IS the refresh interval.
    That pairing is the design, not a coincidence of numbers: a poll that arrives more often than a
    bucket fills just redraws the same picture, and one that arrives less often skips buckets, so
@@ -3751,9 +3755,9 @@ async function viewActivity(target){
   /* Index of each surface inside a sample's "req" array. Read from the payload rather than
      hardcoded: the server declares the order precisely so this does not have to guess it, and a
      band drawn against the wrong index is a mislabelled graph, not a visible error. */
-  const SURF=(first.window||{}).surfaces||['mcp','rest','dashboard'];
+  const SURF=(first.window||{}).surfaces||['mcp','rest'];
   const iOf=k=>SURF.indexOf(k);
-  const iMcp=iOf('mcp'),iRest=iOf('rest'),iDash=iOf('dashboard');
+  const iMcp=iOf('mcp'),iRest=iOf('rest');
   const at=(s,i)=>(i<0?0:(s.req||[])[i]||0);
 
   /* ---- session counters ---- */
@@ -3777,7 +3781,7 @@ async function viewActivity(target){
   const split=el('div','am-split');
   reqTile.tile.insertBefore(split,reqTile.cap);
   const segs={};
-  ['mcp','dash','rest'].forEach(function(k){segs[k]=el('i',k);split.append(segs[k]);});
+  ['mcp','rest'].forEach(function(k){segs[k]=el('i',k);split.append(segs[k]);});
   tile('in','Bytes in');
   tile('out','Bytes out');
   tile('rate','Busiest second');
@@ -3789,7 +3793,7 @@ async function viewActivity(target){
   const chTitle=el('h3',null,'');ch1.append(chTitle);
   ch.append(ch1);
   const leg=el('div','am-legend');
-  [['mcp','Agents'],['dash','Dashboard'],['rest','Other']].forEach(function(q){
+  [['mcp','Agents (MCP)'],['rest','Other REST']].forEach(function(q){
     const sp=el('span');sp.append(el('i',q[0]));sp.append(document.createTextNode(q[1]));leg.append(sp);
   });
   ch.append(leg);
@@ -3811,7 +3815,7 @@ async function viewActivity(target){
   card.append(ch);
 
   const plots=el('div','am-plots');card.append(plots);
-  const pReq=amPlot('Transactions',['am-fill-mcp','am-fill-dash','am-fill-rest']);
+  const pReq=amPlot('Transactions',['am-fill-mcp','am-fill-rest']);
   const pOut=amPlot('Bytes out',['am-fill-bytes']);
   const pIn =amPlot('Bytes in',['am-fill-bytes']);
   plots.append(pReq.node,pOut.node,pIn.node);
@@ -3836,7 +3840,7 @@ async function viewActivity(target){
     const s=samples[i],px=(i+0.5)/samples.length*box.width;
     cross.hidden=false;cross.style.left=px+'px';
 
-    const total=at(s,iMcp)+at(s,iRest)+at(s,iDash);
+    const total=at(s,iMcp)+at(s,iRest);
     tip.innerHTML='';
     /* A bucket wider than a second is a span, and its totals are totals OVER that span - say
        both, or "12 transactions" reads as twelve in one second on a plot drawn in rates. */
@@ -3847,8 +3851,7 @@ async function viewActivity(target){
     const pair=function(k,v){g.append(el('span',null,k));g.append(el('span',null,v));};
     pair('Transactions',String(total));
     pair('Agents',String(at(s,iMcp)));
-    pair('Dashboard',String(at(s,iDash)));
-    pair('Other',String(at(s,iRest)));
+    pair('Other REST',String(at(s,iRest)));
     pair('Bytes out',amBytes(s.out));
     pair('Bytes in',amBytes(s.in));
     if(s.err)pair('Errors',String(s.err));
@@ -3869,19 +3872,19 @@ async function viewActivity(target){
     span=(d.window||{}).seconds||samples.length*step;
     const n=samples.length;
     const S=d.session||{},by=S.by_surface||{};
-    const mcp=by.mcp||{},dash=by.dashboard||{},rest=by.rest||{};
+    const mcp=by.mcp||{},rest=by.rest||{};
 
     /* Labelled off the span that CAME BACK, not the span asked for. The ring
        clamps a request wider than it holds (core/ActivityMeter.h), so the two can differ, and the
        caption that differs from the plot beneath it is the one that is wrong. */
     chTitle.textContent='The last '+amSpan(span);
     T.req.num.textContent=Number(S.requests||0).toLocaleString();
-    ['mcp','dash','rest'].forEach(function(k){
-      const v=(k==='mcp'?mcp:k==='dash'?dash:rest).requests||0;
+    ['mcp','rest'].forEach(function(k){
+      const v=(k==='mcp'?mcp:rest).requests||0;
       segs[k].style.flex=v;segs[k].hidden=!v;
     });
     T.req.cap.innerHTML='';
-    [['mcp',mcp.requests,'agents'],['dash',dash.requests,'page'],
+    [['mcp',mcp.requests,'agents'],
      ['rest',rest.requests,'other']].forEach(function(q,ix){
       if(ix)T.req.cap.append(document.createTextNode(' · '));
       T.req.cap.append(el('i',q[0]));
@@ -3907,7 +3910,7 @@ async function viewActivity(target){
 
     let maxReq=0,maxOut=0,maxIn=0;
     samples.forEach(function(s){
-      const t=at(s,iMcp)+at(s,iRest)+at(s,iDash);
+      const t=at(s,iMcp)+at(s,iRest);
       if(t>maxReq)maxReq=t;
       if(s.out>maxOut)maxOut=s.out;
       if(s.in>maxIn)maxIn=s.in;
@@ -3917,7 +3920,7 @@ async function viewActivity(target){
        "/s" beside every peak would be false. Dividing by the step keeps all three spans on one
        unit. The tooltip is the one place totals are shown, and it names the span it covers. */
     const per=v=>v/step;
-    amStack(pReq,[samples.map(s=>per(at(s,iMcp))),samples.map(s=>per(at(s,iDash))),
+    amStack(pReq,[samples.map(s=>per(at(s,iMcp))),
                   samples.map(s=>per(at(s,iRest)))],amNice(per(maxReq)),n,amRate(per(maxReq))+'/s');
     amStack(pOut,[samples.map(s=>per(s.out))],amNice(per(maxOut)),n,amBytes(Math.round(per(maxOut)))+'/s');
     amStack(pIn ,[samples.map(s=>per(s.in ))],amNice(per(maxIn )),n,amBytes(Math.round(per(maxIn )))+'/s');
@@ -3925,7 +3928,7 @@ async function viewActivity(target){
     xa.textContent='−'+amSpan(span,true);
     xb.textContent='−'+amSpan(Math.round(span/2/step)*step,true);
 
-    const seen=samples.reduce((a,s)=>a+at(s,iMcp)+at(s,iRest)+at(s,iDash),0);
+    const seen=samples.reduce((a,s)=>a+at(s,iMcp)+at(s,iRest),0);
     idle.textContent=seen?'':'Nothing has called Loom in the last '+amSpan(span)+'.';
   };
 

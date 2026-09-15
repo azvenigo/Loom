@@ -193,13 +193,12 @@ identical whether one agent wrote them in a burst or four agents have been polli
 ```
 GET /activity?seconds=120&step=1
 {
-  "session": { "requests": 8412, "bytes_in": 940113, "bytes_out": 86220154, "peak_rps": 31,
+  "session": { "requests": 8211, "bytes_in": 940113, "bytes_out": 82444442, "peak_rps": 31,
                "errors": 0, "uptime_s": 91840, "started_at": 1789412001234567,
                "by_surface": { "mcp":  {"requests":7990,"bytes_in":921004,"bytes_out":81004221},
-                               "rest": {"requests":221, "bytes_in":19109, "bytes_out":1440221},
-                               "dashboard": {"requests":201,"bytes_in":0,"bytes_out":3775712} } },
-  "window":  { "seconds":120, "step":1, "capacity":1800, "now":1789503991, "surfaces":["mcp","rest","dashboard"] },
-  "samples": [ {"t":1789503872,"req":[3,0,1],"err":0,"in":321,"out":1869}, … ]
+                               "rest": {"requests":221, "bytes_in":19109, "bytes_out":1440221} } },
+  "window":  { "seconds":120, "step":1, "capacity":1800, "now":1789503991, "surfaces":["mcp","rest"] },
+  "samples": [ {"t":1789503872,"req":[3,1],"err":0,"in":321,"out":1869}, … ]
 }
 ```
 
@@ -224,23 +223,22 @@ enforced by. Requests refused by the allow list are counted too; a machine hamme
 not allowed to talk to should not show up as silence. **Bytes are request and response bodies**, not
 headers or TCP framing.
 
-**The three surfaces are the point.** `mcp` is agents, `dashboard` is somebody with the page open,
-`rest` is anything else scripted. A single request total cannot tell you whether the memory is being
-used or just watched. Because the page calls the *same* REST routes an agent would, it identifies
-itself with `X-Loom-Client: dashboard`; that is a label and not a credential — anything can claim it,
-exactly as anything can put `claude` in a jot's `editor` — and, like `editor`, it is believed by a
-graph and by nothing that decides anything. A call to `/mcp` is counted as an agent whatever it
-calls itself.
+**It measures use, not watching.** Traffic is split into `mcp` (agents) and `rest` (anything else
+scripted). **The dashboard's own traffic is not counted at all** — the page, its assets, and every call
+it makes. Counted, it drowned the thing being measured: the page polls `/stats`, the Activity view
+polls `/activity` as often as once a second, and one page load is a quarter of a megabyte, so a quiet
+Loom with the tab open looked busy. Because the page calls the *same* REST routes an agent would, it
+identifies itself with `X-Loom-Client: dashboard`. That is a label and not a credential: anything can
+claim it, exactly as anything can put `claude` in a jot's `editor`, and a REST caller that does is left
+off the graph. It is believed by the meter and by nothing that decides anything. A call to `/mcp` is
+counted as an agent whatever it calls itself.
 
 The dashboard's **Activity** view is this endpoint drawn: session tiles, and three plots stacked over
-one shared time axis — transactions split by surface, bytes out, bytes in, all plotted as per-second
+one shared time axis — transactions split into agents and other REST, bytes out, bytes in, all plotted as per-second
 rates so the three spans stay comparable (the tooltip gives totals for the bucket under the cursor). Three plots and not one,
 because transactions and bytes cannot share a y-axis without the scaling factor inventing a
 correlation, and because bytes-in is routinely two orders of magnitude under bytes-out. Each row
 prints its own peak, which is what keeps the rows from being read against each other.
-
-Note that the view counts itself: it polls once a second, so an otherwise idle Loom with the tab open
-reads as about one request per second. The agent band is the one that is unaffected by watching.
 
 ### Purge
 

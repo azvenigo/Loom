@@ -752,7 +752,7 @@ struct HttpServer::Impl
             // split in /stats: "an agent called" and "the page refreshed" are not units of the
             // same quantity, and a total invites adding them up as though they were.
             crow::json::wvalue by;
-            for (size_t n = 0; n < kSurfaceCount; ++n)
+            for (size_t n = 0; n < kCountedSurfaces; ++n)
             {
                 crow::json::wvalue one;
                 one["requests"]  = totals.mnRequestsBy[n];
@@ -773,8 +773,8 @@ struct HttpServer::Impl
             for (const ActivitySample& smp : vSamples)
             {
                 std::vector<crow::json::wvalue> vBy;
-                vBy.reserve(kSurfaceCount);
-                for (size_t n = 0; n < kSurfaceCount; ++n)
+                vBy.reserve(kCountedSurfaces);
+                for (size_t n = 0; n < kCountedSurfaces; ++n)
                     vBy.push_back(crow::json::wvalue(smp.mnRequests[n]));
 
                 crow::json::wvalue e;
@@ -787,7 +787,7 @@ struct HttpServer::Impl
             }
 
             std::vector<crow::json::wvalue> vNames;
-            for (size_t n = 0; n < kSurfaceCount; ++n)
+            for (size_t n = 0; n < kCountedSurfaces; ++n)
                 vNames.push_back(crow::json::wvalue(SurfaceName(static_cast<eSurface>(n))));
 
             crow::json::wvalue window;

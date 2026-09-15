@@ -43,17 +43,24 @@
 // service is used; counting headers would mostly measure crow.
 //////////////////////////////////////////////////////////////////////////////////////////////////
 
-// Which front door a request came through. THE POINT OF THE SPLIT: "mcp" is agents, "dashboard" is
-// a human with the page open, and "rest" is anything scripted. A request count that folds the
-// three together cannot answer "are the agents using this, or is it just me looking at it?"
+// Which front door a request came through: "mcp" is agents, "rest" is anything scripted, and
+// "dashboard" is a human with the page open.
+//
+// THE DASHBOARD IS CLASSIFIED BUT NOT COUNTED. The meter exists to show how much traffic USING Loom
+// generates, and the operator watching the meter is not use: the page polls /stats every fifteen
+// seconds, the Activity view polls /activity as often as every second, and a single page load is a
+// quarter of a megabyte of HTML. Counted, that drowned the thing being measured - a quiet store
+// with the tab open read as steady traffic, and every reload was the tallest spike on the bytes-out
+// plot. So kDashboard sits deliberately OUTSIDE the counted range: the meter's arrays are
+// kCountedSurfaces wide, and Record() drops anything beyond them.
 enum class eSurface : size_t
 {
     kMcp       = 0,
     kRest      = 1,
-    kDashboard = 2
+    kDashboard = 2   // must stay the first value past kCountedSurfaces - see above
 };
 
-inline constexpr size_t kSurfaceCount = 3;
+inline constexpr size_t kCountedSurfaces = 2;
 
 inline const char* SurfaceName(eSurface surface)
 {
@@ -78,9 +85,11 @@ inline const char* SurfaceName(eSurface surface)
 //
 // THAT HEADER IS NOT A CREDENTIAL and nothing here treats it as one: anything can claim to be the
 // dashboard, exactly as anything can put "claude" in a jot's editor field. The history log has
-// always shown the editor name beside the address crow actually saw, for that reason. The stakes
-// are the same here and so is the answer - a self-reported label is good enough for a graph and is
-// never good enough for a control.
+// always shown the editor name beside the address crow actually saw, for that reason.
+//
+// NOTE WHAT THE LABEL NOW DOES: since dashboard traffic is not counted, a REST caller that sends
+// the header is left off the graph. That is acceptable for a graph and would be unacceptable for
+// any control - which is why nothing but this meter reads it, and why /mcp cannot opt out below.
 //
 // Takes the raw URL, so a query string has to be tolerated: "/jots?tag=todo" is REST.
 inline eSurface SurfaceFor(const std::string& sUrl, const std::string& sClient = {})
@@ -118,7 +127,7 @@ inline eSurface SurfaceFor(const std::string& sUrl, const std::string& sClient =
 struct ActivitySample
 {
     int64_t                             mnSecond = 0;   // epoch seconds
-    std::array<uint32_t, kSurfaceCount> mnRequests{};   // indexed by eSurface
+    std::array<uint32_t, kCountedSurfaces> mnRequests{};   // indexed by eSurface
     uint32_t                            mnErrors   = 0; // of which answered >= 400
     uint64_t                            mnBytesIn  = 0;
     uint64_t                            mnBytesOut = 0;
@@ -142,9 +151,9 @@ struct ActivityTotals
     uint64_t mnBytesOut      = 0;
     uint32_t mnPeakPerSecond = 0;
 
-    std::array<uint64_t, kSurfaceCount> mnRequestsBy{};
-    std::array<uint64_t, kSurfaceCount> mnBytesInBy{};
-    std::array<uint64_t, kSurfaceCount> mnBytesOutBy{};
+    std::array<uint64_t, kCountedSurfaces> mnRequestsBy{};
+    std::array<uint64_t, kCountedSurfaces> mnBytesInBy{};
+    std::array<uint64_t, kCountedSurfaces> mnBytesOutBy{};
 };
 
 class ActivityMeter
@@ -163,12 +172,16 @@ public:
     }
 
     // Called once per request, after the response body is final. nStatus is the HTTP code.
+    // Dashboard traffic is dropped here, before the lock - see eSurface. Dropped in the meter rather
+    // than by the caller so the arrays cannot be indexed past their end by anyone who forgets.
     void Record(eSurface surface, size_t nBytesIn, size_t nBytesOut, int nStatus,
                 int64_t nNowUS = LOOMTIME::NowMicros())
     {
         const int64_t nSecond = nNowUS / LOOMTIME::kMicrosPerSecond;
         const size_t  nSlot   = SlotFor(nSecond);
         const size_t  nSurf   = static_cast<size_t>(surface);
+        if (nSurf >= kCountedSurfaces)
+            return;
 
         std::lock_guard<std::mutex> lock(mMutex);
 
@@ -247,7 +260,7 @@ public:
                 const ActivitySample& bucket = mRing[SlotFor(nSecond)];
                 if (bucket.mnSecond != nSecond)
                     continue;
-                for (size_t n = 0; n < kSurfaceCount; ++n)
+                for (size_t n = 0; n < kCountedSurfaces; ++n)
                     sum.mnRequests[n] += bucket.mnRequests[n];
                 sum.mnErrors   += bucket.mnErrors;
                 sum.mnBytesIn  += bucket.mnBytesIn;

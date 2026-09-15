@@ -1122,8 +1122,7 @@ namespace
             Check(tot.mnBytesIn == 160, "bytes in are summed across surfaces");
             Check(tot.mnBytesOut == 1320, "bytes out are summed across surfaces");
             Check(tot.mnRequestsBy[static_cast<size_t>(eSurface::kMcp)] == 2 &&
-                  tot.mnRequestsBy[static_cast<size_t>(eSurface::kRest)] == 1 &&
-                  tot.mnRequestsBy[static_cast<size_t>(eSurface::kDashboard)] == 0,
+                  tot.mnRequestsBy[static_cast<size_t>(eSurface::kRest)] == 1,
                   "requests are split by the surface they arrived on");
             Check(tot.mnBytesOutBy[static_cast<size_t>(eSurface::kMcp)] == 1300,
                   "bytes are split by surface too");
@@ -1139,6 +1138,27 @@ namespace
                   "seconds before the first request come back as explicit zero rows");
             Check(vWindow[0].mnSecond == vWindow[2].mnSecond - 2,
                   "zero rows still carry the second they stand for");
+        }
+
+        {
+            // The operator watching is not use. A dashboard request must leave no trace anywhere:
+            // not in the totals, not in the peak, not in the ring.
+            ActivityMeter meter(nT0);
+            meter.Record(eSurface::kMcp,        10, 100, 200, nT0);
+            meter.Record(eSurface::kDashboard, 500, 260000, 200, nT0);
+            meter.Record(eSurface::kDashboard,   0,  9000, 500, nT0 + LOOMTIME::kMicrosPerSecond);
+
+            const ActivityTotals tot = meter.Totals();
+            Check(tot.mnRequests == 1 && tot.mnBytesIn == 10 && tot.mnBytesOut == 100,
+                  "dashboard requests and bytes are left out of the session totals");
+            Check(tot.mnErrors == 0, "a dashboard error is not counted either");
+            Check(tot.mnPeakPerSecond == 1, "nor does dashboard traffic raise the peak");
+            Check(tot.mnLastRequestUS == nT0, "the last-request time still comes from real traffic");
+
+            std::vector<ActivitySample> vWindow;
+            meter.Window(1, vWindow, nT0);
+            Check(vWindow.size() == 1 && vWindow[0].Requests() == 1 && vWindow[0].mnBytesOut == 100,
+                  "and it never reaches the per-second ring");
         }
 
         {
