@@ -46,12 +46,20 @@
 //////////////////////////////////////////////////////////////////////////////////////////////////
 
 class History;
+class Journal;
 
 class McpHandler
 {
 public:
     // pHistory may be null - see the note above. It must outlive this handler when it is not.
-    McpHandler(Ops& ops, JotStore& store, History* pHistory = nullptr);
+    //
+    // pJournal is nullable for the same reason, and is read for one thing only: the persistence
+    // block of loom_stats. Without it that block used to be serialized from a default-constructed
+    // PersistStats, so a service writing its WAL reported "enabled": false on every call - the tool
+    // whose description says it is for checking whether persistence is on gave the wrong answer.
+    // Null now means what it says: no journal, persistence genuinely off.
+    McpHandler(Ops& ops, JotStore& store, History* pHistory = nullptr,
+               const Journal* pJournal = nullptr);
 
     // Returns the JSON-RPC response body, or an EMPTY string when the message was a notification
     // and the protocol requires no reply (the caller should answer HTTP 202 with no body).
@@ -66,5 +74,6 @@ public:
 private:
     Ops&      mOps;
     JotStore& mStore;
-    History*  mpHistory = nullptr;
+    History*       mpHistory = nullptr;
+    const Journal* mpJournal = nullptr;
 };

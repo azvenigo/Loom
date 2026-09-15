@@ -407,6 +407,10 @@ namespace
                   std::filesystem::exists(sPath + ".000001", ec),
                   "the legacy .1 becomes segment 000001 instead of waiting to be overwritten");
 
+            // What Open() left behind - the adopted legacy file. Any segment beyond this count was
+            // sealed by the running writer.
+            const size_t nSegmentsAtOpen = history.Stats().mnSegments;
+
             // seqs 2..61
             for (int i = 0; i < 60; ++i)
                 history.OnPut(HistJot(1000 + i, "version one of " + std::to_string(i)));
@@ -426,10 +430,16 @@ namespace
             // seq 83: the oldest jot again, so it now lives in the first segment AND the last file.
             history.OnPut(HistJot(1000, "version two of 0"));
 
+            // MORE SEGMENTS THAN AT OPEN, not a fixed count. The writer seals only between batches,
+            // and a batch is whatever queued inside one flush interval - so the 60 puts above, issued
+            // back to back, usually land as ONE batch and ONE seal however many 4096-byte files
+            // their bytes would fill. A fixed count therefore measures thread scheduling. It used to
+            // be ">= 5" and saw 4. What the check means is only that a seal happened while this
+            // History object was alive, before any restart could have done it.
             bool bSealedLive = false;
             for (int i = 0; i < 200 && !bSealedLive; ++i)
             {
-                bSealedLive = history.Stats().mnSegments >= 5;
+                bSealedLive = history.Stats().mnSegments > nSegmentsAtOpen;
                 if (!bSealedLive)
                     std::this_thread::sleep_for(std::chrono::milliseconds(10));
             }

@@ -18,6 +18,7 @@
 #include "core/Ops.h"
 #include "mcp/McpHandler.h"
 #include "persist/History.h"
+#include "persist/Journal.h"
 
 #include "vendor/json.hpp"
 
@@ -345,6 +346,47 @@ int main()
         json r = json::parse(mcp.Handle(batch.dump()), nullptr, false);
         Check(r.is_array() && r.size() == 2,
               "a batch answers only the requests, not the notification inside it");
+    }
+
+    //--------------------------------------------------------------------------------------
+    // loom_stats has to tell the truth about durability. It used to serialize an empty
+    // PersistStats, so a store writing its WAL reported persistence off on every call - and "is
+    // persistence actually on" is what the tool's own description says it is for.
+    Section("loom_stats reports persistence as it really is");
+    {
+        bool bErr = false;
+        json ram = Call(mcp, "loom_stats", json::object(), bErr);
+        Check(!bErr && ram.contains("persistence") && ram["persistence"].value("enabled", true) == false,
+              "with no journal, persistence is reported off - which is true");
+
+        const std::string sDir = "mcptest-journal";
+        std::error_code fsec;
+        std::filesystem::remove_all(sDir, fsec);
+        std::filesystem::create_directories(sDir, fsec);
+
+        Journal journal;
+        JournalConfig jc;
+        jc.msPath = sDir + "/loom.wal";
+        jc.mSync  = eSyncPolicy::kAlways;
+        Check(!journal.Open(jc), "the journal opens");
+
+        JotStore   jstore;
+        jstore.SetJournalSink(&journal);
+        Ops        jops(jstore);
+        McpHandler jmcp(jops, jstore, nullptr, &journal);
+
+        Call(jmcp, "loom_add", json{{"text","durable"},{"editor","claude"}}, bErr);
+        journal.Flush();
+
+        json st = Call(jmcp, "loom_stats", json::object(), bErr);
+        const json p = st.value("persistence", json::object());
+        Check(!bErr && p.value("enabled", false) == true,
+              "with a journal, persistence is reported on");
+        Check(p.value("appended", 0) >= 1 && p.value("wal_bytes", 0) > 0,
+              "and the counters are the journal's real ones, not zeros");
+
+        journal.Close();
+        std::filesystem::remove_all(sDir, fsec);
     }
 
     std::printf("\n%d checks, %d failed\n", gnChecks, gnFailed);

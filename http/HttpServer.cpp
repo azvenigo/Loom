@@ -319,7 +319,7 @@ struct HttpServer::Impl
           mpHistory(pHistory), mWatch(watch), mpWatcher(pWatcher), mpLedger(pLedger),
           mpJotpostStatus(pJotpostStatus),
           mpResolver(pResolver),
-          mMcp(ops, store, pHistory), mSnapConfig(snapConfig),
+          mMcp(ops, store, pHistory, pJournal), mSnapConfig(snapConfig),
           msOrigin(ResolveAdvertisedOrigin(config))
     {
         // The middleware instances are owned by the app, so they are wired here rather than

@@ -43,7 +43,12 @@ namespace LOOMTIME
         if (!BreakDownUTC(nSeconds, tmUTC))
             return std::to_string(nUS);
 
-        char szBuf[40];
+        // Sized for what the compiler has to assume, not for what a real date needs. A date needs
+        // 27 bytes, but every field is an int, and gcc's -Wformat-truncation reasons about the
+        // full int range: seven fields at up to 11 characters each plus six separators and the
+        // terminator is 84. At 40 it could not prove the output fits, and -Werror turned that into
+        // a failed gcc build that clang never reported. The output is unchanged.
+        char szBuf[96];
         std::snprintf(szBuf, sizeof(szBuf), "%04d-%02d-%02d %02d:%02d:%02d.%06d",
             tmUTC.tm_year + 1900, tmUTC.tm_mon + 1, tmUTC.tm_mday,
             tmUTC.tm_hour, tmUTC.tm_min, tmUTC.tm_sec,

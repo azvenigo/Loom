@@ -4,6 +4,7 @@
 #include "codec/JotJson.h"
 #include "core/LoomTime.h"
 #include "persist/History.h"
+#include "persist/Journal.h"
 #include "persist/Undo.h"
 
 #include "vendor/json.hpp"
@@ -392,8 +393,8 @@ namespace
 
 //====================================================================================================
 
-McpHandler::McpHandler(Ops& ops, JotStore& store, History* pHistory)
-    : mOps(ops), mStore(store), mpHistory(pHistory)
+McpHandler::McpHandler(Ops& ops, JotStore& store, History* pHistory, const Journal* pJournal)
+    : mOps(ops), mStore(store), mpHistory(pHistory), mpJournal(pJournal)
 {
 }
 
@@ -401,8 +402,8 @@ namespace
 {
     // One tool invocation. Returns the MCP tool-result object; failures come back as isError:true
     // results rather than as protocol errors, so the model can see and act on them.
-    json CallTool(Ops& ops, JotStore& store, History* pHistory, const std::string& sOrigin,
-                  const std::string& sName, const json& args)
+    json CallTool(Ops& ops, JotStore& store, History* pHistory, const Journal* pJournal,
+                  const std::string& sOrigin, const std::string& sName, const json& args)
     {
         NameTables names;
         store.SnapshotNames(names);
@@ -483,7 +484,12 @@ namespace
 
         if (sName == "loom_stats")
         {
-            PersistStats persist;   // the handler has no journal reference; store half is enough here
+            // Filled from the live journal exactly as REST /stats fills it, so the two front doors
+            // cannot disagree about whether the store is durable. Left default - enabled:false - only
+            // when there really is no journal (a RAM-only run).
+            PersistStats persist;
+            if (pJournal)
+                pJournal->FillStats(persist);
             return ToolText(JOTJSON::StatsToJson(ops.Stats(), persist));
         }
 
@@ -723,8 +729,8 @@ namespace
         return ToolFailure("Unknown tool: " + sName);
     }
 
-    json HandleOne(Ops& ops, JotStore& store, History* pHistory, const std::string& sOrigin,
-                   const json& msg, bool& outbIsNotification)
+    json HandleOne(Ops& ops, JotStore& store, History* pHistory, const Journal* pJournal,
+                   const std::string& sOrigin, const json& msg, bool& outbIsNotification)
     {
         outbIsNotification = false;
 
@@ -795,7 +801,7 @@ namespace
             const json args = (params.contains("arguments") && params["arguments"].is_object())
                             ? params["arguments"] : json::object();
 
-            return RpcResult(id, CallTool(ops, store, pHistory, sOrigin,
+            return RpcResult(id, CallTool(ops, store, pHistory, pJournal, sOrigin,
                                          params["name"].get<std::string>(), args));
         }
 
@@ -824,7 +830,7 @@ std::string McpHandler::Handle(const std::string& sRequestJson, const std::strin
         for (const json& one : msg)
         {
             bool bNotification = false;
-            json r = HandleOne(mOps, mStore, mpHistory, sOrigin, one, bNotification);
+            json r = HandleOne(mOps, mStore, mpHistory, mpJournal, sOrigin, one, bNotification);
             if (!bNotification)
                 out.push_back(std::move(r));
         }
@@ -832,6 +838,6 @@ std::string McpHandler::Handle(const std::string& sRequestJson, const std::strin
     }
 
     bool bNotification = false;
-    json r = HandleOne(mOps, mStore, mpHistory, sOrigin, msg, bNotification);
+    json r = HandleOne(mOps, mStore, mpHistory, mpJournal, sOrigin, msg, bNotification);
     return bNotification ? std::string() : r.dump();
 }
