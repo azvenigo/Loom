@@ -48,13 +48,18 @@ R"HTML(<!doctype html>
 <link rel="icon" type="image/png" href="/icon.png">
 <style>
 :root{
-  --bg:#faf9f6; --panel:#fff; --sunk:#f3f1ec;
-  --ink:#1c1a17; --body:#3a3630; --dim:#6f6a61; --faint:#a49d92;
-  --line:#e7e3da; --line-soft:#f0ece4;
-  --accent:#6d5bd0; --accent-ink:#4e3fae; --accent-wash:#f0edfd;
-  --warn:#a1620c; --warn-wash:#fdf6ec; --warn-line:#e8c99a;
-  --bad:#a32c22; --bad-wash:#fdf1f0; --bad-line:#e7b3ad;
-  --good:#2c6b45; --good-wash:#f0f8f3; --good-line:#a9d4bd;
+  /* Contrast raised 2026-09-16: the ground now separates from the white panels, borders read as
+     borders, and --faint clears 4:1 on white instead of the 2.6:1 it used to. Paper is also the
+     WARM light palette now - cream ground, berry accent - because with its old violet it was a
+     near-twin of Twilight. Its extras (ramp, pills, TODO ground) are in the "paper" block below,
+     not here, so the var() defaults further down stay defaults for everyone else. */
+  --bg:#f1ece2; --panel:#fff; --sunk:#e9e2d5;
+  --ink:#12100d; --body:#2b2823; --dim:#58534b; --faint:#7a7368;
+  --line:#d6cdbd; --line-soft:#e5ded1;
+  --accent:#a8326a; --accent-ink:#8a2254; --accent-wash:#f8e6ee;
+  --warn:#8f5507; --warn-wash:#fcf3e6; --warn-line:#e2bf8c;
+  --bad:#a32c22; --bad-wash:#fcecea; --bad-line:#e2a9a2;
+  --good:#24613d; --good-wash:#eaf5ee; --good-line:#9ccbb1;
   --mark:#fdf0a8;
   /* THE ONE FIXED COLOUR IN HERE, AND ON PURPOSE. Ground for the help dialog's artwork, which is
      antialiased against a dark background - drop it on a light palette's --panel and every edge
@@ -84,9 +89,9 @@ R"HTML(<!doctype html>
   /* The editor's text boxes. On a light palette this is just white; on a dark one it's a LIGHT
      TINT OF THE PALETTE'S OWN HUE rather than pure white, which at ~72% of white's luminance
      stops the field being a floodlight in a dark room while keeping ink contrast above 10:1. */
-  --field-bg:#ffffff; --field-ink:#1c1a17; --field-dim:#6f6a61;
+  --field-bg:#ffffff; --field-ink:#12100d; --field-dim:#58534b;
   /* TODO panel ground - see .ov-todo. Two identical stops means a flat fill, which is what the
-     eight quiet palettes have always had. */
+     quiet palettes have always had. */
   --todo-top:var(--warn-wash); --todo-bot:var(--warn-wash);
   --todo-edge:var(--warn-line); --todo-bar:var(--warn); --todo-glow:var(--warn);
   /* HIGHLIGHT CARD ground - see .ov-card.hi. Same trick as --todo-*: two identical stops is a
@@ -104,6 +109,74 @@ R"HTML(<!doctype html>
   --tag-bg:var(--sunk); --tag-ink:var(--dim);
   /* Section kickers - DISTRIBUTION, ACTIVITY, TAGS IN USE. See the .eyebrow rule. */
   --eyebrow-ink:var(--faint);
+  /* ================================ ELEVATION ================================
+     ONE HEIGHT AXIS FOR THE WHOLE DASHBOARD, added 2026-09-19. Depth used to be hardcoded per
+     rule - a shadow on .dsect, a different pair on the filled buttons, none at all on .mcard -
+     so it never read as a system. There are five rungs now and each one MEANS something. If two
+     things sit at the same height they are the same kind of thing:
+
+       --sunk-shadow   below the ground   fields, the search well, a completed TODO
+       --e1            at rest            every jot card, every Normal/Low TODO
+       --e2            under the cursor   hover, and a jot touched in the last few hours
+       --e3            wants you          the selected card, a High-priority TODO
+       --e4            urgent             an overdue TODO - which also tints its own shadow
+       --e5            above everything   dialogs
+
+     THE RECIPE IS "CONTACT": a short, relatively dark shadow directly under the edge plus a wide
+     soft one further out. The tight one is what makes a card read as an object resting ON the
+     page rather than a glowing rectangle, and it is why these numbers look front-loaded next to
+     the usual single blurry drop.
+
+     THERE IS ONE LAMP AND IT IS AT 11 O'CLOCK, so every shadow in the dashboard falls toward 5.
+     That fixes the x offset instead of leaving it to taste: 5 o'clock is 150 degrees round the
+     dial from 12, so x = y * tan(30) = 0.577 * y, rounded to a whole pixel. Every pair below
+     holds that ratio - 3/5, 5/9, 9/16, 16/28 - and the inset well runs the same lamp backwards,
+     shading its TOP-LEFT inner edges (positive inset offsets draw inward from the left and top),
+     which is what makes a field read as cut into the page rather than lit from underneath it.
+     If you retune one number here, move its partner or the whole page picks up a second light.
+
+     TWO TOKENS PER PALETTE DO ALL THE TUNING and the ramp itself is never repeated:
+       --sh    the shadow COLOUR as an rgb triplet, and never black. Pure black over Paper's
+               cream ground reads as dirt; each palette darkens toward its own hue instead.
+       --sh-k  a strength multiplier. A drop shadow works by darkening the ground, so over a
+               near-black ground it barely registers and has to be pushed several times harder.
+
+     A SHADOW CANNOT CARRY A DARK PALETTE ON ITS OWN - there is nothing left to darken, and seven
+     of the twelve palettes are dark or medium. Those raise a SURFACE instead: --panel-2/3/4 step
+     the panel lighter and slightly more saturated as it climbs, and --rim lights a 1px line along
+     the top edge the way a real lit surface catches its leading edge. On a light palette all
+     three steps ARE --panel and --rim-a is 0, so the mechanism costs those palettes nothing and
+     the shadows do the work alone. That is why an elevated rule sets two properties, background
+     and box-shadow, rather than one.
+
+     Space-separated rgb() with calc() in the alpha is the one modern colour syntax in here. A
+     browser without it drops the shadow and keeps everything else - the same trade the
+     color-mix() button glow already makes, and the reason the ramp is not built out of
+     color-mix() itself. */
+  --sh:28 26 34; --sh-k:1;
+  --rim:255 255 255; --rim-a:0;
+  --panel-2:var(--panel); --panel-3:var(--panel); --panel-4:var(--panel);
+  /* A CLIMBED SURFACE COSTS THE QUIET MONO LINE ITS CONTRAST. Raising a dark panel by the
+     1.20 luminance step above takes --faint from ~3.1:1 down to ~2.6:1, and --faint is
+     exactly what the small print is set in - the card foot, the TODO slug. So on a palette
+     that climbs, that line steps up one stop of the text ramp and lands near 4.4:1 instead.
+     A raised card therefore has BETTER small print than a resting one, which is the right way
+     round: it is the one asking to be read. On a light palette nothing climbs, so this is
+     --faint and the resting look is untouched. */
+  --faint-up:var(--faint);
+  --e1:inset 0 1px 0 rgb(var(--rim) / var(--rim-a)),
+    1px 2px 3px rgb(var(--sh) / calc(.18*var(--sh-k))), 3px 5px 12px -2px rgb(var(--sh) / calc(.12*var(--sh-k)));
+  --e2:inset 0 1px 0 rgb(var(--rim) / var(--rim-a)),
+    2px 3px 4px rgb(var(--sh) / calc(.24*var(--sh-k))), 5px 9px 20px -3px rgb(var(--sh) / calc(.16*var(--sh-k)));
+  --e3:inset 0 1px 0 rgb(var(--rim) / var(--rim-a)),
+    3px 5px 6px rgb(var(--sh) / calc(.30*var(--sh-k))), 9px 16px 32px -5px rgb(var(--sh) / calc(.21*var(--sh-k)));
+  --e4:inset 0 1px 0 rgb(var(--rim) / var(--rim-a)),
+    5px 8px 9px rgb(var(--sh) / calc(.36*var(--sh-k))), 16px 28px 52px -8px rgb(var(--sh) / calc(.28*var(--sh-k)));
+  --e5:inset 0 1px 0 rgb(var(--rim) / var(--rim-a)),
+    7px 12px 14px rgb(var(--sh) / calc(.40*var(--sh-k))), 27px 46px 84px -14px rgb(var(--sh) / calc(.36*var(--sh-k)));
+  /* Pressed in rather than raised. One rung, not a ramp - nothing needs to be sunk by degrees.
+     Same lamp, so the shading sits on the top-left inner edges: see the 11 o'clock note above. */
+  --sunk-shadow:inset 2px 3px 5px rgb(var(--sh) / calc(.16*var(--sh-k)));
   --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
   --sans:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
   --r:7px;
@@ -111,68 +184,51 @@ R"HTML(<!doctype html>
 /* Paper/Midnight are the original pair (purple accent, light/dark) - the old "Loom" auto-dark and
    "Midnight" sat almost on top of each other once the OS was in dark mode, which was the
    complaint that started this; Midnight now covers that end on its own, :root above is "Paper".
-   The rest are three more light/dark pairs, adapted from the terminal color tables in
-   ZLibraries/Common/zhelpers/FormatHelpers.cpp (Style::GetSchemes - "nord"/"earth"/"twilight"
-   entries) rather than invented from nothing: real, already-liked schemes, re-tuned for web
-   contrast (those tables are console ANSI colors on a near-black background only - the *-light
-   variants here are new, built to the same palette identity, not copied from anywhere). Alex
-   wants to try a few and narrow down, so this errs toward offering options rather than picking. */
+   Nord and Twilight are light/dark pairs adapted from the terminal color tables in
+   ZLibraries/Common/zhelpers/FormatHelpers.cpp (Style::GetSchemes) and re-tuned for web contrast.
+   2026-09-16: Earth/Earth Dark, Synthwave and Sorbet were dropped; Paper, Nord and Twilight
+   (light) got a contrast pass - darker ink down the whole text ramp, borders that read, and a
+   ground that separates from the white panels; Slate and Lagoon joined the light set and a new
+   Medium group (Storm, Heather) sits between the light and dark ones. */
 :root[data-palette="nord"]{
-  --bg:#eceff4; --panel:#ffffff; --sunk:#e5e9f0;
-  --ink:#2e3440; --body:#3b4252; --dim:#5e6779; --faint:#8b93a3;
-  --line:#d3d9e3; --line-soft:#e2e6ee;
-  --accent:#5e81ac; --accent-ink:#456384; --accent-wash:#e1e9f2;
-  --warn:#a6791e; --warn-wash:#f7edd6; --warn-line:#e3cd94;
-  --bad:#bf616a; --bad-wash:#fae4e5; --bad-line:#e6b3b8;
-  --good:#4c7a3d; --good-wash:#e6f0e0; --good-line:#b5d1a5;
-  --mark:#f2dfa0;
-  --accent2:#6b73b8; --good2:#3f7a56; --warn2:#a8651e;
-  --info:#4a7ba8; --info-wash:#e1e9f2; --info-line:#b7c9dd;
-  --field-bg:#ffffff; --field-ink:#2e3440; --field-dim:#5e6779;
+  --bg:#e3e8ef; --panel:#ffffff; --sunk:#dce2ea;
+  --ink:#1b212c; --body:#2b3240; --dim:#4a5467; --faint:#687287;
+  --line:#c3cbd8; --line-soft:#d6dce6;
+  --accent:#46689a; --accent-ink:#325480; --accent-wash:#dae4f1;
+  --warn:#86600f; --warn-wash:#f6ecd4; --warn-line:#d9c07f;
+  --bad:#a73f49; --bad-wash:#f8e1e3; --bad-line:#e0a8ae;
+  --good:#3d6a2f; --good-wash:#e2eddb; --good-line:#a6c795;
+  --mark:#f0d88c;
+  --accent2:#5a5fa8; --good2:#2f6e4a; --warn2:#98561a;
+  --info:#3e6d9c; --info-wash:#dce6f2; --info-line:#a9bfd9;
+  --field-bg:#ffffff; --field-ink:#1b212c; --field-dim:#4a5467;
+  --tag-bg:#dfe6f0; --tag-ink:#3a5b88; --eyebrow-ink:#46689a;
 }
 :root[data-palette="nord-dark"]{
-  --bg:#2e3440; --panel:#3b4252; --sunk:#333a48;
-  --ink:#eceff4; --body:#d8dee9; --dim:#9aa5b8; --faint:#616e88;
-  --line:#4c566a; --line-soft:#434c5e;
+  /* A step deeper than Nord's own polar night, and ramps spent on Nord's aurora colors (frost
+     into purple, orange into yellow), so it no longer reads as a twin of Storm. */
+  --bg:#252a34; --panel:#313845; --sunk:#2a303b;
+  --ink:#eceff4; --body:#d8dee9; --dim:#a3adbf; --faint:#8490a6;
+  --line:#4a5468; --line-soft:#3d4557;
   --accent:#88c0d0; --accent-ink:#a9d4e0; --accent-wash:#2a3a41;
   --warn:#ebcb8b; --warn-wash:#3d3624; --warn-line:#5c5334;
   --bad:#e0949b; --bad-wash:#3a2429; --bad-line:#5c3840;
   --good:#a3be8c; --good-wash:#2c3826; --good-line:#455339;
   --mark:#4a4020;
-  --accent2:#a8d6e2; --good2:#c0d4ab; --warn2:#f2dcaa;
+  --accent2:#c3a3d6; --good2:#8fcfc8; --warn2:#e09a80;
+  --hi-a:#88c0d0; --hi-b:#b48ead;
+  --cta-a:#e0967c; --cta-b:#ebcb8b; --cta-edge:#d9b36e; --cta-ang:100deg;
+  --tag-bg:#3a4556; --tag-ink:#a9d4e0; --eyebrow-ink:#88c0d0;
   --info:#81a1c1; --info-wash:#26303d; --info-line:#3f5062;
   --field-bg:#d8e0ec; --field-ink:#232a36; --field-dim:#5b6577;
   /* Nord is the coolest palette here and the default warn-wash ground was the most obviously wrong
      on it - a khaki slab in the middle of a blue-grey page. Same recipe as the vivid set: the
      palette's own accent washed into --sunk. */
-  --todo-top:#3e4b5a; --todo-bot:#333a48;
-  --todo-edge:#4c566a; --todo-bar:#88c0d0; --todo-glow:#88c0d0;
-}
-:root[data-palette="earth"]{
-  --bg:#f3e8d5; --panel:#faf3e6; --sunk:#ecdfc4;
-  --ink:#2c2015; --body:#4a3820; --dim:#7c6b4e; --faint:#a8987a;
-  --line:#dcc9a0; --line-soft:#e8d8b6;
-  --accent:#a3672f; --accent-ink:#7d4d20; --accent-wash:#ecdcb8;
-  --warn:#a1620c; --warn-wash:#f5e6c8; --warn-line:#d8b981;
-  --bad:#a32c22; --bad-wash:#f5d9d2; --bad-line:#d99a8e;
-  --good:#5c7a3d; --good-wash:#e2ecd8; --good-line:#a9c78f;
-  --mark:#f0d98a;
-  --accent2:#ad4a2a; --good2:#4f7d52; --warn2:#a8541a;
-  --info:#3d6f9e; --info-wash:#e2ecf4; --info-line:#a8c4da;
-  --field-bg:#fffcf3; --field-ink:#2c2015; --field-dim:#7c6b4e;
-}
-:root[data-palette="earth-dark"]{
-  --bg:#1a140d; --panel:#241c13; --sunk:#181209;
-  --ink:#f0e6d2; --body:#d2bea0; --dim:#a8987a; --faint:#786a52;
-  --line:#4a3820; --line-soft:#3a2c1a;
-  --accent:#dcb478; --accent-ink:#eecb92; --accent-wash:#3a2e18;
-  --warn:#c87832; --warn-wash:#3a2612; --warn-line:#5c4020;
-  --bad:#e07a6a; --bad-wash:#3a1c1a; --bad-line:#5c302e;
-  --good:#88aa55; --good-wash:#26301a; --good-line:#3e4c2c;
-  --mark:#4a3818;
-  --accent2:#efd3a2; --good2:#a8c876; --warn2:#e09a58;
-  --info:#7fa8c8; --info-wash:#16252e; --info-line:#2e4553;
-  --field-bg:#ebe0cd; --field-ink:#241c13; --field-dim:#7a6a4e;
+  --todo-top:#2f4a5a; --todo-bot:#2a2440;
+  --todo-edge:#4a5468; --todo-bar:#88c0d0; --todo-glow:#b48ead;
+  /* Elevation: see the ladder in :root. */
+  --sh:10 13 20; --sh-k:2.2; --rim:169 212 224; --rim-a:.11;
+  --panel-2:#343d49; --panel-3:#38414d; --panel-4:#3b4551; --faint-up:var(--dim);
 }
 /* Twilight is no longer "the purple one" - it's the specific soft-indigo look Alex picked out of
    a reference screenshot, and it's the only palette that spends all five of the new token groups
@@ -192,26 +248,26 @@ R"HTML(<!doctype html>
    of the button. The teal end of the highlight card is 3.4:1 and carries no body text by
    layout - the number and the caption both sit over the indigo half. */
 :root[data-palette="twilight"]{
-  --bg:#f6f5fe; --panel:#ffffff; --sunk:#efedfd;
-  --ink:#1c1839; --body:#3d3866; --dim:#6a6394; --faint:#867eab;
-  --line:#e7e4f8; --line-soft:#f1effc;
-  --accent:#5b4ce6; --accent-ink:#4438cc; --accent-wash:#edecfe;
-  --warn:#b3730c; --warn-wash:#fdf4e4; --warn-line:#f0d7a8;
-  --bad:#d4344f; --bad-wash:#fdecef; --bad-line:#f5bcc6;
-  --good:#0f8f74; --good-wash:#e7f8f3; --good-line:#a9e2d3;
+  --bg:#efedfc; --panel:#ffffff; --sunk:#e7e4fa;
+  --ink:#141030; --body:#2d2856; --dim:#534d7e; --faint:#6c6594;
+  --line:#d8d4ef; --line-soft:#e5e2f6;
+  --accent:#5040dc; --accent-ink:#392cb6; --accent-wash:#e9e7fe;
+  --warn:#9c6208; --warn-wash:#fdf4e4; --warn-line:#e8c98f;
+  --bad:#c42c46; --bad-wash:#fdecef; --bad-line:#f5bcc6;
+  --good:#0b7a63; --good-wash:#e7f8f3; --good-line:#a9e2d3;
   --mark:#ffe9a3;
-  --accent2:#7d4ae8; --good2:#1b8f56; --warn2:#c98a1a; --bad2:#e04a86;
+  --accent2:#7d4ae8; --good2:#177a4a; --warn2:#c98a1a; --bad2:#e04a86;
   --info:#3f6fe0; --info-wash:#eaf0fe; --info-line:#c2cef6;
-  --field-bg:#ffffff; --field-ink:#1c1839; --field-dim:#6a6394;
+  --field-bg:#ffffff; --field-ink:#141030; --field-dim:#534d7e;
   --hi-a:#5b53ea; --hi-b:#0f9d8e; --hi-ang:105deg;
   --cta-a:#cf4a15; --cta-b:#6a2c74; --cta-edge:#6a2c74; --cta-ang:100deg;
-  --tag-bg:#eeecfd; --tag-ink:#5348ba;
-  --eyebrow-ink:#5b4ce6;
+  --tag-bg:#e9e6fd; --tag-ink:#4236aa;
+  --eyebrow-ink:#5040dc;
   /* Warm, but a wash rather than the slab it was: cream at the top of the panel fading to the
      same white as every other card by the bottom. The old flat --warn-wash over a panel this
      tall was the one thing on the page reading as tan. */
   --todo-top:#fdf5e9; --todo-bot:#ffffff;
-  --todo-edge:#f3e6d2; --todo-bar:#e89a2c; --todo-glow:#e8a54a;
+  --todo-edge:#ead8bb; --todo-bar:#e89a2c; --todo-glow:#e8a54a;
 }
 :root[data-palette="twilight-dark"]{
   --bg:#13111f; --panel:#1c1930; --sunk:#171429;
@@ -231,6 +287,9 @@ R"HTML(<!doctype html>
      the recipe the vivid palettes use. */
   --todo-top:#2a2348; --todo-bot:#171429;
   --todo-edge:#3e2f63; --todo-bar:#b39ddb; --todo-glow:#b39ddb;
+  /* Elevation: see the ladder in :root. */
+  --sh:5 3 14; --sh-k:3.2; --rim:203 184 232; --rim-a:.13;
+  --panel-2:#221e36; --panel-3:#27233c; --panel-4:#2c2841; --faint-up:var(--dim);
 }
 :root[data-palette="midnight"]{
   --bg:#141317; --panel:#1b1a20; --sunk:#232128;
@@ -245,19 +304,18 @@ R"HTML(<!doctype html>
   --info:#7fa2f0; --info-wash:#182339; --info-line:#2c3c5e;
   --field-bg:#e2dfe9; --field-ink:#17161c; --field-dim:#6b6878;
   /* Midnight's ground is neutral near-black, so the warm default read as a brown patch rather than
-     as a tint of anything on the page. Its own violet accent into --sunk instead.
-     Earth Dark deliberately keeps the default: it IS the brown palette, its accent is a warm tan,
-     and the warn wash lands on-identity there rather than as mud. Checked, not skipped. */
+     as a tint of anything on the page. Its own violet accent into --sunk instead. */
   --todo-top:#302c3f; --todo-bot:#232128;
   --todo-edge:#2c2a32; --todo-bar:#a493f5; --todo-glow:#a493f5;
+  /* Elevation: see the ladder in :root. */
+  --sh:6 5 10; --sh-k:3.2; --rim:192 179 255; --rim-a:.12;
+  --panel-2:#211f27; --panel-3:#26242e; --panel-4:#2b2935; --faint-up:var(--dim);
 }
 /* ---- the vivid set ----------------------------------------------------------------------------
-   The eight above are quiet schemes where the second gradient stop is just a lighter shade of the
-   first, so their buttons gain depth without changing hue. These four spend that second stop on a
-   DIFFERENT HUE instead - violet into magenta, indigo into pink, cyan into mint, magenta into
-   coral - which is what turns a filled button from "a colored rectangle" into something with a
-   ramp across it. Three are dark because that's where a two-hue ramp has room to read; Sorbet is
-   the light one that still wants to shout.
+   The quiet schemes above are ones where the second gradient stop is just a lighter shade of the
+   first, so their buttons gain depth without changing hue. These two spend that second stop on a
+   DIFFERENT HUE instead - violet into magenta, cyan into mint - which is what turns a filled button from "a colored rectangle" into something with a
+   ramp across it. Both are dark because that's where a two-hue ramp has room to read.
    They also redefine the --todo-* ground (see .ov-todo): the default "tint the panel with the
    warning color" rule paints a large olive slab on a saturated dark palette, so these carry their
    own ground instead - a wash of the palette's OWN accent at the top fading into --sunk, which
@@ -278,11 +336,14 @@ R"HTML(<!doctype html>
   --todo-edge:#33265c; --todo-bar:#8b5cf6; --todo-glow:#8b5cf6;
   --info:#6c8cff; --info-wash:#1a2145; --info-line:#2e3a6b;
   --field-bg:#ded6f0; --field-ink:#171230; --field-dim:#6b5f8c;
+  /* Elevation: see the ladder in :root. */
+  --sh:4 0 12; --sh-k:3.2; --rim:196 168 255; --rim-a:.14;
+  --panel-2:#1f1938; --panel-3:#251e3f; --panel-4:#2a2245; --faint-up:var(--dim);
 }
 /* Aurora replaces an earlier warm "Ember" - a brown-grounded dark theme, which turns out to be the
    one thing a large tinted surface cannot survive: every wash on it reads as mud rather than as a
-   color. Nebula and Synthwave are both purple-family, so the third vivid slot goes somewhere cold
-   instead: deep slate-teal ground, cyan into mint. */
+   color. Nebula is purple-family, so the other vivid slot goes somewhere cold instead: deep
+   slate-teal ground, cyan into mint. */
 :root[data-palette="aurora"]{
   --bg:#071619; --panel:#0f2630; --sunk:#0b1e26;
   --ink:#e8f6f7; --body:#b6d4d9; --dim:#7fa3ab; --faint:#557880;
@@ -297,36 +358,105 @@ R"HTML(<!doctype html>
   --todo-edge:#1b3f4a; --todo-bar:#0e9fb8; --todo-glow:#0e9fb8;
   --info:#3fa9d9; --info-wash:#0e2c3d; --info-line:#1c4358;
   --field-bg:#d3e6ea; --field-ink:#08222b; --field-dim:#4a6a72;
+  /* Elevation: see the ladder in :root. */
+  --sh:1 8 11; --sh-k:3.2; --rim:95 214 232; --rim-a:.12;
+  --panel-2:#112b35; --panel-3:#14303b; --panel-4:#16353f; --faint-up:var(--dim);
 }
-:root[data-palette="synth"]{
-  --bg:#0d0f1f; --panel:#161a33; --sunk:#111428;
-  --ink:#eef1ff; --body:#c3c9ec; --dim:#8f97c4; --faint:#626a9c;
-  --line:#2c3363; --line-soft:#232951;
-  --accent:#5b63e0; --accent-ink:#9aa4ff; --accent-wash:#1e2450;
-  --warn:#d99310; --warn-wash:#33280d; --warn-line:#57451a;
-  --bad:#e0344f; --bad-wash:#35131f; --bad-line:#5c2338;
-  --good:#1fae7c; --good-wash:#0f2e26; --good-line:#1f5745;
-  --mark:#3a2a5c;
-  --accent2:#f062c8; --good2:#4de0c0; --warn2:#f5cf5c;
-  --todo-top:#1b2149; --todo-bot:#111428;
-  --todo-edge:#2c3363; --todo-bar:#5b63e0; --todo-glow:#5b63e0;
-  --info:#4fb6f0; --info-wash:#12253d; --info-line:#23415c;
-  --field-bg:#d8def2; --field-ink:#121628; --field-dim:#5a6280;
+/* Paper's own extras - see the note in :root. Berry into burnt orange on the filled controls, and
+   a TODO ground that is a real amber fill all the way down: the old wash faded to white at the
+   bottom, which is exactly where the white TODO cards sit, so they vanished into it. */
+:root[data-palette="paper"]{
+  --accent2:#c24a1c; --good2:#1f6f5c; --warn2:#b0561a;
+  --hi-a:#a8326a; --hi-b:#c24a1c;
+  --tag-bg:#f5e4ec; --tag-ink:#8a2254; --eyebrow-ink:#a8326a;
+  --todo-top:#f3dfbd; --todo-bot:#efe3cc;
+  --todo-edge:#dcbd89; --todo-bar:#d9861a; --todo-glow:#d9861a;
+  /* Warm ground, warm shadow: the neutral default greys the cream out. */
+  --sh:46 34 18;
 }
-:root[data-palette="sorbet"]{
-  --bg:#fff5f7; --panel:#ffffff; --sunk:#ffe9ef;
-  --ink:#2b1a24; --body:#55374a; --dim:#8a6b7c; --faint:#b799a8;
-  --line:#f2d0dc; --line-soft:#f9e2ea;
-  --accent:#d63f83; --accent-ink:#b02f6b; --accent-wash:#ffe4ee;
-  --warn:#b5730a; --warn-wash:#fdf1dc; --warn-line:#ecc98f;
-  --bad:#cf2b45; --bad-wash:#ffe6ea; --bad-line:#f5b3bf;
-  --good:#0f8f60; --good-wash:#e2f8ee; --good-line:#a3e2c8;
-  --mark:#ffe08a;
-  --accent2:#e04f4f; --good2:#0f9080; --warn2:#b8571a;
-  --todo-top:#fff0f5; --todo-bot:#ffffff;
-  --todo-edge:#f2d0dc; --todo-bar:#d63f83; --todo-glow:#d63f83;
-  --info:#3f7fd0; --info-wash:#e6eefb; --info-line:#b3cbee;
-  --field-bg:#ffffff; --field-ink:#2b1a24; --field-dim:#8a6b7c;
+/* ---- the added set, 2026-09-16 ------------------------------------------------------------------
+   Built to sit beside Twilight rather than compete with it: clean near-neutral grounds, a text
+   ramp that stays readable all the way down to --faint, and a two-HUE ramp on the filled controls
+   so they keep the pop the rest of the file is built around. Light pair: Slate (blue into cyan)
+   and Lagoon (teal into blue). Medium pair: Storm and Heather - mid-tone grounds lighter than any
+   dark palette, so the page is soft rather than a dark room, with light ink and light accents.
+   Filled controls print --panel, so on the medium pair the button is light and its label is the
+   mid-tone ground, same as the dark palettes. */
+:root[data-palette="slate"]{
+  --bg:#dfe4ec; --panel:#ffffff; --sunk:#d7dde7;
+  --ink:#0f172a; --body:#253247; --dim:#45526a; --faint:#626e85;
+  --line:#c2cad8; --line-soft:#d6dce6;
+  --accent:#2f5bd8; --accent-ink:#1f44b3; --accent-wash:#e5ecfd;
+  --warn:#9a5806; --warn-wash:#fcf2e2; --warn-line:#ebcd9b;
+  --bad:#c12a3b; --bad-wash:#fde9eb; --bad-line:#f0b8bf;
+  --good:#12765a; --good-wash:#e3f4ed; --good-line:#a2d9c3;
+  --mark:#fde68a;
+  --accent2:#0b7894; --good2:#0e7569; --warn2:#b0470f; --bad2:#cc3468;
+  --info:#2d6cb4; --info-wash:#e4edf8; --info-line:#b5cce8;
+  --field-bg:#ffffff; --field-ink:#0f172a; --field-dim:#58647a;
+  --hi-a:#2f5bd8; --hi-b:#0b9ab8;
+  --tag-bg:#e2eafa; --tag-ink:#2849ae; --eyebrow-ink:#2f5bd8;
+  /* Blue, not the cream every other light palette uses - a solid tint top to bottom so the white
+     cards stand off it, and the one place Slate's identity is a whole surface rather than a line. */
+  --todo-top:#cfdcf5; --todo-bot:#d9e2f0;
+  --todo-edge:#a9bde3; --todo-bar:#2f5bd8; --todo-glow:#2f5bd8;
+}
+:root[data-palette="lagoon"]{
+  --bg:#ebf4f5; --panel:#ffffff; --sunk:#e0eef0;
+  --ink:#0a1e25; --body:#1f3d47; --dim:#41606a; --faint:#617d86;
+  --line:#c5dbe0; --line-soft:#d9e9ec;
+  --accent:#0a6f82; --accent-ink:#075465; --accent-wash:#ddf1f4;
+  --warn:#955805; --warn-wash:#fbf2e1; --warn-line:#e8cc9c;
+  --bad:#bd2e3e; --bad-wash:#fce9eb; --bad-line:#eeb9c0;
+  --good:#1a7443; --good-wash:#e2f3e8; --good-line:#a5d6b8;
+  --mark:#fbe38e;
+  --accent2:#2a5cc6; --good2:#0f7064; --warn2:#ab4812; --bad2:#c83a66;
+  --info:#2b69ad; --info-wash:#e4edf8; --info-line:#b5cbe7;
+  --field-bg:#ffffff; --field-ink:#0a1e25; --field-dim:#526f78;
+  --hi-a:#0a6f82; --hi-b:#2a5cc6;
+  --tag-bg:#dcf0f3; --tag-ink:#085f70; --eyebrow-ink:#0a6f82;
+  --todo-top:#fcf4e7; --todo-bot:#ffffff;
+  --todo-edge:#ecd9b8; --todo-bar:#d9861a; --todo-glow:#e39a35;
+}
+:root[data-palette="storm"]{
+  --bg:#2f3746; --panel:#3b4456; --sunk:#343d4d;
+  --ink:#f4f7fc; --body:#d8dfea; --dim:#b1bbcb; --faint:#95a0b3;
+  --line:#536077; --line-soft:#475369;
+  --accent:#86baf6; --accent-ink:#abd0fa; --accent-wash:#405372;
+  --warn:#f0c26c; --warn-wash:#4a4533; --warn-line:#6d6446;
+  --bad:#f7a3a8; --bad-wash:#533d48; --bad-line:#795562;
+  --good:#8edbad; --good-wash:#35514b; --good-line:#517266;
+  --mark:#645a2c;
+  --accent2:#86e3e8; --good2:#aeebc6; --warn2:#f7d893; --bad2:#f9b9c6;
+  --info:#97b9ee; --info-wash:#394962; --info-line:#566a86;
+  --field-bg:#dfe6f0; --field-ink:#1b2230; --field-dim:#586377;
+  --hi-a:#86baf6; --hi-b:#6fd6dc;
+  --tag-bg:#48566e; --tag-ink:#c0dafa; --eyebrow-ink:#a3c8f7;
+  --todo-top:#43587a; --todo-bot:#343d4d;
+  --todo-edge:#536077; --todo-bar:#86baf6; --todo-glow:#86baf6;
+  /* Elevation: see the ladder in :root. */
+  --sh:12 16 24; --sh-k:2.2; --rim:171 208 250; --rim-a:.10;
+  --panel-2:#3e485a; --panel-3:#414c60; --panel-4:#445064; --faint-up:var(--dim);
+}
+:root[data-palette="heather"]{
+  --bg:#39344a; --panel:#453f59; --sunk:#3e3851;
+  --ink:#f8f4fd; --body:#e0d8ec; --dim:#bdb2d0; --faint:#a095b5;
+  --line:#61577a; --line-soft:#554b6c;
+  --accent:#c6aaf8; --accent-ink:#dac8fc; --accent-wash:#584a74;
+  --warn:#f3c472; --warn-wash:#534a3a; --warn-line:#766a4e;
+  --bad:#f8a5b5; --bad-wash:#5a4254; --bad-line:#7e5a6e;
+  --good:#93deb8; --good-wash:#3c5754; --good-line:#58786d;
+  --mark:#6e5d32;
+  --accent2:#f3a8d8; --good2:#b3eed2; --warn2:#f8dca0; --bad2:#fbbdd0;
+  --info:#a3baf2; --info-wash:#444d6c; --info-line:#5f6b8e;
+  --field-bg:#e7e0f1; --field-ink:#231e31; --field-dim:#675e7c;
+  --hi-a:#b89af4; --hi-b:#ef98cc;
+  --tag-bg:#564b70; --tag-ink:#e0cffc; --eyebrow-ink:#d0b8fa;
+  --todo-top:#5a4c7c; --todo-bot:#3e3851;
+  --todo-edge:#61577a; --todo-bar:#c6aaf8; --todo-glow:#c6aaf8;
+  /* Elevation: see the ladder in :root. */
+  --sh:16 12 26; --sh-k:2.2; --rim:218 200 252; --rim-a:.10;
+  --panel-2:#49435d; --panel-3:#4d4762; --panel-4:#524a67; --faint-up:var(--dim);
 }
 *{box-sizing:border-box}
 /* THE SHELL IS A SIDEBAR + A COLUMN. #shell owns the viewport as a flex ROW: a fixed-width rail
@@ -379,6 +509,13 @@ body{margin:0;background:var(--bg);color:var(--body);font:14px/1.55 var(--sans);
   border:1px solid var(--line);border-radius:6px;padding:6px 7px;cursor:pointer}
 
 /* ---------- about / help ---------- */
+/* Rung 5. A dialog is the one thing above EVERYTHING, and this is the only place in the file
+   where that is stated once for all of them rather than per id.
+   A DIALOG DOES NOT CLIMB THE SURFACE the way a raised card does, even on a dark palette. It
+   opens over a dimmed backdrop, which already separates it from the whole page far harder
+   than a lighter panel could - and it holds the largest block of small print in the app, so
+   the climb would be paying contrast for separation that is already bought. */
+dialog{box-shadow:var(--e5)}
 dialog#about,dialog#agent-dialog{border:1px solid var(--line);border-radius:var(--r);padding:0;
   width:min(420px,90vw);background:var(--panel);color:var(--body);overflow:hidden}
 dialog#about::backdrop,dialog#agent-dialog::backdrop{background:rgba(0,0,0,.45)}
@@ -564,7 +701,9 @@ dialog#detail-dialog{border:1px solid var(--line);border-radius:var(--r);padding
    is on screen, at which point every line wraps early. 96vw rather than 94 so the wide state can
    actually use a narrow screen instead of being clamped back to the same width. */
 dialog#detail-dialog.wide{width:min(960px,96vw)}
-@media(prefers-reduced-motion:reduce){dialog#detail-dialog{transition:none}}
+@media(prefers-reduced-motion:reduce){dialog#detail-dialog{transition:none}
+  /* The lift still happens, it just arrives instantly. */
+  .mcard,.ov-trow{transition:none}}
 dialog#detail-dialog::backdrop{background:rgba(0,0,0,.45)}
 dialog#detail-dialog #detail{max-height:88vh;padding-right:56px}
 dialog#detail-dialog .dclose{position:absolute;top:12px;right:12px;width:28px;height:28px;
@@ -634,8 +773,12 @@ nav button.on .pill{background:color-mix(in srgb,var(--accent) 18%,transparent);
    survive there, and a checkbox label wrapping under them is worse than not offering it.
    The [hidden] rule is not redundant: display:flex on the class beats the UA sheet's own
    [hidden]{display:none}, so without it the JS toggle would do nothing at all. */
+/* margin:0 because the bare `label{}` rule further down - the editor's field captions - also
+   matches this one and hands it margin:14px 0 5px. #topbar centres the MARGIN box, so an
+   asymmetric top/bottom margin drops the control (14-5)/2 = 4.5px below every sibling in the
+   bar. Measured, not guessed: it sat at y-mid 34 against 29.5 for Clear, the stats and Brief. */
 .topopt{display:flex;align-items:center;gap:6px;flex:none;cursor:pointer;user-select:none;
-  font:12px var(--sans);color:var(--dim);white-space:nowrap}
+  margin:0;font:12px var(--sans);color:var(--dim);white-space:nowrap}
 .topopt:hover{color:var(--ink)}
 .topopt input{accent-color:var(--accent);width:13px;height:13px;cursor:pointer;margin:0;flex:none}
 .topopt[hidden]{display:none}
@@ -699,7 +842,7 @@ main{flex:1;min-height:0;overflow:hidden}
    card. One declaration that does the right thing at both ends. */
 .dsect{border:1px solid var(--line);border-radius:9px;padding:12px 15px 14px;margin-bottom:13px;
   background:linear-gradient(rgba(255,255,255,.08),rgba(255,255,255,.08)),var(--panel);
-  box-shadow:0 1px 3px rgba(0,0,0,.14)}
+  box-shadow:var(--e1)}
 /* Legends name the sections, so they have to survive a dark palette. At 10px in --faint they did
    not - --faint is the tone for things you are meant to skip past. Bigger, bolder, and in --body,
    which is the same tone the prose uses. Not scoped to .dsect: priority has no box any more and
@@ -740,9 +883,11 @@ main{flex:1;min-height:0;overflow:hidden}
 /* ---------- controls ---------- */
 .search{position:relative;margin-bottom:12px}
 .search input{width:100%;font:15px var(--sans);color:var(--ink);background:var(--panel);
-  border:1px solid var(--line);border-radius:var(--r);padding:10px 12px 10px 34px}
+  border:1px solid var(--line);border-radius:var(--r);padding:10px 12px 10px 34px;
+  box-shadow:var(--sunk-shadow)}
 .search svg{position:absolute;left:11px;top:11px;width:14px;height:14px;color:var(--faint)}
-.search input:focus{outline:0;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-wash)}
+.search input:focus{outline:0;border-color:var(--accent);
+  box-shadow:0 0 0 3px var(--accent-wash),var(--sunk-shadow)}
 .search input::placeholder{color:var(--faint)}
 .kbd{position:absolute;right:10px;top:9px;font:10px var(--mono);color:var(--faint);
   border:1px solid var(--line);border-radius:4px;padding:1px 5px;background:var(--sunk)}
@@ -758,11 +903,15 @@ main{flex:1;min-height:0;overflow:hidden}
 .toggle.on{background:var(--accent-wash);border-color:var(--accent)}
 .toggle.on i{left:14px;background:var(--accent)}
 
+/* A FIELD IS A WELL, NOT A PLATE. Raising the cards and leaving the inputs flat made them
+   read as the same kind of object; sinking them is what keeps "read this" and "type here"
+   apart now that everything else on the page has a height. */
 input,select,textarea{font:14px var(--sans);color:var(--ink);background:var(--panel);
-  border:1px solid var(--line);border-radius:6px;padding:7px 9px;width:100%}
+  border:1px solid var(--line);border-radius:6px;padding:7px 9px;width:100%;
+  box-shadow:var(--sunk-shadow)}
 textarea{resize:vertical;line-height:1.55}
 input:focus,select:focus,textarea:focus{outline:0;border-color:var(--accent);
-  box-shadow:0 0 0 3px var(--accent-wash)}
+  box-shadow:0 0 0 3px var(--accent-wash),var(--sunk-shadow)}
 
 /* Text boxes in the editor are paper in every palette: a light ground with dark ink, because a
    field you type into should look like something you type into whatever the app around it is
@@ -783,8 +932,10 @@ input:focus,select:focus,textarea:focus{outline:0;border-color:var(--accent);
 button.btn{font:13px var(--sans);color:var(--ink);cursor:pointer;
   background:linear-gradient(180deg,var(--panel),var(--sunk));
   border:1px solid var(--line);border-radius:6px;padding:7px 12px;width:auto}
-button.btn:hover{border-color:var(--dim);box-shadow:0 2px 6px rgba(0,0,0,.10)}
-button.btn:active{box-shadow:inset 0 2px 4px rgba(0,0,0,.14)}
+button.btn:hover{border-color:var(--dim);box-shadow:var(--e2)}
+/* A press goes DOWN - the one place the ladder runs backwards, and the reason --sunk-shadow
+   is a token rather than a one-off on the fields. */
+button.btn:active{box-shadow:var(--sunk-shadow)}
 
 /* ---------- FILLED CONTROLS ----------
    One recipe, shared by every filled control in the app: a two-stop ramp from the lighter second
@@ -802,11 +953,11 @@ button.btn:active{box-shadow:inset 0 2px 4px rgba(0,0,0,.14)}
    a far worse failure than a missing shadow. */
 button.primary,button.warnfill,button.badfill,.chip.on,.prio label.on{
   color:var(--panel);border-style:solid;border-width:1px;
-  box-shadow:0 1px 2px rgba(0,0,0,.16),inset 0 1px 0 rgba(255,255,255,.22)}
+  box-shadow:var(--e1),inset 0 1px 0 rgba(255,255,255,.22)}
 button.primary:hover,button.warnfill:hover,button.badfill:hover{
-  box-shadow:0 3px 12px rgba(0,0,0,.22),inset 0 1px 0 rgba(255,255,255,.3)}
+  box-shadow:var(--e2),inset 0 1px 0 rgba(255,255,255,.3)}
 button.primary:active,button.warnfill:active,button.badfill:active{
-  filter:brightness(.96);box-shadow:inset 0 2px 5px rgba(0,0,0,.3)}
+  filter:brightness(.96);box-shadow:var(--sunk-shadow)}
 
 button.primary,.chip.on,.prio label.on{
   background:linear-gradient(170deg,var(--accent2),var(--accent));border-color:var(--accent)}
@@ -825,11 +976,11 @@ button.badfill{background:linear-gradient(170deg,var(--bad2),var(--bad));
 button.badfill:hover{filter:brightness(1.05) saturate(1.08);border-color:var(--bad)}
 
 @supports (color:color-mix(in srgb,red,blue)){
-  button.primary:hover{box-shadow:0 3px 14px color-mix(in srgb,var(--accent) 45%,transparent),
+  button.primary:hover{box-shadow:var(--e2),0 3px 14px color-mix(in srgb,var(--accent) 45%,transparent),
     inset 0 1px 0 rgba(255,255,255,.3)}
-  button.warnfill:hover{box-shadow:0 3px 14px color-mix(in srgb,var(--cta-b) 45%,transparent),
+  button.warnfill:hover{box-shadow:var(--e2),0 3px 14px color-mix(in srgb,var(--cta-b) 45%,transparent),
     inset 0 1px 0 rgba(255,255,255,.3)}
-  button.badfill:hover{box-shadow:0 3px 14px color-mix(in srgb,var(--bad) 45%,transparent),
+  button.badfill:hover{box-shadow:var(--e2),0 3px 14px color-mix(in srgb,var(--bad) 45%,transparent),
     inset 0 1px 0 rgba(255,255,255,.3)}
 }
 
@@ -887,9 +1038,13 @@ mark{background:var(--mark);color:inherit;border-radius:2px;padding:0 1px}
 .cardgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
 .mcard{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);
   border-top:3px solid var(--cat,var(--accent));padding:16px 17px 14px;cursor:pointer;
-  display:flex;flex-direction:column;gap:9px;min-height:200px}
-.mcard:hover{border-color:var(--dim)}
-.mcard.sel{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-wash)}
+  display:flex;flex-direction:column;gap:9px;min-height:200px;
+  /* Rung 1 - the resting height of the whole grid. Everything else on a card is measured
+     against this, which is why it is deliberately the quietest shadow in the file. */
+  box-shadow:var(--e1);transition:box-shadow .18s ease,background .18s ease}
+.mcard:hover{border-color:var(--dim);background:var(--panel-2);box-shadow:var(--e2)}
+.mcard.sel{border-color:var(--accent);background:var(--panel-3);
+  box-shadow:0 0 0 3px var(--accent-wash),var(--e3)}
 /* "Touched in the last few hours" (see FRESH_MS). --accent is the token every palette already
    tunes for contrast against --panel, in both the light and the dark half, which is exactly the
    guarantee a raw hex would not have across twelve of them.
@@ -897,8 +1052,12 @@ mark{background:var(--mark);color:inherit;border-radius:2px;padding:0 1px}
    jot ages out on the 15s refresh. outline-offset pulls it inside the existing 1px edge so the
    card reads as thick-bordered rather than ringed, and the same one rule works in list mode,
    where .mcard's borders are rearranged entirely. */
-.mcard.fresh{outline:2px solid var(--accent);outline-offset:-1px}
-.mcard.fresh.sel{outline-width:3px}
+.mcard.fresh{outline:2px solid var(--accent);outline-offset:-1px;
+  background:var(--panel-2);box-shadow:var(--e2)}
+.mcard.fresh.sel{outline-width:3px;background:var(--panel-3);
+  box-shadow:0 0 0 3px var(--accent-wash),var(--e3)}
+/* See --faint-up: on the rungs that climb, the foot line climbs with them. */
+.mcard.sel .mfoot,.mcard.fresh .mfoot,.mcard:hover .mfoot{color:var(--faint-up)}
 .cathead{display:flex;align-items:center;gap:7px;min-width:0}
 /* A tinted chip, not a dot-plus-caption - the category has to read at a glance, the way the
    screenshot's scope badge does, not require parsing a line of small caps. color-mix keeps this
@@ -952,8 +1111,8 @@ mark{background:var(--mark);color:inherit;border-radius:2px;padding:0 1px}
    no bar at all. The numbers and captions stay in ink; a swatch beside them carries the identity. */
 :root{--act-you:#5b4ce6;--act-agent:#0f9d8e}
 :root[data-palette="twilight-dark"],:root[data-palette="midnight"],:root[data-palette="nord-dark"],
-:root[data-palette="earth-dark"],:root[data-palette="aurora"],:root[data-palette="nebula"],
-:root[data-palette="synth"]{--act-you:#8f74ee;--act-agent:#28a896}
+:root[data-palette="aurora"],:root[data-palette="nebula"],:root[data-palette="storm"],
+:root[data-palette="heather"]{--act-you:#8f74ee;--act-agent:#28a896}
 .ov-act{position:relative;overflow:hidden;margin-bottom:20px}
 /* The pop: the palette's own highlight gradient as a rule across the top, where it carries no data
    and so cannot be mistaken for the you/agent pair. */
@@ -1169,9 +1328,10 @@ i.bytes{background:var(--accent)}
    handle, and dragging between columns is still how you reprioritize. */
 .ov-trow{display:flex;flex-direction:column;gap:7px;background:var(--panel);
   border:1px solid var(--line);border-left:3px solid var(--dim);border-radius:8px;
-  padding:11px 13px 10px;margin-bottom:9px;cursor:grab}
+  padding:11px 13px 10px;margin-bottom:9px;cursor:grab;
+  box-shadow:var(--e1);transition:box-shadow .18s ease,background .18s ease}
 .ov-trow:active{cursor:grabbing}
-.ov-trow:hover{border-color:var(--dim);box-shadow:0 2px 10px -3px rgba(0,0,0,.13)}
+.ov-trow:hover{border-color:var(--dim);background:var(--panel-2);box-shadow:var(--e2)}
 .ov-trow.dragging{opacity:.35}
 /* Same treatment a completed card gets in the result grid - faded and struck through, so a shown
    completed TODO can never be mistaken for something still waiting. */
@@ -1180,7 +1340,8 @@ i.bytes{background:var(--accent)}
    scrolling past it, unlike priority (a left border) or overdue (a colored chip). The wash-tint
    version measured too subtle to notice against the other cards on the page - this is meant to
    look like a warning light, not a slightly-different-colored card. */
-.ov-trow.needs-input{background:var(--bad);border-color:var(--bad);box-shadow:0 0 0 1px var(--bad)}
+.ov-trow.needs-input{background:var(--bad);border-color:var(--bad);
+  box-shadow:0 0 0 1px var(--bad),var(--e4)}
 .ov-trow.needs-input .ov-atitle,.ov-trow.needs-input .ov-asub{color:#fff}
 .ov-trow.needs-input .ov-tslug{color:rgba(255,255,255,.8)}
 .ov-trow.needs-input:hover{filter:brightness(1.08)}
@@ -1195,6 +1356,38 @@ i.bytes{background:var(--accent)}
 .ov-trow.done .ov-atitle{text-decoration:line-through;text-decoration-color:var(--faint)}
 .ov-todocol.pr-high .ov-trow{border-left-color:var(--bad)}
 .ov-todocol.pr-normal .ov-trow{border-left-color:var(--warn)}
+
+/* PRIORITY IS HEIGHT.
+   The three columns already say what priority a TODO is; what they could not say is which card in
+   front of you is the one to deal with FIRST, because every card sat flat at the same level and
+   the only difference was a 3px border colour you have to be looking at to see. Now the stack has
+   a height to it and urgency is legible from across the panel, before you read a word:
+
+     overdue   rung 4, and the only shadow in the dashboard that carries a COLOUR
+     high      rung 3
+     normal    rung 1 - the resting height, unchanged
+     low       rung 1
+     done      below the ground, pressed into the panel
+
+   These rules are gathered here, AFTER the priority-column rules above, on purpose: a state
+   (overdue, done) has to beat a column (.ov-todocol.pr-high .ov-trow, specificity 0-3-0) and the
+   plain .ov-trow.done at 0-2-0 would quietly lose to it. Column first, then state, reading down.
+
+   The overdue shadow is mixed from --bad rather than a fixed red so it re-tints itself per
+   palette; unlike the .over outline below it carries no text, so nothing about legibility
+   constrains it - it just has to look like something glowing on the desk. */
+.ov-todocol.pr-high .ov-trow{background:var(--panel-3);box-shadow:var(--e3)}
+.ov-todocol .ov-trow.over{background:var(--panel-4);
+  box-shadow:var(--e4),9px 16px 30px -8px color-mix(in srgb,var(--bad) 55%,transparent)}
+/* Finished work leaves the stack rather than just fading: sunk into the panel, on the ground
+   colour, so a completed TODO can never read as one still waiting even at a glance. */
+.ov-todocol .ov-trow.done{background:var(--sunk);border-color:var(--line);
+  box-shadow:var(--sunk-shadow)}
+.ov-todocol .ov-trow.done:hover{background:var(--sunk);box-shadow:var(--sunk-shadow)}
+/* See --faint-up. The slug is the quietest line on the card and sits on the surface that
+   climbed furthest, so it is the one that would have gone illegible. */
+.ov-todocol.pr-high .ov-trow .ov-tslug,.ov-todocol.pr-high .ov-trow .ov-tid,
+.ov-todocol .ov-trow.over .ov-tslug,.ov-todocol .ov-trow.over .ov-tid{color:var(--faint-up)}
 
 /* chip row - the "what kind of thing is this" line the reference leads with */
 .ov-tchips{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
@@ -1518,20 +1711,22 @@ label u{text-decoration:none;color:var(--accent-ink);text-transform:none;letter-
       <select id="palette-select" title="Color theme">
         <optgroup label="Vivid">
           <option value="nebula">Nebula</option>
-          <option value="synth">Synthwave</option>
           <option value="aurora">Aurora</option>
-          <option value="sorbet">Sorbet</option>
         </optgroup>
         <optgroup label="Light">
           <option value="paper">Paper</option>
+          <option value="slate">Slate</option>
+          <option value="lagoon">Lagoon</option>
           <option value="nord">Nord</option>
-          <option value="earth">Earth</option>
           <option value="twilight">Twilight</option>
+        </optgroup>
+        <optgroup label="Medium">
+          <option value="storm">Storm</option>
+          <option value="heather">Heather</option>
         </optgroup>
         <optgroup label="Dark">
           <option value="midnight">Midnight</option>
           <option value="nord-dark">Nord Dark</option>
-          <option value="earth-dark">Earth Dark</option>
           <option value="twilight-dark">Twilight Dark</option>
         </optgroup>
       </select>
@@ -2622,7 +2817,7 @@ function agentPrompt(){
    makes the rest of the document inert, so a textarea parked on <body> cannot be focused, cannot be
    selected, and copies nothing while reporting success. It has to be mounted INSIDE the dialog
    that is on screen. Both of these were live bugs - measured, not guessed. */
-function copyText(t,btn){
+function copyText(t,btn,onBlocked){
   const done=function(){const was=btn.textContent;btn.textContent='Copied';
     setTimeout(function(){btn.textContent=was;},1400);};
   const fallback=function(){
@@ -2637,8 +2832,11 @@ function copyText(t,btn){
     ta.remove();
     /* Says what to do instead rather than just reporting failure - the text is on screen and
        selectable, so a blocked copy is an inconvenience, not a dead end. */
-    if(ok)done();
-    else toast('Copy blocked by the browser - select the text and copy it by hand','err');
+    if(ok){done();return;}
+    toast('Copy blocked by the browser - select the text and copy it by hand','err');
+    /* The advice above is only actionable if the text is ON SCREEN. A caller that copies without
+       showing it anything passes onBlocked to put it somewhere selectable. */
+    if(onBlocked)onBlocked();
   };
   if(navigator.clipboard&&navigator.clipboard.writeText){
     navigator.clipboard.writeText(t).then(done,fallback);
@@ -4679,11 +4877,14 @@ async function render(){
      default and the darkest explicit palette collapse into near-duplicates. First visit still
      picks a sane starting side (light vs dark) from the OS, but from then on it's just whatever
      was last picked - one of the named values in #palette-select, and an unknown one stored by an
-     older build simply lands on :root's Paper rather than erroring. */
+     palette that no longer exists (Earth, Synthwave, Sorbet were removed) falls back to the OS
+     default rather than leaving the select blank over an unstyled page. */
   const KEY='loom-palette';let saved=null;try{saved=localStorage.getItem(KEY);}catch(e){}
+  const sel=$('#palette-select');
+  if(saved&&![...sel.options].some(o=>o.value===saved))saved=null;
   const initial=saved||(matchMedia('(prefers-color-scheme:dark)').matches?'midnight':'paper');
   document.documentElement.setAttribute('data-palette',initial);
-  const sel=$('#palette-select');sel.value=initial;
+  sel.value=initial;
   sel.addEventListener('change',()=>{
     const v=sel.value;
     document.documentElement.setAttribute('data-palette',v);
@@ -4924,9 +5125,19 @@ $('#new-todo-btn').addEventListener('click',function(){
   render();
 });
 
+/* COPIES STRAIGHT OUT rather than opening the dialog first. The dialog existed to show you the
+   prompt so you could press Copy in it - a modal in front of the only thing anyone wanted from it.
+   The button flips to "Copied" for a beat (see copyText) and that is the whole interaction.
+   THE DIALOG IS STILL REACHABLE, as the blocked-copy fallback, and that is not a theoretical path:
+   this page is normally served over plain http on a LAN address, which is NOT a secure context, so
+   navigator.clipboard is undefined and the execCommand branch is doing the real work. If that is
+   blocked too the text has to be on screen to be selected by hand, which is what the dialog is. */
 $('#agent-btn').addEventListener('click',function(){
-  $('#agent-prompt-text').textContent=agentPrompt();
-  $('#agent-dialog').showModal();
+  const btn=this;
+  copyText(agentPrompt(),btn,function(){
+    $('#agent-prompt-text').textContent=agentPrompt();
+    $('#agent-dialog').showModal();
+  });
 });
 $('#agent-close').addEventListener('click',()=>$('#agent-dialog').close());
 $('#agent-dialog').addEventListener('click',function(e){if(e.target===this)this.close();});
