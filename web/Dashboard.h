@@ -1798,8 +1798,9 @@ label u{text-decoration:none;color:var(--accent-ink);text-transform:none;letter-
        automatically. TODOs get their own panel on the Dashboard, split into High/Normal/Low
        columns; drag a card between columns to reprioritize it. A card leads with its summary and
        carries its slug at the foot; click it to open the editor, which is where every action on
-       a TODO lives. <b>Snooze</b> there just pushes the due date later - there's no separate
-       snoozed state to keep track of. Anything past its due date gets a red outline around the
+       a TODO lives. <b>Priority</b> applies the moment you pick it - like Complete and Snooze,
+       it's a write, not an edit waiting on Save, so closing the dialog keeps it. <b>Snooze</b>
+       there just pushes the due date later - there's no separate snoozed state to keep track of. Anything past its due date gets a red outline around the
        whole card. <b>Complete</b> - the checkbox at the right end of the dialog's priority row - adds a
        <code>status:done</code> tag and drops it out of the panel, keeping <code>todo</code> so the
        finished work stays on the record; hit the same button again to bring it back exactly as
@@ -4594,15 +4595,54 @@ function renderDetail(){
     prBlock.append(el('div','dlegend','priority'));
     const prRow=el('div','prio');prBlock.append(prRow);
     const rname='prio-'+key;
+    const prChips={};
+    /* Picking a priority WRITES it, there and then - it does not sit staged until Save. Re-ranking
+       is a decision on its own, not part of an edit being composed, and the natural way to leave a
+       jot you only re-ranked is to close the dialog (Esc, the backdrop, the X) - every one of which
+       threw the change away while this staged a value. Same immediate-PATCH shape as Complete and
+       the snooze buttons below, and as a drag between the TODO panel's columns, which is the other
+       way to set exactly this field. A NEW jot has nothing to PATCH yet, so there the value still
+       rides along with Create. */
+    const applyPrio=async function(p){
+      const prev=tagValue(sel.tags,'priority:')||'';
+      pr.value=p;
+      if(isNew||p===prev)return;
+      /* Puts the lit chip back on what is actually stored - after a failed write, and after an
+         undo, leaving the clicked one lit would claim a write that isn't there. */
+      const relight=function(v){pr.value=v;if(prChips[v])prChips[v].checked=true;};
+      /* A jot revealed by "Make this a TODO" carries the `todo` tag along with this first write,
+         for the same reason Save does it: a bare priority: tag reads as a TODO to this dialog and
+         to the panel, but to nothing outside the page - not the panel's own tag filter, not REST,
+         not MCP. Writing the priority alone would leave it invisible to all of them until a Save
+         that closing the dialog says isn't coming. Undo puts the priority back, not the tag: the
+         button that made this a TODO was pressed on purpose. */
+      const base=(detailForceTodo&&!(sel.tags||[]).some(t=>ACTION_TAGS.has(t)))?
+        Object.assign({},sel,{tags:(sel.tags||[]).concat(['todo'])}):sel;
+      try{
+        const updated=await setPriority(base,p);
+        sel=updated;
+        toast(p?'Priority: '+p:'Priority cleared','ok',async function(){
+          try{
+            sel=await setPriority(updated,prev);
+            relight(prev);
+            toast(prev?'Priority: '+prev:'Priority cleared');
+          }catch(err){toast(err.message,'err');}
+        });
+      }catch(e){
+        relight(prev);
+        toast(e.status===409?'Conflict - someone else changed this jot. Close and reopen.':e.message,'err');
+      }
+    };
     [['high','High','p-high'],['normal','Normal','p-normal'],
      ['low','Low','p-low'],['','Clear','p-none']].forEach(function(o){
       const lab=el('label','prchip '+o[2]);
       const rb=el('input');rb.type='radio';rb.name=rname;rb.value=o[0];
       rb.checked=(pr.value===o[0]);
+      prChips[o[0]]=rb;
       /* Radios do the unsetting for free: "Clear" is just the option whose value is empty, so
          picking it deselects the other three exactly the way picking High does. The chip's look
          follows :checked in CSS, so there's no class to keep in sync here. */
-      rb.onchange=function(){pr.value=o[0];};
+      rb.onchange=function(){applyPrio(o[0]);};
       lab.append(rb,el('span',null,o[1]));
       prRow.append(lab);
     });
