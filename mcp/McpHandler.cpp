@@ -201,7 +201,8 @@ namespace
             "is written to by several agents and a human at once, so an edit built on a copy you "
             "read some minutes ago may be about to erase somebody's work. If the jot changed since "
             "you read it you get a conflict instead: re-read, merge, retry. If you do not have an "
-            "'updated' to hand, you have not read the jot, and you should loom_get it first.",
+            "'updated' to hand, you have not read the jot, and you should loom_get it first. A "
+            "jot that has never been edited carries no 'updated'; pass its id instead.",
             json{
                 {"id",             json{{"type","integer"},{"description","Jot id. Required."}}},
                 {"text",           Str("Replacement text.")},
@@ -442,10 +443,16 @@ namespace
             Jot jot;
             std::error_code ec;
             const std::string sSlug = ReadStr(args, "name");
+            const int64_t nID = ReadInt(args, "id", 0);
+            // Without this, a guessed argument ('ids', 'jot_id') falls through to id 0 and comes
+            // back as "no such jot" - which reads as a broken store rather than a bad call.
+            if (sSlug.empty() && nID == 0)
+                return ToolFailure("loom_get takes one 'id' (integer) or one 'name' (slug) - "
+                                   "neither was given. Arguments received: " + args.dump());
             if (!sSlug.empty())
                 ec = ops.GetByName(sSlug, jot);
             else
-                ec = ops.Get(ReadInt(args, "id", 0), jot);
+                ec = ops.Get(nID, jot);
 
             if (ec)
                 return ToolFailure(ec.message());
@@ -540,7 +547,8 @@ namespace
                                        "from your last read of jot " + std::to_string(id) + ". "
                                        "Without it this edit would silently overwrite anything "
                                        "changed since. Call loom_get first and pass the 'updated' "
-                                       "it returns.");
+                                       "it returns - or, if it has none, the jot's id (a "
+                                       "never-edited jot's revision is its creation time).");
 
                 ec = ops.Update(id, in, ReadInt(args, "expect_updated", 0), result);
             }
