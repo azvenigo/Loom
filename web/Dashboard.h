@@ -878,6 +878,36 @@ main{flex:1;min-height:0;overflow:hidden}
 @media(max-width:640px){.frow{grid-template-columns:1fr}}
 #detail textarea[data-k=text]{min-height:min(30vh,320px)}
 #detail textarea[data-k=summary]{min-height:92px}
+/* Details has two faces: the raw textarea (Edit) and the text rendered as markdown (Read). The
+   Read view is prose on the section card, not a well - nothing to type into, so it shouldn't
+   look like a field. Sizes stay small: this is a dialog, not a document. */
+.dlegend.dmode{display:flex;align-items:center;justify-content:space-between}
+.dlegend .viewtoggle button{font:11px var(--sans);text-transform:none;letter-spacing:0;padding:3px 10px}
+.md{font:14px/1.6 var(--sans);color:var(--body);overflow-wrap:anywhere}
+.md>:first-child{margin-top:0}.md>:last-child{margin-bottom:0}
+.md p,.md ul,.md ol,.md pre,.md table,.md blockquote{margin:0 0 10px}
+.md h1,.md h2,.md h3,.md h4,.md h5,.md h6{color:var(--ink);margin:16px 0 6px;line-height:1.3}
+.md h1{font-size:18px}.md h2{font-size:16px}.md h3{font-size:14.5px}
+.md h4,.md h5,.md h6{font-size:13px;color:var(--dim);text-transform:uppercase;letter-spacing:.04em}
+.md ul,.md ol{padding-left:22px}.md li{margin:2px 0}.md li>ul,.md li>ol{margin:2px 0 0}
+.md strong{color:var(--ink)}
+.md code{font:12.5px var(--mono);background:var(--sunk);border:1px solid var(--line-soft);
+  border-radius:4px;padding:0 4px}
+.md pre{background:var(--sunk);border:1px solid var(--line-soft);border-radius:6px;
+  padding:9px 11px;overflow:auto}
+.md pre code{background:none;border:0;padding:0;white-space:pre}
+.md blockquote{border-left:3px solid var(--line);padding-left:11px;color:var(--dim)}
+.md hr{border:0;border-top:1px solid var(--line);margin:14px 0}
+.md table{border-collapse:collapse;font-size:13px;display:block;overflow:auto}
+.md th,.md td{border:1px solid var(--line);padding:4px 8px;text-align:left;vertical-align:top}
+.md th{background:var(--sunk);color:var(--ink)}
+.md a{color:var(--accent-ink)}
+.md a.wl{text-decoration:none;font:12.5px var(--mono);background:var(--accent-wash);
+  border:1px solid var(--accent);border-radius:4px;padding:0 5px;white-space:nowrap}
+.md a.wl:hover{color:var(--ink)}
+.md a.wl.unres{background:none;border-style:dashed;color:var(--dim)}
+.md .cb{font-family:var(--sans)}
+.md .mdempty{color:var(--faint);font-style:italic}
 .snbtns{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0 16px}
 
 /* ---------- controls ---------- */
@@ -2023,7 +2053,7 @@ const CAL_MONTHS=3;
    Persisted alongside the palette so the choice also survives a reload. detailForceTodo stays
    per-jot and still resets on a change of detailOpenedKey - "I turned THIS one into a TODO" is
    exactly the thing that must not leak to the next unrelated click. */
-let detailExpanded=false,detailOpenedKey=null,detailForceTodo=false;
+let detailExpanded=false,detailOpenedKey=null,detailForceTodo=false,detailEditing=false;
 try{detailExpanded=localStorage.getItem('loom-detail-expanded')==='1';}catch(e){}
 
 /* A jot touched inside this window gets a highlight border wherever it renders (.mcard.fresh,
@@ -2279,6 +2309,97 @@ function highlight(text,terms){
   if(!terms.length)return safe;
   const esc=terms.map(t=>t.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'));
   return safe.replace(new RegExp('('+esc.join('|')+')','gi'),'<mark>$1</mark>');
+}
+
+/* ---------- details, rendered ----------
+   A small markdown subset for the Read view of a jot's text: the constructs jots actually use
+   (headers, lists, fences, tables, `code`, **bold**, [[wikilinks]], URLs), nothing more. Escape
+   FIRST, then transform - jot text is written by agents, so nothing in it may become markup it
+   didn't come from. Anything not recognised is shown as the literal text it is. */
+function mdInline(s,pend){
+  const keep=[];const stash=h=>'\u0000'+(keep.push(h)-1)+'\u0000';
+  s=s.replace(/`([^`]+)`/g,(m,c)=>stash('<code>'+escHtml(c)+'</code>'));
+  s=escHtml(s);
+  s=s.replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g,(m,slug,label)=>{
+    slug=slug.trim();
+    return stash('<a class="wl'+(pend.has(slug)?' unres':'')+'" href="#" data-slug="'+slug+'"'+
+      (pend.has(slug)?' title="Unresolved - no jot has this slug yet"':'')+'>'+
+      (label||slug)+'</a>');
+  });
+  s=s.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,(m,t,u)=>
+    stash('<a href="'+u+'" target="_blank" rel="noopener">'+t+'</a>'));
+  s=s.replace(/(^|[\s(])(https?:\/\/[^\s<]*[^\s<.,;:!?)'])/g,(m,pre,u)=>
+    pre+stash('<a href="'+u+'" target="_blank" rel="noopener">'+u+'</a>'));
+  s=s.replace(/\*\*(?=\S)(.+?)\*\*/g,'<strong>$1</strong>');
+  s=s.replace(/(^|[^\w*])\*(?=[^\s*])(.+?)\*(?![\w*])/g,'$1<em>$2</em>');
+  return s.replace(/\u0000(\d+)\u0000/g,(m,i)=>keep[i]);
+}
+function mdRender(src,pending){
+  const pend=pending instanceof Set?pending:new Set(pending||[]);
+  const L=(src||'').replace(/\r\n?/g,'\n').split('\n');
+  const inl=s=>mdInline(s,pend);
+  const FENCE=/^\s*```/,HEAD=/^(#{1,6})\s+(.*?)\s*#*\s*$/,HR=/^\s*([-*_])(\s*\1){2,}\s*$/;
+  const ITEM=/^(\s*)([-*+]|\d+[.)])\s+(.*)$/,QUOTE=/^\s*>\s?/,ROW=/^\s*\|.*\|\s*$/;
+  const SEP=/^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
+  /* A pipe inside `code` is content, not a column break. */
+  const cells=r=>{const c=[''];let code=false;
+    for(const ch of r.trim().replace(/^\||\|$/g,'')){
+      if(ch==='`')code=!code;
+      if(ch==='|'&&!code)c.push('');else c[c.length-1]+=ch;}
+    return c.map(x=>x.trim());};
+  let out='',para=[],item=null,gap=false;const lists=[];
+  const flushItem=()=>{if(item!==null){
+    out+=inl(item).replace(/^\[([ xX])\]\s/,(m,x)=>'<span class="cb">'+(x===' '?'☐':'☑')+'</span> ');
+    item=null;}};
+  const closeLists=()=>{flushItem();
+    while(lists.length)out+='</li></'+lists.pop().tag+'>';};
+  const flushPara=()=>{if(para.length){out+='<p>'+inl(para.join(' '))+'</p>';para=[];}};
+  const endBlocks=()=>{flushPara();closeLists();gap=false;};
+  for(let i=0;i<L.length;i++){
+    const ln=L[i];let m;
+    if(FENCE.test(ln)){
+      endBlocks();const code=[];
+      while(++i<L.length&&!FENCE.test(L[i]))code.push(L[i]);
+      out+='<pre><code>'+escHtml(code.join('\n'))+'</code></pre>';continue;
+    }
+    if(!ln.trim()){flushPara();if(lists.length)gap=true;continue;}
+    if((m=ln.match(ITEM))){
+      flushPara();flushItem();
+      const ind=m[1].replace(/\t/g,'    ').length,tag=/\d/.test(m[2])?'ol':'ul';
+      while(lists.length&&lists[lists.length-1].ind>ind)out+='</li></'+lists.pop().tag+'>';
+      const top=lists[lists.length-1];
+      if(top&&top.ind===ind&&top.tag===tag)out+='</li><li>';
+      else{
+        if(top&&top.ind===ind)out+='</li></'+lists.pop().tag+'>';
+        out+='<'+tag+'><li>';lists.push({ind:ind,tag:tag});
+      }
+      item=m[3];gap=false;continue;
+    }
+    /* A wrapped line under a list item belongs to that item, unless a blank line ended the list. */
+    if(item!==null&&!gap&&!HEAD.test(ln)&&!ROW.test(ln)&&!QUOTE.test(ln)&&!HR.test(ln)){
+      item+=' '+ln.trim();continue;
+    }
+    if(lists.length)closeLists();
+    gap=false;
+    if((m=ln.match(HEAD))){flushPara();const n=m[1].length;
+      out+='<h'+n+'>'+inl(m[2])+'</h'+n+'>';continue;}
+    if(HR.test(ln)){flushPara();out+='<hr>';continue;}
+    if(QUOTE.test(ln)){
+      flushPara();const q=[];
+      for(;i<L.length&&QUOTE.test(L[i]);i++)q.push(L[i].replace(QUOTE,''));
+      i--;out+='<blockquote>'+mdRender(q.join('\n'),pend)+'</blockquote>';continue;
+    }
+    if(ROW.test(ln)&&i+1<L.length&&SEP.test(L[i+1])){
+      flushPara();
+      out+='<table><thead><tr>'+cells(ln).map(c=>'<th>'+inl(c)+'</th>').join('')+'</tr></thead><tbody>';
+      for(i+=2;i<L.length&&ROW.test(L[i]);i++)
+        out+='<tr>'+cells(L[i]).map(c=>'<td>'+inl(c)+'</td>').join('')+'</tr>';
+      i--;out+='</tbody></table>';continue;
+    }
+    para.push(ln.trim());
+  }
+  endBlocks();
+  return out;
 }
 
 /* Category = the first non-structural tag (":"-tags are structure, not vocabulary - same rule
@@ -4505,7 +4626,10 @@ function renderDetail(){
      detailExpanded deliberately does NOT reset here: it is a remembered preference, see its
      declaration. */
   const key=isNew?'__new':sel.id;
-  if(key!==detailOpenedKey){detailForceTodo=false;detailOpenedKey=key;}
+  /* Details open in Read unless there is nothing to read; Edit sticks only for the jot it was
+     picked on, like detailForceTodo. */
+  if(key!==detailOpenedKey){detailForceTodo=false;detailOpenedKey=key;
+    detailEditing=isNew||!(sel.text||'').trim();}
 
   /* ---- header: slug reads as the title on the left, id sits quietly at the right ---- */
   const h=el('div','dhead');
@@ -4650,7 +4774,34 @@ function renderDetail(){
      it: a re-render would throw away whatever had been typed and not yet saved. */
   const detSect=sect('details');
   const dta=el('textarea');dta.setAttribute('data-k','text');dta.value=sel.text||'';dta.rows=9;
-  detSect.append(dta);f.text=dta;
+  const dview=el('div','md');
+  detSect.append(dview,dta);f.text=dta;
+  /* Read renders whatever is in the textarea right now, not sel.text, so it doubles as a preview of
+     an unsaved edit; the textarea is only hidden, never rebuilt, so switching loses nothing. */
+  const modeBar=el('div','viewtoggle');
+  const readBtn=el('button',null,'Read'),editBtn=el('button',null,'Edit');
+  readBtn.type=editBtn.type='button';modeBar.append(readBtn,editBtn);
+  const dleg=detSect.querySelector('.dlegend');dleg.classList.add('dmode');dleg.append(modeBar);
+  const applyMode=function(){
+    dta.hidden=!detailEditing;dview.hidden=detailEditing;
+    readBtn.classList.toggle('on',!detailEditing);editBtn.classList.toggle('on',detailEditing);
+    if(detailEditing)return;
+    dview.innerHTML=dta.value.trim()?mdRender(dta.value,sel.pending):
+      '<p class="mdempty">No details yet - Edit to add some.</p>';
+  };
+  readBtn.onclick=function(){detailEditing=false;applyMode();};
+  editBtn.onclick=function(){detailEditing=true;applyMode();dta.focus();};
+  dview.ondblclick=function(e){if(e.target.closest('a')||getSelection().toString())return;
+    editBtn.onclick();};
+  dview.onclick=async function(e){
+    const a=e.target.closest('a.wl');if(!a)return;
+    e.preventDefault();
+    const slug=a.dataset.slug;
+    const dirty=['text','summary','name','editor'].some(k=>f[k]&&f[k].value!==(sel[k]||''));
+    if(dirty&&!confirm('Discard unsaved changes and open '+slug+'?'))return;
+    try{sel=await api('/jots/by-name/'+encodeURIComponent(slug));render();}
+    catch(err){toast(err.status===404?'No jot is named '+slug+' yet':err.message,'err');}
+  };
   const detFoot=el('div','dsectfoot');detSect.append(detFoot);
 
   const metaSect=sect('metadata');
@@ -4689,6 +4840,7 @@ function renderDetail(){
   };
   mkToggle(sumFoot,'More details ▾');
   mkToggle(detFoot,'Fewer details ▲');
+  applyMode();
   const applyExpanded=function(){
     detSect.hidden=!detailExpanded;
     metaSect.hidden=!detailExpanded;

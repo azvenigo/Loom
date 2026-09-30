@@ -9,3 +9,6 @@ loom-data/
 # Personal planning doc and local dev-tool config - not for the public repo
 docs/PLAN.md
 .claude/
+
+# Private machine-specific Claude notes
+CLAUDE.local.md
