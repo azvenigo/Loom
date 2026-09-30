@@ -1671,6 +1671,7 @@ i.bytes{background:var(--accent)}
    so it sits at the far end in mono at the size of a footnote. */
 .dhead{display:flex;align-items:baseline;gap:12px;margin-bottom:14px}
 .dhead h3{margin:0;font-size:16px;color:var(--ink);font-weight:600;overflow-wrap:anywhere}
+.dhead .dback{align-self:center;padding:3px 9px}
 .dhead .did{margin-left:auto;font:10.5px var(--mono);color:var(--faint);flex:none}
 .dmeta{font:11px var(--mono);color:var(--faint);line-height:1.7;margin-top:12px;
   padding-top:11px;border-top:1px solid var(--line-soft)}
@@ -2054,6 +2055,18 @@ const CAL_MONTHS=3;
    per-jot and still resets on a change of detailOpenedKey - "I turned THIS one into a TODO" is
    exactly the thing that must not leak to the next unrelated click. */
 let detailExpanded=false,detailOpenedKey=null,detailForceTodo=false,detailEditing=false;
+/* Jot-to-jot navigation inside the open dialog (a wikilink, a Linked card) pushes a browser history
+   entry per hop, so the mouse/browser Back button steps back through the jots instead of leaving
+   the page. detailTrail holds the ids to go back to; closing the dialog rewinds whatever entries
+   it pushed, so a later Back behaves exactly as it did before any of this. detailDirty is set by
+   renderDetail, which is where the fields live. */
+let detailTrail=[],trailUnwind=false,detailDirty=()=>false;
+function openJot(j){
+  if(sel&&sel.id&&j.id!==sel.id&&$('#detail-dialog').open){
+    detailTrail.push(sel.id);history.pushState({loomTrail:detailTrail.length},'');
+  }
+  sel=j;render();
+}
 try{detailExpanded=localStorage.getItem('loom-detail-expanded')==='1';}catch(e){}
 
 /* A jot touched inside this window gets a highlight border wherever it renders (.mcard.fresh,
@@ -2610,7 +2623,7 @@ function jotCard(j,maxScore,terms){
   f.append(trail);
   c.append(f);
 
-  c.onclick=function(){sel=j;render();};
+  c.onclick=function(){openJot(j);};
   return c;
 }
 
@@ -4633,6 +4646,11 @@ function renderDetail(){
 
   /* ---- header: slug reads as the title on the left, id sits quietly at the right ---- */
   const h=el('div','dhead');
+  if(detailTrail.length){
+    const bk=el('button','btn tiny ghost dback','‹ Back');bk.type='button';
+    bk.title='Back to the previous jot (or the mouse Back button)';
+    bk.onclick=()=>history.back();h.append(bk);
+  }
   h.append(el('h3',null,isNew?'New jot':(sel.name||'Edit jot')));
   if(!isNew)h.append(el('span','did','#'+sel.id));
   W.append(h);
@@ -4797,11 +4815,11 @@ function renderDetail(){
     const a=e.target.closest('a.wl');if(!a)return;
     e.preventDefault();
     const slug=a.dataset.slug;
-    const dirty=['text','summary','name','editor'].some(k=>f[k]&&f[k].value!==(sel[k]||''));
-    if(dirty&&!confirm('Discard unsaved changes and open '+slug+'?'))return;
-    try{sel=await api('/jots/by-name/'+encodeURIComponent(slug));render();}
+    if(detailDirty()&&!confirm('Discard unsaved changes and open '+slug+'?'))return;
+    try{openJot(await api('/jots/by-name/'+encodeURIComponent(slug)));}
     catch(err){toast(err.status===404?'No jot is named '+slug+' yet':err.message,'err');}
   };
+  detailDirty=()=>['text','summary','name','editor'].some(k=>f[k]&&f[k].value!==(sel[k]||''));
   const detFoot=el('div','dsectfoot');detSect.append(detFoot);
 
   const metaSect=sect('metadata');
@@ -5306,7 +5324,22 @@ $('#attention-dialog').addEventListener('close',function(){if(view==='dashboard'
    after clearing sel; this covers the two paths that don't. */
 $('#detail-close-x').addEventListener('click',()=>$('#detail-dialog').close());
 $('#detail-dialog').addEventListener('click',function(e){if(e.target===this)this.close();});
-$('#detail-dialog').addEventListener('close',function(){if(sel){sel=null;render();}});
+$('#detail-dialog').addEventListener('close',function(){
+  if(detailTrail.length){trailUnwind=true;history.go(-detailTrail.length);detailTrail=[];}
+  if(sel){sel=null;render();}
+});
+/* Back while a trail exists reopens the previous jot. popstate can't be cancelled, so declining
+   the unsaved-changes prompt re-pushes the entry that Back just consumed. */
+window.addEventListener('popstate',async function(){
+  if(trailUnwind){trailUnwind=false;return;}
+  if(!detailTrail.length||!sel)return;
+  if(detailDirty()&&!confirm('Discard unsaved changes and go back?')){
+    history.pushState({loomTrail:detailTrail.length},'');return;
+  }
+  const id=detailTrail.pop();
+  try{sel=await api('/jots/'+id);render();}
+  catch(e){toast(e.status===404?'That jot is gone':e.message,'err');}
+});
 $('#agent-copy').addEventListener('click',function(){copyText(agentPrompt(),$('#agent-copy'));});
 
 /* ---------- reminder notifications ----------
