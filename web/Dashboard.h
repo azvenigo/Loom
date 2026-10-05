@@ -410,6 +410,12 @@ R"HTML(<!doctype html>
   --razor-key-edge:linear-gradient(180deg,rgba(255,255,255,.30),rgba(255,255,255,.05) 50%,rgba(0,0,0,.5));
   --razor-lit-edge:linear-gradient(180deg,rgba(255,255,255,.65),rgba(255,255,255,.10) 45%,rgba(0,0,0,.40));
   --razor-fill:linear-gradient(180deg,#4c83ee,#2454b3);
+  /* Text on graphite keys, pills and wells. Resolved here, at :root, so a surface that ever
+     re-inks its own contents (dark text on a light card) does not drag the keys on it along. */
+  --razor-key-ink:var(--body); --razor-key-ink-hi:var(--ink); --razor-well-ink:var(--ink);
+  /* Jot cards and TODO rows. Plain surface by default; a palette can swap in a texture. Every
+     layer but the last carries its own padding-box, so nothing paints over the hairline edge. */
+  --razor-card:var(--razor-surface); --razor-card-up:var(--razor-surface-up);
 }
 :root[data-palette="obsidian"]{
   --bg:#101216; --panel:#1a1d22; --sunk:#0e1013;
@@ -451,10 +457,10 @@ R"HTML(<!doctype html>
 /* The same graphite lifted to Storm's lightness: a soft room rather than a dark one. The shadows
    ease off with it - over a mid-tone ground the dark palette's black would read as soot. */
 :root[data-palette="obsidian-medium"]{
-  --bg:#30343b; --panel:#3b4048; --sunk:#2a2e34;
-  --ink:#f6f8fa; --body:#e3e7ec; --dim:#c2c8d1; --faint:#a7afba;
-  --line:#565c66; --line-soft:#24272c;
-  --accent:#6f9df3; --accent-ink:#b3cdfd; --accent-wash:#3c4b66;
+  --bg:#30343b; --panel:#4a5059; --sunk:#2a2e34;
+  --ink:#f6f8fa; --body:#e8ebf0; --dim:#cdd2da; --faint:#b8bfc9;
+  --line:#626873; --line-soft:#24272c;
+  --accent:#6f9df3; --accent-ink:#c3d7fd; --accent-wash:#455673;
   --warn:#f0c26c; --warn-wash:#4a4533; --warn-line:#6d6446;
   --bad:#f7a3a8; --bad-wash:#533d48; --bad-line:#795562;
   --good:#8edbad; --good-wash:#35514b; --good-line:#517266;
@@ -462,29 +468,41 @@ R"HTML(<!doctype html>
   --accent2:#9dbff8; --good2:#aeebc6; --warn2:#f7d893; --bad2:#f9b9c6;
   --info:#97b9ee; --info-wash:#394962; --info-line:#566a86;
   --field-bg:#e1e5eb; --field-ink:#1b1f26; --field-dim:#5b636f;
-  --tag-bg:#474d57; --tag-ink:#dde2e9; --eyebrow-ink:#b9c0ca;
-  --todo-top:#3f4b61; --todo-bot:#33373e;
-  --todo-edge:#565c66; --todo-bar:#6f9df3; --todo-glow:#6f9df3;
+  --tag-bg:#5a606b; --tag-ink:#dde2e9; --eyebrow-ink:#b9c0ca;
+  --todo-top:#4a5872; --todo-bot:#40454e;
+  --todo-edge:#626873; --todo-bar:#6f9df3; --todo-glow:#6f9df3;
   /* Elevation: see the ladder in :root. */
   --sh:10 12 16; --sh-k:2.2; --rim:255 255 255; --rim-a:.08;
-  --panel-2:#40454e; --panel-3:#444a53; --panel-4:#484e58; --faint-up:var(--dim);
+  --panel-2:#4f555e; --panel-3:#535963; --panel-4:#575e68; --faint-up:var(--dim);
   --sunk-shadow:inset 0 2px 4px rgba(0,0,0,.4),0 1px 0 rgba(255,255,255,.08);
   --razor-ground:radial-gradient(120% 75% at 50% -12%,#474d57,#32363d 55%,#2a2d33);
   --razor-side:linear-gradient(180deg,#363a41,#2e3238);
   --razor-top:linear-gradient(180deg,#3d424a,#353940);
-  --razor-surface:linear-gradient(180deg,#41464f,#363a42);
-  --razor-surface-up:linear-gradient(180deg,#474d56,#3b4048);
+  --razor-surface:linear-gradient(180deg,#4f555e,#444a53);
+  --razor-surface-up:linear-gradient(180deg,#555b65,#4a5059);
   --razor-dialog:linear-gradient(180deg,#363a41,#2e3238);
   --razor-well:linear-gradient(180deg,#24272c,#2d3137);
-  --razor-key:linear-gradient(180deg,#4b515b,#3b4048);
-  --razor-key-hover:linear-gradient(180deg,#535a64,#41464f);
-  --razor-raised:linear-gradient(180deg,#4f555f,#40454e);
-  --razor-pill:linear-gradient(180deg,#42474f,#383c44);
-  --razor-knob:linear-gradient(180deg,#5d646f,#474d56);
+  --razor-key:linear-gradient(180deg,#5d646f,#4c525c);
+  --razor-key-hover:linear-gradient(180deg,#656c78,#525963);
+  --razor-raised:linear-gradient(180deg,#606773,#50565f);
+  --razor-pill:linear-gradient(180deg,#575d67,#4a5059);
+  --razor-knob:linear-gradient(180deg,#6f7782,#575e68);
   --razor-lift:inset 0 1px 0 rgba(255,255,255,.06),0 1px 0 rgba(0,0,0,.35),
     0 10px 20px -10px rgba(0,0,0,.4),0 30px 60px -24px rgba(0,0,0,.5);
   --razor-key-lift:inset 0 1px 0 rgba(255,255,255,.10),0 1px 1px rgba(0,0,0,.4),0 8px 18px -8px rgba(0,0,0,.55);
   --razor-glow:rgba(76,131,238,.5); --razor-ring:rgba(111,157,243,.28);
+  /* BRUSHED GRAPHITE, cards only. Three layers over the plain surface: grain - fractal noise
+     stretched about 250:1 along x, which is what turns noise into the long fine scratches of a
+     brushed finish - then an off-axis sheen band, the anisotropic highlight brushed metal throws,
+     then the graphite ramp itself. The grain is a grey wash at 16%, so it shades both ways
+     around the base rather than lightening it. */
+  --razor-grain:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='640' height='320'%3E%3Cfilter id='b'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.0035 0.9' numOctaves='3' seed='11' stitchTiles='stitch'/%3E%3CfeColorMatrix values='1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 0 0 0 0 .16'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23b)'/%3E%3C/svg%3E") 0 0/640px 320px;
+  --razor-card:var(--razor-grain) padding-box,
+    linear-gradient(100deg,rgba(255,255,255,0) 18%,rgba(255,255,255,.07) 42%,rgba(255,255,255,0) 66%) padding-box,
+    var(--razor-surface);
+  --razor-card-up:var(--razor-grain) padding-box,
+    linear-gradient(100deg,rgba(255,255,255,0) 18%,rgba(255,255,255,.10) 42%,rgba(255,255,255,0) 66%) padding-box,
+    var(--razor-surface-up);
 }
 *{box-sizing:border-box}
 /* THE SHELL IS A SIDEBAR + A COLUMN. #shell owns the viewport as a flex ROW: a fixed-width rail
@@ -734,7 +752,9 @@ dialog#detail-dialog.wide{width:min(960px,96vw)}
   .mcard,.ov-trow{transition:none}}
 dialog#detail-dialog::backdrop{background:rgba(0,0,0,.45)}
 dialog#detail-dialog #detail{max-height:88vh;padding-right:56px}
-dialog#detail-dialog .dclose{position:absolute;top:12px;right:12px;width:28px;height:28px;
+/* right:24px, not 12: when the dialog does scroll, its bar runs down the right edge under the X,
+   and a classic 15px scrollbar sat three pixels under the button. 24 clears it. */
+dialog#detail-dialog .dclose{position:absolute;top:12px;right:24px;width:28px;height:28px;
   border-radius:8px;border:1px solid transparent;background:none;color:var(--dim);cursor:pointer;
   display:flex;align-items:center;justify-content:center;z-index:1}
 dialog#detail-dialog .dclose svg{width:13px;height:13px}
@@ -912,6 +932,11 @@ main{flex:1;min-height:0;overflow:hidden}
 .dlegend.dmode{display:flex;align-items:center;justify-content:space-between}
 .dlegend .viewtoggle button{font:11px var(--sans);text-transform:none;letter-spacing:0;padding:3px 10px}
 .md{font:14px/1.6 var(--sans);color:var(--body);overflow-wrap:anywhere}
+/* A long Read view scrolls INSIDE its section instead of stretching the dialog past the screen:
+   the summary, priority and the buttons under it stay put while you read. The cap matches the
+   Edit textarea's own scale, so flipping Read/Edit doesn't make the box jump far. The padding
+   keeps text clear of the inner scrollbar. */
+#detail .md{max-height:min(48vh,520px);overflow-y:auto;overscroll-behavior:contain;padding-right:6px}
 .md>:first-child{margin-top:0}.md>:last-child{margin-bottom:0}
 .md p,.md ul,.md ol,.md pre,.md table,.md blockquote{margin:0 0 10px}
 .md h1,.md h2,.md h3,.md h4,.md h5,.md h6{color:var(--ink);margin:16px 0 6px;line-height:1.3}
@@ -1751,15 +1776,17 @@ label u{text-decoration:none;color:var(--accent-ink);text-transform:none;letter-
 /* The category bar on a card and the priority bar on a TODO row keep their colour. */
 :where(:root[data-palette^="obsidian"]) .mcard{border-right-color:transparent;border-bottom-color:transparent;border-left-color:transparent}
 :where(:root[data-palette^="obsidian"]) .ov-trow{border-top-color:transparent;border-right-color:transparent;border-bottom-color:transparent}
-:root[data-palette^="obsidian"] .mcard,:root[data-palette^="obsidian"] .ov-panel,:root[data-palette^="obsidian"] .ov-trow,:root[data-palette^="obsidian"] .dsect{
+:root[data-palette^="obsidian"] .ov-panel,:root[data-palette^="obsidian"] .dsect{
   background:var(--razor-surface) padding-box,var(--razor-edge) border-box}
+:root[data-palette^="obsidian"] .mcard,:root[data-palette^="obsidian"] .ov-trow{
+  background:var(--razor-card) padding-box,var(--razor-edge) border-box}
 :root[data-palette^="obsidian"] .mcard:not(.sel):hover{border-right-color:transparent;border-bottom-color:transparent;
   border-left-color:transparent}
 :root[data-palette^="obsidian"] .ov-trow:hover{border-top-color:transparent;border-right-color:transparent;
   border-bottom-color:transparent}
 :root[data-palette^="obsidian"] .mcard:hover,:root[data-palette^="obsidian"] .mcard.sel,:root[data-palette^="obsidian"] .mcard.fresh,:root[data-palette^="obsidian"] .ov-trow:hover,
 :root[data-palette^="obsidian"] .ov-todocol.pr-high .ov-trow,:root[data-palette^="obsidian"] .ov-todocol .ov-trow.over{
-  background:var(--razor-surface-up) padding-box,var(--razor-edge-hi) border-box}
+  background:var(--razor-card-up) padding-box,var(--razor-edge-hi) border-box}
 :root[data-palette^="obsidian"] .ov-todocol .ov-trow.done{background:var(--sunk)}
 :root[data-palette^="obsidian"] .ov-trow.needs-input{background:var(--bad)}
 :root[data-palette^="obsidian"] .ov-todo{border-color:transparent;border-left-color:var(--todo-bar);
@@ -1777,9 +1804,9 @@ label u{text-decoration:none;color:var(--accent-ink);text-transform:none;letter-
 :root[data-palette^="obsidian"] dialog#detail-dialog{background:var(--razor-dialog) padding-box,var(--razor-edge) border-box}
 
 /* keys: plain buttons */
-:root[data-palette^="obsidian"] button.btn:not(.primary):not(.warnfill):not(.badfill){color:var(--body);border-color:transparent;
+:root[data-palette^="obsidian"] button.btn:not(.primary):not(.warnfill):not(.badfill){color:var(--razor-key-ink);border-color:transparent;
   background:var(--razor-key) padding-box,var(--razor-key-edge) border-box;box-shadow:var(--razor-key-lift)}
-:root[data-palette^="obsidian"] button.btn:not(.primary):not(.warnfill):not(.badfill):hover{color:var(--ink);
+:root[data-palette^="obsidian"] button.btn:not(.primary):not(.warnfill):not(.badfill):hover{color:var(--razor-key-ink-hi);
   background:var(--razor-key-hover) padding-box,var(--razor-key-edge) border-box}
 :root[data-palette^="obsidian"] button.btn:not(.primary):not(.warnfill):not(.badfill):active{box-shadow:var(--sunk-shadow)}
 /* filled: the accent ramp under a bright lit edge, glowing in its own hue. White text, not the
@@ -1807,14 +1834,15 @@ label u{text-decoration:none;color:var(--accent-ink);text-transform:none;letter-
   box-shadow:inset 0 1px 3px rgba(0,0,0,.6)}
 :root[data-palette^="obsidian"] .viewtoggle button,:root[data-palette^="obsidian"] .viewtoggle button+button{background:transparent;border:1px solid transparent;
   border-radius:6px}
-:root[data-palette^="obsidian"] .viewtoggle button.on{color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.6),0 4px 10px -4px rgba(0,0,0,.7);
+:root[data-palette^="obsidian"] .viewtoggle button.on{color:var(--razor-key-ink-hi);box-shadow:0 1px 2px rgba(0,0,0,.6),0 4px 10px -4px rgba(0,0,0,.7);
   background:var(--razor-raised) padding-box,
     linear-gradient(180deg,rgba(255,255,255,.34),rgba(255,255,255,.04) 60%,rgba(0,0,0,.4)) border-box}
 
 /* wells. The editor's own fields keep their light --field-bg (see #detail input): an id rule, so
    it outranks this and only the edge and the inset reach them. */
 :root[data-palette^="obsidian"] input:not([type=radio]):not([type=checkbox]),:root[data-palette^="obsidian"] select,:root[data-palette^="obsidian"] textarea{
-  border-color:rgba(0,0,0,.75);background:var(--razor-well);box-shadow:var(--sunk-shadow)}
+  color:var(--razor-well-ink);border-color:rgba(0,0,0,.75);background:var(--razor-well);
+  box-shadow:var(--sunk-shadow)}
 :root[data-palette^="obsidian"] input:not([type=radio]):not([type=checkbox]):focus,:root[data-palette^="obsidian"] select:focus,:root[data-palette^="obsidian"] textarea:focus{
   border-color:var(--accent);
   box-shadow:0 0 0 3px var(--razor-ring),0 0 18px -4px var(--razor-glow),var(--sunk-shadow)}
@@ -1849,6 +1877,50 @@ label u{text-decoration:none;color:var(--accent-ink);text-transform:none;letter-
     linear-gradient(180deg,rgba(255,255,255,.20),rgba(255,255,255,.03)) border-box}
 :root[data-palette^="obsidian"] .dot{box-shadow:0 0 0 3px rgba(61,220,132,.14),0 0 8px rgba(61,220,132,.7)}
 :root[data-palette^="obsidian"] .dot.off{box-shadow:0 0 0 3px rgba(255,128,128,.14),0 0 8px rgba(255,128,128,.7)}
+
+/* ---- razor GEOMETRY: the mockup's proportions, not just its surfaces ----
+   Rounder and roomier: 16px enclosures, 10px keys and wells, 44px controls, 24px between cards.
+   Kept as its own block so the finish can be tried with or without it - delete this and the
+   razor palettes fall back to Loom's standard spacing with everything else intact. */
+:root[data-palette^="obsidian"]{--r:16px}
+:root[data-palette^="obsidian"] #list{padding:28px 32px 64px}
+:root[data-palette^="obsidian"] .cardgrid{gap:24px}
+:root[data-palette^="obsidian"] .ov-row{gap:24px;margin-bottom:24px}
+:root[data-palette^="obsidian"] .contentwrap>.ov-panel{margin-bottom:24px}
+:root[data-palette^="obsidian"] .mcard{border-radius:16px;padding:20px 22px 18px;gap:11px}
+:root[data-palette^="obsidian"] .ov-panel{border-radius:16px;padding:20px 22px}
+:root[data-palette^="obsidian"] .ov-todo{padding-left:21px}
+:root[data-palette^="obsidian"] .ov-todocols{gap:22px}
+:root[data-palette^="obsidian"] .ov-trow{border-radius:12px;padding:13px 15px 12px;margin-bottom:12px}
+:root[data-palette^="obsidian"] .dsect{border-radius:14px;padding:16px 18px 18px;margin-bottom:16px}
+:root[data-palette^="obsidian"] dialog{border-radius:16px}
+
+/* keys */
+:root[data-palette^="obsidian"] button.btn{min-height:44px;padding:0 18px;border-radius:10px;font:500 14px var(--sans);
+  display:inline-flex;align-items:center;justify-content:center;gap:8px}
+:root[data-palette^="obsidian"] button.btn.tiny{min-height:32px;padding:0 12px;border-radius:8px;font-size:12.5px}
+:root[data-palette^="obsidian"] nav{gap:4px}
+:root[data-palette^="obsidian"] nav button{height:44px;border-radius:9px;gap:12px;font:500 14px var(--sans)}
+:root[data-palette^="obsidian"] .chip{padding:5px 12px;font-size:12.5px}
+:root[data-palette^="obsidian"] .prchip span{padding:8px 14px;border-radius:9px}
+
+/* segmented bar and switches at the mockup's size */
+:root[data-palette^="obsidian"] .viewtoggle{padding:4px;gap:4px;border-radius:11px}
+:root[data-palette^="obsidian"] .viewtoggle button{height:34px;padding:0 12px;border-radius:8px;align-items:center}
+:root[data-palette^="obsidian"] .toggle{width:48px;height:28px}
+:root[data-palette^="obsidian"] .toggle i{top:2px;left:2px;width:22px;height:22px}
+:root[data-palette^="obsidian"] .toggle.on i{left:22px}
+
+/* wells. Padding goes in at the plain rule's own strength so the search boxes, which pad round
+   an icon, keep theirs. */
+:root[data-palette^="obsidian"] input:not([type=radio]):not([type=checkbox]),:root[data-palette^="obsidian"] select,:root[data-palette^="obsidian"] textarea{border-radius:10px}
+:where(:root[data-palette^="obsidian"]) input,:where(:root[data-palette^="obsidian"]) select{padding:10px 14px}
+:where(:root[data-palette^="obsidian"]) textarea{padding:11px 14px}
+:root[data-palette^="obsidian"] .navsearch input{height:42px}
+:root[data-palette^="obsidian"] .search input{padding-top:12px;padding-bottom:12px}
+:root[data-palette^="obsidian"] .search svg{top:15px}
+:root[data-palette^="obsidian"] .tag{border-radius:999px;padding:2px 9px}
+
 </style>
 </head>
 <body>
