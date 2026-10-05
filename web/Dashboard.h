@@ -467,21 +467,21 @@ R"HTML(<!doctype html>
   --mark:#645a2c;
   --accent2:#9dbff8; --good2:#aeebc6; --warn2:#f7d893; --bad2:#f9b9c6;
   --info:#97b9ee; --info-wash:#394962; --info-line:#566a86;
-  --field-bg:#e1e5eb; --field-ink:#1b1f26; --field-dim:#5b636f;
+  --field-bg:#a9acb0; --field-ink:#16191f; --field-dim:#40464f;
   --tag-bg:#5a606b; --tag-ink:#dde2e9; --eyebrow-ink:#b9c0ca;
-  --todo-top:#4a5872; --todo-bot:#40454e;
-  --todo-edge:#626873; --todo-bar:#6f9df3; --todo-glow:#6f9df3;
+  --todo-top:#4b5159; --todo-bot:#454b53;
+  --todo-edge:#626873; --todo-bar:#6f9df3; --todo-glow:transparent;
   /* Elevation: see the ladder in :root. */
   --sh:10 12 16; --sh-k:2.2; --rim:255 255 255; --rim-a:.08;
   --panel-2:#4f555e; --panel-3:#535963; --panel-4:#575e68; --faint-up:var(--dim);
   --sunk-shadow:inset 0 2px 4px rgba(0,0,0,.4),0 1px 0 rgba(255,255,255,.08);
-  --razor-ground:radial-gradient(120% 75% at 50% -12%,#474d57,#32363d 55%,#2a2d33);
-  --razor-side:linear-gradient(180deg,#363a41,#2e3238);
-  --razor-top:linear-gradient(180deg,#3d424a,#353940);
-  --razor-surface:linear-gradient(180deg,#4f555e,#444a53);
+  --razor-ground:radial-gradient(120% 75% at 50% -12%,#42474f,#2e3238 55%,#282b31);
+  --razor-side:linear-gradient(180deg,#3e434b,#3a3f46);
+  --razor-top:linear-gradient(180deg,#41464e,#3c4148);
+  --razor-surface:linear-gradient(180deg,#4b5159,#454b53);
   --razor-surface-up:linear-gradient(180deg,#555b65,#4a5059);
-  --razor-dialog:linear-gradient(180deg,#363a41,#2e3238);
-  --razor-well:linear-gradient(180deg,#24272c,#2d3137);
+  --razor-dialog:linear-gradient(180deg,#464a52,#3b3f46);
+  --razor-well:linear-gradient(180deg,#2e3238,#33373e);
   --razor-key:linear-gradient(180deg,#5d646f,#4c525c);
   --razor-key-hover:linear-gradient(180deg,#656c78,#525963);
   --razor-raised:linear-gradient(180deg,#606773,#50565f);
@@ -491,18 +491,19 @@ R"HTML(<!doctype html>
     0 10px 20px -10px rgba(0,0,0,.4),0 30px 60px -24px rgba(0,0,0,.5);
   --razor-key-lift:inset 0 1px 0 rgba(255,255,255,.10),0 1px 1px rgba(0,0,0,.4),0 8px 18px -8px rgba(0,0,0,.55);
   --razor-glow:rgba(76,131,238,.5); --razor-ring:rgba(111,157,243,.28);
-  /* BRUSHED GRAPHITE, cards only. Three layers over the plain surface: grain - fractal noise
-     stretched about 250:1 along x, which is what turns noise into the long fine scratches of a
-     brushed finish - then an off-axis sheen band, the anisotropic highlight brushed metal throws,
-     then the graphite ramp itself. The grain is a grey wash at 16%, so it shades both ways
-     around the base rather than lightening it. */
+  /* BRUSHED GRAPHITE, cards only, on a plain ground: the cards read as metal plates. Three
+     layers over a card ramp a step brighter than the panels: grain - fractal noise stretched
+     about 250:1 along x, which is what turns noise into the long fine scratches of a brushed
+     finish - then an off-axis sheen band, the anisotropic highlight brushed metal throws, then
+     the ramp. The grain is a grey wash at 16%, so it shades both ways around the base rather
+     than lightening it. */
   --razor-grain:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='640' height='320'%3E%3Cfilter id='b'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.0035 0.9' numOctaves='3' seed='11' stitchTiles='stitch'/%3E%3CfeColorMatrix values='1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 0 0 0 0 .16'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23b)'/%3E%3C/svg%3E") 0 0/640px 320px;
   --razor-card:var(--razor-grain) padding-box,
     linear-gradient(100deg,rgba(255,255,255,0) 18%,rgba(255,255,255,.07) 42%,rgba(255,255,255,0) 66%) padding-box,
-    var(--razor-surface);
+    linear-gradient(180deg,#60656d,#4d5259);
   --razor-card-up:var(--razor-grain) padding-box,
     linear-gradient(100deg,rgba(255,255,255,0) 18%,rgba(255,255,255,.10) 42%,rgba(255,255,255,0) 66%) padding-box,
-    var(--razor-surface-up);
+    linear-gradient(180deg,#666b74,#52575f);
 }
 *{box-sizing:border-box}
 /* THE SHELL IS A SIDEBAR + A COLUMN. #shell owns the viewport as a flex ROW: a fixed-width rail
@@ -1802,6 +1803,21 @@ label u{text-decoration:none;color:var(--accent-ink);text-transform:none;letter-
 /* dialogs - same edge, but the ladder's top rung for the shadow */
 :root[data-palette^="obsidian"] dialog{border-color:transparent;background:var(--razor-surface) padding-box,var(--razor-edge) border-box}
 :root[data-palette^="obsidian"] dialog#detail-dialog{background:var(--razor-dialog) padding-box,var(--razor-edge) border-box}
+/* The dialog's X: a small round key, raised like the others, ink brightening on hover. */
+:root[data-palette^="obsidian"] dialog#detail-dialog .dclose{width:32px;height:32px;border-radius:50%;color:var(--razor-key-ink-hi);
+  background:var(--razor-key) padding-box,var(--razor-key-edge) border-box;box-shadow:var(--razor-key-lift)}
+:root[data-palette^="obsidian"] dialog#detail-dialog .dclose:hover{background:var(--razor-key-hover) padding-box,var(--razor-key-edge) border-box}
+:root[data-palette^="obsidian"] dialog#detail-dialog .dclose:active{box-shadow:var(--sunk-shadow)}
+
+/* Scrollbars: a graphite key riding in a clear track. WebKit/Blink take the pseudo-elements;
+   Firefox only understands scrollbar-color, and Chrome drops the pseudo-elements once that is
+   set, so it is fenced to Firefox. */
+:root[data-palette^="obsidian"] ::-webkit-scrollbar{width:12px;height:12px;cursor:default}
+:root[data-palette^="obsidian"] ::-webkit-scrollbar-track,:root[data-palette^="obsidian"] ::-webkit-scrollbar-corner{background:transparent;cursor:default}
+:root[data-palette^="obsidian"] ::-webkit-scrollbar-thumb{border:3px solid transparent;border-radius:999px;cursor:default;
+  background:var(--razor-knob) padding-box;box-shadow:inset 0 1px 0 rgba(255,255,255,.12)}
+:root[data-palette^="obsidian"] ::-webkit-scrollbar-thumb:hover{background:var(--razor-key-hover) padding-box}
+@supports (-moz-appearance:none){:root[data-palette^="obsidian"] *{scrollbar-color:var(--faint) transparent;scrollbar-width:thin}}
 
 /* keys: plain buttons */
 :root[data-palette^="obsidian"] button.btn:not(.primary):not(.warnfill):not(.badfill){color:var(--razor-key-ink);border-color:transparent;
@@ -1892,6 +1908,14 @@ label u{text-decoration:none;color:var(--accent-ink);text-transform:none;letter-
 :root[data-palette^="obsidian"] .ov-todo{padding-left:21px}
 :root[data-palette^="obsidian"] .ov-todocols{gap:22px}
 :root[data-palette^="obsidian"] .ov-trow{border-radius:12px;padding:13px 15px 12px;margin-bottom:12px}
+/* Pills: fully round, bold sans caps, a recessed fill under a faint lit ring - the mockup's
+   chips rather than Loom's square mono tags. Coloured chips keep their own wash and ink. */
+:root[data-palette^="obsidian"] .ov-tchip,:root[data-palette^="obsidian"] .catpill{border-radius:999px;padding:3px 9px;
+  font:700 10px var(--sans);letter-spacing:.07em;border:1px solid transparent;
+  box-shadow:inset 0 1px 2px rgba(0,0,0,.35),0 1px 0 rgba(255,255,255,.06)}
+:root[data-palette^="obsidian"] .ov-tchip.todo{background:rgba(0,0,0,.16);border-color:rgba(255,255,255,.12)}
+:root[data-palette^="obsidian"] .ov-tchip.pr-high{border-color:transparent}
+:root[data-palette^="obsidian"] .tag{border-radius:999px;padding:2px 9px}
 :root[data-palette^="obsidian"] .dsect{border-radius:14px;padding:16px 18px 18px;margin-bottom:16px}
 :root[data-palette^="obsidian"] dialog{border-radius:16px}
 
@@ -5547,7 +5571,12 @@ $('#attention-dialog').addEventListener('close',function(){if(view==='dashboard'
    later render() doesn't reopen it. The X button and in-panel Close button just call render()
    after clearing sel; this covers the two paths that don't. */
 $('#detail-close-x').addEventListener('click',()=>$('#detail-dialog').close());
-$('#detail-dialog').addEventListener('click',function(e){if(e.target===this)this.close();});
+/* A backdrop click only counts if the press started there too: dragging a textarea's resize grip
+   (or a text selection) out past the dialog edge releases on the backdrop, and the click that
+   follows lands on the dialog itself. */
+let detailDownOnBackdrop=false;
+$('#detail-dialog').addEventListener('pointerdown',function(e){detailDownOnBackdrop=e.target===this;});
+$('#detail-dialog').addEventListener('click',function(e){if(e.target===this&&detailDownOnBackdrop)this.close();});
 $('#detail-dialog').addEventListener('close',function(){
   if(detailTrail.length){trailUnwind=true;history.go(-detailTrail.length);detailTrail=[];}
   if(sel){sel=null;render();}
