@@ -107,7 +107,7 @@ inline eSurface SurfaceFor(const std::string& sUrl, const std::string& sClient =
 
     // The page itself and the art it loads, for the first request of a session - before any script
     // is running to send the header.
-    if (sPath == "/" || sPath == "/icon.png" || sPath == "/icon-full.png")
+    if (sPath == "/" || sPath == "/icon.png" || sPath == "/icon-full.png" || sPath.rfind("/fonts/", 0) == 0)
         return eSurface::kDashboard;
 
     return eSurface::kRest;

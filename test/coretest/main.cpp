@@ -1274,6 +1274,7 @@ namespace
               "a query string does not stop a path being recognized");
         Check(SurfaceFor("/") == eSurface::kDashboard, "the page itself is the dashboard");
         Check(SurfaceFor("/icon.png") == eSurface::kDashboard, "so is the art the page loads");
+        Check(SurfaceFor("/fonts/geist.woff2") == eSurface::kDashboard, "and the fonts it loads");
         Check(SurfaceFor("/stats") == eSurface::kRest,
               "a REST route with no client header is REST, whoever called it");
         Check(SurfaceFor("/stats", "dashboard") == eSurface::kDashboard,

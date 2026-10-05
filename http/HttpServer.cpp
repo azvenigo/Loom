@@ -16,6 +16,7 @@
 #include "persist/Purge.h"
 #include "persist/Undo.h"
 #include "web/Dashboard.h"
+#include "web/FontAssets.h"
 #include "web/IconAssets.h"
 
 #include "vendor/crow/crow.h"
@@ -629,6 +630,29 @@ struct HttpServer::Impl
             const auto& png = LoomIconFullPng();
             crow::response res(200, std::string(reinterpret_cast<const char*>(png.data()), png.size()));
             res.set_header("Content-Type", "image/png");
+            return res;
+        });
+
+        // Fonts for the Obsidian palette - see web/FontAssets.h. The bytes never change for the
+        // life of the binary, so the browser may keep them; a restart that ships a new font is
+        // rare enough that a week of staleness is the right trade for not refetching 140KB.
+        CROW_ROUTE(mApp, "/fonts/geist.woff2").methods(crow::HTTPMethod::Get)
+        ([]()
+        {
+            const auto& font = LoomGeistSansWoff2();
+            crow::response res(200, std::string(reinterpret_cast<const char*>(font.data()), font.size()));
+            res.set_header("Content-Type", "font/woff2");
+            res.set_header("Cache-Control", "public, max-age=604800");
+            return res;
+        });
+
+        CROW_ROUTE(mApp, "/fonts/geist-mono.woff2").methods(crow::HTTPMethod::Get)
+        ([]()
+        {
+            const auto& font = LoomGeistMonoWoff2();
+            crow::response res(200, std::string(reinterpret_cast<const char*>(font.data()), font.size()));
+            res.set_header("Content-Type", "font/woff2");
+            res.set_header("Cache-Control", "public, max-age=604800");
             return res;
         });
 

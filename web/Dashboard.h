@@ -47,12 +47,16 @@ R"HTML(<!doctype html>
 <title>Loom</title>
 <link rel="icon" type="image/png" href="/icon.png">
 <style>
+/* Declared for everyone, downloaded only by a palette that names the family (Obsidian). */
+@font-face{font-family:"Geist";src:url(/fonts/geist.woff2) format("woff2");font-weight:100 900;
+  font-display:swap}
+@font-face{font-family:"Geist Mono";src:url(/fonts/geist-mono.woff2) format("woff2");
+  font-weight:100 900;font-display:swap}
 :root{
   /* Contrast raised 2026-09-16: the ground now separates from the white panels, borders read as
-     borders, and --faint clears 4:1 on white instead of the 2.6:1 it used to. Paper is also the
-     WARM light palette now - cream ground, berry accent - because with its old violet it was a
-     near-twin of Twilight. Its extras (ramp, pills, TODO ground) are in the "paper" block below,
-     not here, so the var() defaults further down stay defaults for everyone else. */
+     borders, and --faint clears 4:1 on white instead of the 2.6:1 it used to. These values were
+     the "Paper" palette (cream ground, berry accent), retired 2026-10-05; they stay as the base
+     every palette overrides. */
   --bg:#f1ece2; --panel:#fff; --sunk:#e9e2d5;
   --ink:#12100d; --body:#2b2823; --dim:#58534b; --faint:#7a7368;
   --line:#d6cdbd; --line-soft:#e5ded1;
@@ -181,15 +185,15 @@ R"HTML(<!doctype html>
   --sans:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
   --r:7px;
 }
-/* Paper/Midnight are the original pair (purple accent, light/dark) - the old "Loom" auto-dark and
-   "Midnight" sat almost on top of each other once the OS was in dark mode, which was the
-   complaint that started this; Midnight now covers that end on its own, :root above is "Paper".
+/* :root above is the old "Paper" palette. It is no longer offered (2026-10-05, along with
+   Midnight, Nebula and Heather) but stays as the base every palette below overrides - and the
+   look of the brief moment before the script applies the saved choice.
    Nord and Twilight are light/dark pairs adapted from the terminal color tables in
    ZLibraries/Common/zhelpers/FormatHelpers.cpp (Style::GetSchemes) and re-tuned for web contrast.
    2026-09-16: Earth/Earth Dark, Synthwave and Sorbet were dropped; Paper, Nord and Twilight
    (light) got a contrast pass - darker ink down the whole text ramp, borders that read, and a
    ground that separates from the white panels; Slate and Lagoon joined the light set and a new
-   Medium group (Storm, Heather) sits between the light and dark ones. */
+   Medium group sits between the light and dark ones. */
 :root[data-palette="nord"]{
   --bg:#e3e8ef; --panel:#ffffff; --sunk:#dce2ea;
   --ink:#1b212c; --body:#2b3240; --dim:#4a5467; --faint:#687287;
@@ -291,59 +295,21 @@ R"HTML(<!doctype html>
   --sh:5 3 14; --sh-k:3.2; --rim:203 184 232; --rim-a:.13;
   --panel-2:#221e36; --panel-3:#27233c; --panel-4:#2c2841; --faint-up:var(--dim);
 }
-:root[data-palette="midnight"]{
-  --bg:#141317; --panel:#1b1a20; --sunk:#232128;
-  --ink:#eceae5; --body:#cfcbc3; --dim:#948e85; --faint:#6b665e;
-  --line:#2c2a32; --line-soft:#25232a;
-  --accent:#a493f5; --accent-ink:#c0b3ff; --accent-wash:#272243;
-  --warn:#e0a458; --warn-wash:#2a2114; --warn-line:#5c4520;
-  --bad:#e08279; --bad-wash:#2b1917; --bad-line:#5e2f2a;
-  --good:#6cc294; --good-wash:#152720; --good-line:#2c5340;
-  --mark:#5c5220;
-  --accent2:#c3b3ff; --good2:#8fd9ae; --warn2:#f0c288;
-  --info:#7fa2f0; --info-wash:#182339; --info-line:#2c3c5e;
-  --field-bg:#e2dfe9; --field-ink:#17161c; --field-dim:#6b6878;
-  /* Midnight's ground is neutral near-black, so the warm default read as a brown patch rather than
-     as a tint of anything on the page. Its own violet accent into --sunk instead. */
-  --todo-top:#302c3f; --todo-bot:#232128;
-  --todo-edge:#2c2a32; --todo-bar:#a493f5; --todo-glow:#a493f5;
-  /* Elevation: see the ladder in :root. */
-  --sh:6 5 10; --sh-k:3.2; --rim:192 179 255; --rim-a:.12;
-  --panel-2:#211f27; --panel-3:#26242e; --panel-4:#2b2935; --faint-up:var(--dim);
-}
 /* ---- the vivid set ----------------------------------------------------------------------------
    The quiet schemes above are ones where the second gradient stop is just a lighter shade of the
-   first, so their buttons gain depth without changing hue. These two spend that second stop on a
+   first, so their buttons gain depth without changing hue. These spend that second stop on a
    DIFFERENT HUE instead - violet into magenta, cyan into mint - which is what turns a filled button from "a colored rectangle" into something with a
-   ramp across it. Both are dark because that's where a two-hue ramp has room to read.
+   ramp across it. They are dark because that's where a two-hue ramp has room to read.
    They also redefine the --todo-* ground (see .ov-todo): the default "tint the panel with the
    warning color" rule paints a large olive slab on a saturated dark palette, so these carry their
    own ground instead - a wash of the palette's OWN accent at the top fading into --sunk, which
    puts the panel in the same color family as the cards sitting on it.
-   Everything else about them is a normal palette. If one of these is the keeper, the ramp is three
+   Everything else about them is a normal palette. If one is the keeper, the ramp is three
    tokens - it can be lifted into any of the others by editing --accent2/--good2/--warn2 alone. */
-:root[data-palette="nebula"]{
-  --bg:#0f0b1a; --panel:#191330; --sunk:#140f26;
-  --ink:#f0ecfa; --body:#c9c0e4; --dim:#948ab8; --faint:#6b6090;
-  --line:#33265c; --line-soft:#2a1f4d;
-  --accent:#8b5cf6; --accent-ink:#c4a8ff; --accent-wash:#2a1f4d;
-  --warn:#f0b429; --warn-wash:#3a2c10; --warn-line:#5c4620;
-  --bad:#f2557a; --bad-wash:#38131f; --bad-line:#5c2438;
-  --good:#2fbf8f; --good-wash:#10302a; --good-line:#235c48;
-  --mark:#4a2f6b;
-  --accent2:#e879c7; --good2:#5fe0b0; --warn2:#f7d774;
-  --todo-top:#241a45; --todo-bot:#140f26;
-  --todo-edge:#33265c; --todo-bar:#8b5cf6; --todo-glow:#8b5cf6;
-  --info:#6c8cff; --info-wash:#1a2145; --info-line:#2e3a6b;
-  --field-bg:#ded6f0; --field-ink:#171230; --field-dim:#6b5f8c;
-  /* Elevation: see the ladder in :root. */
-  --sh:4 0 12; --sh-k:3.2; --rim:196 168 255; --rim-a:.14;
-  --panel-2:#1f1938; --panel-3:#251e3f; --panel-4:#2a2245; --faint-up:var(--dim);
-}
 /* Aurora replaces an earlier warm "Ember" - a brown-grounded dark theme, which turns out to be the
    one thing a large tinted surface cannot survive: every wash on it reads as mud rather than as a
-   color. Nebula is purple-family, so the other vivid slot goes somewhere cold instead: deep
-   slate-teal ground, cyan into mint. */
+   color. So the vivid slot goes somewhere cold instead: deep slate-teal ground, cyan into
+   mint. */
 :root[data-palette="aurora"]{
   --bg:#071619; --panel:#0f2630; --sunk:#0b1e26;
   --ink:#e8f6f7; --body:#b6d4d9; --dim:#7fa3ab; --faint:#557880;
@@ -362,23 +328,11 @@ R"HTML(<!doctype html>
   --sh:1 8 11; --sh-k:3.2; --rim:95 214 232; --rim-a:.12;
   --panel-2:#112b35; --panel-3:#14303b; --panel-4:#16353f; --faint-up:var(--dim);
 }
-/* Paper's own extras - see the note in :root. Berry into burnt orange on the filled controls, and
-   a TODO ground that is a real amber fill all the way down: the old wash faded to white at the
-   bottom, which is exactly where the white TODO cards sit, so they vanished into it. */
-:root[data-palette="paper"]{
-  --accent2:#c24a1c; --good2:#1f6f5c; --warn2:#b0561a;
-  --hi-a:#a8326a; --hi-b:#c24a1c;
-  --tag-bg:#f5e4ec; --tag-ink:#8a2254; --eyebrow-ink:#a8326a;
-  --todo-top:#f3dfbd; --todo-bot:#efe3cc;
-  --todo-edge:#dcbd89; --todo-bar:#d9861a; --todo-glow:#d9861a;
-  /* Warm ground, warm shadow: the neutral default greys the cream out. */
-  --sh:46 34 18;
-}
 /* ---- the added set, 2026-09-16 ------------------------------------------------------------------
    Built to sit beside Twilight rather than compete with it: clean near-neutral grounds, a text
    ramp that stays readable all the way down to --faint, and a two-HUE ramp on the filled controls
    so they keep the pop the rest of the file is built around. Light pair: Slate (blue into cyan)
-   and Lagoon (teal into blue). Medium pair: Storm and Heather - mid-tone grounds lighter than any
+   and Lagoon (teal into blue). Medium: Storm - mid-tone grounds lighter than any
    dark palette, so the page is soft rather than a dark room, with light ink and light accents.
    Filled controls print --panel, so on the medium pair the button is light and its label is the
    mid-tone ground, same as the dark palettes. */
@@ -438,25 +392,99 @@ R"HTML(<!doctype html>
   --sh:12 16 24; --sh-k:2.2; --rim:171 208 250; --rim-a:.10;
   --panel-2:#3e485a; --panel-3:#414c60; --panel-4:#445064; --faint-up:var(--dim);
 }
-:root[data-palette="heather"]{
-  --bg:#39344a; --panel:#453f59; --sunk:#3e3851;
-  --ink:#f8f4fd; --body:#e0d8ec; --dim:#bdb2d0; --faint:#a095b5;
-  --line:#61577a; --line-soft:#554b6c;
-  --accent:#c6aaf8; --accent-ink:#dac8fc; --accent-wash:#584a74;
-  --warn:#f3c472; --warn-wash:#534a3a; --warn-line:#766a4e;
-  --bad:#f8a5b5; --bad-wash:#5a4254; --bad-line:#7e5a6e;
-  --good:#93deb8; --good-wash:#3c5754; --good-line:#58786d;
-  --mark:#6e5d32;
-  --accent2:#f3a8d8; --good2:#b3eed2; --warn2:#f8dca0; --bad2:#fbbdd0;
-  --info:#a3baf2; --info-wash:#444d6c; --info-line:#5f6b8e;
-  --field-bg:#e7e0f1; --field-ink:#231e31; --field-dim:#675e7c;
-  --hi-a:#b89af4; --hi-b:#ef98cc;
-  --tag-bg:#564b70; --tag-ink:#e0cffc; --eyebrow-ink:#d0b8fa;
-  --todo-top:#5a4c7c; --todo-bot:#3e3851;
-  --todo-edge:#61577a; --todo-bar:#c6aaf8; --todo-glow:#c6aaf8;
+/* Obsidian Razor (2026-10-04) and Obsidian Medium (2026-10-05): graphite, near-neutral, one blue
+   accent. The colour blocks make each a normal palette; what makes them RAZOR - gradient hairline
+   edges, the specular streak, sunk wells, Geist - is the "razor finish" block at the end of the
+   stylesheet. It matches [data-palette^="obsidian"], so any palette named obsidian-* wears the
+   finish, and the --razor-* tokens are all a new one has to supply. Every other palette renders
+   exactly as before. */
+:root[data-palette^="obsidian"]{
+  /* Geist, served by Loom itself (web/FontAssets.h); the system stacks stay behind it. */
+  --sans:"Geist",system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
+  --mono:"Geist Mono",ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  /* The hairlines are white/black over whatever fill sits under them, so they are shared. */
+  --razor-edge:linear-gradient(180deg,rgba(255,255,255,.22),rgba(255,255,255,.05) 28%,
+    rgba(255,255,255,.02) 72%,rgba(255,255,255,.07));
+  --razor-edge-hi:linear-gradient(180deg,rgba(255,255,255,.32),rgba(255,255,255,.08) 28%,
+    rgba(255,255,255,.03) 72%,rgba(255,255,255,.10));
+  --razor-key-edge:linear-gradient(180deg,rgba(255,255,255,.30),rgba(255,255,255,.05) 50%,rgba(0,0,0,.5));
+  --razor-lit-edge:linear-gradient(180deg,rgba(255,255,255,.65),rgba(255,255,255,.10) 45%,rgba(0,0,0,.40));
+  --razor-fill:linear-gradient(180deg,#4c83ee,#2454b3);
+}
+:root[data-palette="obsidian"]{
+  --bg:#101216; --panel:#1a1d22; --sunk:#0e1013;
+  --ink:#f2f4f7; --body:#e6e9ee; --dim:#a0a7b2; --faint:#8a919d;
+  --line:#2a2f37; --line-soft:#0c0e11;
+  --accent:#2f6feb; --accent-ink:#8fb4ff; --accent-wash:#172440;
+  --warn:#e0a458; --warn-wash:#262016; --warn-line:#56432a;
+  --bad:#ff8080; --bad-wash:#2a1819; --bad-line:#5e2f2f;
+  --good:#3ddc84; --good-wash:#13251b; --good-line:#245238;
+  --mark:#4a4220;
+  --accent2:#4c83ee; --good2:#8fe8b4; --warn2:#f0c288; --bad2:#ffa0a0;
+  --info:#7fa2f0; --info-wash:#172238; --info-line:#2c3c5e;
+  --field-bg:#dfe3ea; --field-ink:#14171b; --field-dim:#5d6470;
+  --tag-bg:#22262d; --tag-ink:#c4cad3; --eyebrow-ink:#8a919d;
+  --todo-top:#1b2333; --todo-bot:#15181d;
+  --todo-edge:#2a2f37; --todo-bar:#2f6feb; --todo-glow:#2f6feb;
+  /* Elevation: see the ladder in :root. The well is the razor one - a dark inset plus a 1px
+     catch-light under the lip - and it is a ladder token, so pressed buttons sink the same way. */
+  --sh:0 0 0; --sh-k:3.2; --rim:255 255 255; --rim-a:.06;
+  --panel-2:#1f2329; --panel-3:#23272e; --panel-4:#272c33; --faint-up:var(--dim);
+  --sunk-shadow:inset 0 2px 4px rgba(0,0,0,.55),0 1px 0 rgba(255,255,255,.07);
+  --razor-ground:radial-gradient(120% 75% at 50% -12%,#1e232b,#101216 55%,#0b0c0f);
+  --razor-side:linear-gradient(180deg,#171a1f,#111317);
+  --razor-top:linear-gradient(180deg,#1b1f25,#15181c);
+  --razor-surface:linear-gradient(180deg,#1e2228,#15181d);
+  --razor-surface-up:linear-gradient(180deg,#232830,#191c22);
+  --razor-dialog:linear-gradient(180deg,#14171b,#0f1115);
+  --razor-well:linear-gradient(180deg,#0a0c0f,#121519);
+  --razor-key:linear-gradient(180deg,#2a2f37,#1b1f25);
+  --razor-key-hover:linear-gradient(180deg,#30363f,#20242b);
+  --razor-raised:linear-gradient(180deg,#2d323b,#1f2329);
+  --razor-pill:linear-gradient(180deg,#1c2026,#14171b);
+  --razor-knob:linear-gradient(180deg,#3b414a,#252a31);
+  --razor-lift:inset 0 1px 0 rgba(255,255,255,.05),0 1px 0 rgba(0,0,0,.6),
+    0 10px 20px -10px rgba(0,0,0,.6),0 30px 60px -24px rgba(0,0,0,.8);
+  --razor-key-lift:inset 0 1px 0 rgba(255,255,255,.08),0 1px 1px rgba(0,0,0,.6),0 8px 18px -8px rgba(0,0,0,.8);
+  --razor-glow:rgba(47,111,235,.55); --razor-ring:rgba(47,111,235,.22);
+}
+/* The same graphite lifted to Storm's lightness: a soft room rather than a dark one. The shadows
+   ease off with it - over a mid-tone ground the dark palette's black would read as soot. */
+:root[data-palette="obsidian-medium"]{
+  --bg:#30343b; --panel:#3b4048; --sunk:#2a2e34;
+  --ink:#f6f8fa; --body:#e3e7ec; --dim:#c2c8d1; --faint:#a7afba;
+  --line:#565c66; --line-soft:#24272c;
+  --accent:#6f9df3; --accent-ink:#b3cdfd; --accent-wash:#3c4b66;
+  --warn:#f0c26c; --warn-wash:#4a4533; --warn-line:#6d6446;
+  --bad:#f7a3a8; --bad-wash:#533d48; --bad-line:#795562;
+  --good:#8edbad; --good-wash:#35514b; --good-line:#517266;
+  --mark:#645a2c;
+  --accent2:#9dbff8; --good2:#aeebc6; --warn2:#f7d893; --bad2:#f9b9c6;
+  --info:#97b9ee; --info-wash:#394962; --info-line:#566a86;
+  --field-bg:#e1e5eb; --field-ink:#1b1f26; --field-dim:#5b636f;
+  --tag-bg:#474d57; --tag-ink:#dde2e9; --eyebrow-ink:#b9c0ca;
+  --todo-top:#3f4b61; --todo-bot:#33373e;
+  --todo-edge:#565c66; --todo-bar:#6f9df3; --todo-glow:#6f9df3;
   /* Elevation: see the ladder in :root. */
-  --sh:16 12 26; --sh-k:2.2; --rim:218 200 252; --rim-a:.10;
-  --panel-2:#49435d; --panel-3:#4d4762; --panel-4:#524a67; --faint-up:var(--dim);
+  --sh:10 12 16; --sh-k:2.2; --rim:255 255 255; --rim-a:.08;
+  --panel-2:#40454e; --panel-3:#444a53; --panel-4:#484e58; --faint-up:var(--dim);
+  --sunk-shadow:inset 0 2px 4px rgba(0,0,0,.4),0 1px 0 rgba(255,255,255,.08);
+  --razor-ground:radial-gradient(120% 75% at 50% -12%,#474d57,#32363d 55%,#2a2d33);
+  --razor-side:linear-gradient(180deg,#363a41,#2e3238);
+  --razor-top:linear-gradient(180deg,#3d424a,#353940);
+  --razor-surface:linear-gradient(180deg,#41464f,#363a42);
+  --razor-surface-up:linear-gradient(180deg,#474d56,#3b4048);
+  --razor-dialog:linear-gradient(180deg,#363a41,#2e3238);
+  --razor-well:linear-gradient(180deg,#24272c,#2d3137);
+  --razor-key:linear-gradient(180deg,#4b515b,#3b4048);
+  --razor-key-hover:linear-gradient(180deg,#535a64,#41464f);
+  --razor-raised:linear-gradient(180deg,#4f555f,#40454e);
+  --razor-pill:linear-gradient(180deg,#42474f,#383c44);
+  --razor-knob:linear-gradient(180deg,#5d646f,#474d56);
+  --razor-lift:inset 0 1px 0 rgba(255,255,255,.06),0 1px 0 rgba(0,0,0,.35),
+    0 10px 20px -10px rgba(0,0,0,.4),0 30px 60px -24px rgba(0,0,0,.5);
+  --razor-key-lift:inset 0 1px 0 rgba(255,255,255,.10),0 1px 1px rgba(0,0,0,.4),0 8px 18px -8px rgba(0,0,0,.55);
+  --razor-glow:rgba(76,131,238,.5); --razor-ring:rgba(111,157,243,.28);
 }
 *{box-sizing:border-box}
 /* THE SHELL IS A SIDEBAR + A COLUMN. #shell owns the viewport as a flex ROW: a fixed-width rail
@@ -1140,9 +1168,8 @@ mark{background:var(--mark);color:inherit;border-radius:2px;padding:0 1px}
    several palettes set --hi-a and --hi-b to the same colour, and a split bar whose halves match is
    no bar at all. The numbers and captions stay in ink; a swatch beside them carries the identity. */
 :root{--act-you:#5b4ce6;--act-agent:#0f9d8e}
-:root[data-palette="twilight-dark"],:root[data-palette="midnight"],:root[data-palette="nord-dark"],
-:root[data-palette="aurora"],:root[data-palette="nebula"],:root[data-palette="storm"],
-:root[data-palette="heather"]{--act-you:#8f74ee;--act-agent:#28a896}
+:root[data-palette="twilight-dark"],:root[data-palette="nord-dark"],:root[data-palette="aurora"],
+:root[data-palette="storm"],:root[data-palette^="obsidian"]{--act-you:#8f74ee;--act-agent:#28a896}
 .ov-act{position:relative;overflow:hidden;margin-bottom:20px}
 /* The pop: the palette's own highlight gradient as a rule across the top, where it carries no data
    and so cannot be mistaken for the you/agent pair. */
@@ -1329,8 +1356,12 @@ i.bytes{background:var(--accent)}
 .audchip b{font-weight:600;color:var(--dim)}
 .audchip.on b{color:var(--accent-ink)}
 
-.ov-todocols{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
-@media(max-width:760px){.ov-todocols{grid-template-columns:1fr}}
+/* The columns WRAP rather than snapping. This used to be three columns until a 760px viewport and
+   one below it - but the viewport counts the rail, so the three got squeezed well past readable
+   before the switch, and then jumped straight to one. Now a column holds at least 230px and the
+   grid fits as many as the panel itself has room for: three, then Low wraps under High, then one.
+   min(100%,...) keeps a single column from overflowing a panel narrower than the floor. */
+.ov-todocols{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr));gap:18px}
 .ov-todocolhead{display:flex;align-items:center;gap:7px;margin-bottom:9px;padding-bottom:7px;
   border-bottom:2px solid var(--line)}
 .ov-todocol.pr-high .ov-todocolhead{border-bottom-color:var(--bad)}
@@ -1695,6 +1726,129 @@ label u{text-decoration:none;color:var(--accent-ink);text-transform:none;letter-
 #toast.warn{background:var(--warn-wash);color:var(--warn);border:1px solid var(--warn-line)}
 #toast .undo{flex:none;font:inherit;font-weight:700;text-decoration:underline;background:none;
   border:0;padding:0;cursor:pointer;color:inherit}
+
+/* ================================ RAZOR FINISH =========================================
+   A finish, not just colours: surfaces are graphite ramps with a 1px GRADIENT edge (bright along
+   the top, fading down the sides), a specular streak on the top edge of each card, and wells for
+   anything you type into. A gradient border needs `border:1px solid transparent` plus a two-layer
+   background - fill on padding-box, edge on border-box - which no colour token can express, so
+   this lives here, scoped to the palette, rather than as defaults every palette would inherit.
+
+   SPECIFICITY IS SPLIT ON PURPOSE. Backgrounds go at full strength, because every surface state
+   below has to repaint them as a padding-box/border-box pair anyway. Resting shadows and border
+   colours go through :where(), i.e. at the specificity of the plain rule they replace, so the
+   elevation ladder's states - hover, selected, High, overdue, done, needs-input - still win with
+   their own shadows and borders exactly as they do in every other palette. */
+:root[data-palette^="obsidian"] body{background:var(--razor-ground)}
+:root[data-palette^="obsidian"] #side{background:var(--razor-side);border-right-color:rgba(0,0,0,.55);
+  box-shadow:1px 0 0 rgba(255,255,255,.05)}
+:root[data-palette^="obsidian"] #topbar{background:var(--razor-top);border-bottom-color:rgba(0,0,0,.55);
+  box-shadow:0 1px 0 rgba(255,255,255,.05)}
+
+/* cards */
+:where(:root[data-palette^="obsidian"]) .mcard,:where(:root[data-palette^="obsidian"]) .ov-panel,:where(:root[data-palette^="obsidian"]) .ov-trow,:where(:root[data-palette^="obsidian"]) .dsect{box-shadow:var(--razor-lift)}
+:where(:root[data-palette^="obsidian"]) .ov-panel,:where(:root[data-palette^="obsidian"]) .dsect{position:relative;border-color:transparent}
+/* The category bar on a card and the priority bar on a TODO row keep their colour. */
+:where(:root[data-palette^="obsidian"]) .mcard{border-right-color:transparent;border-bottom-color:transparent;border-left-color:transparent}
+:where(:root[data-palette^="obsidian"]) .ov-trow{border-top-color:transparent;border-right-color:transparent;border-bottom-color:transparent}
+:root[data-palette^="obsidian"] .mcard,:root[data-palette^="obsidian"] .ov-panel,:root[data-palette^="obsidian"] .ov-trow,:root[data-palette^="obsidian"] .dsect{
+  background:var(--razor-surface) padding-box,var(--razor-edge) border-box}
+:root[data-palette^="obsidian"] .mcard:not(.sel):hover{border-right-color:transparent;border-bottom-color:transparent;
+  border-left-color:transparent}
+:root[data-palette^="obsidian"] .ov-trow:hover{border-top-color:transparent;border-right-color:transparent;
+  border-bottom-color:transparent}
+:root[data-palette^="obsidian"] .mcard:hover,:root[data-palette^="obsidian"] .mcard.sel,:root[data-palette^="obsidian"] .mcard.fresh,:root[data-palette^="obsidian"] .ov-trow:hover,
+:root[data-palette^="obsidian"] .ov-todocol.pr-high .ov-trow,:root[data-palette^="obsidian"] .ov-todocol .ov-trow.over{
+  background:var(--razor-surface-up) padding-box,var(--razor-edge-hi) border-box}
+:root[data-palette^="obsidian"] .ov-todocol .ov-trow.done{background:var(--sunk)}
+:root[data-palette^="obsidian"] .ov-trow.needs-input{background:var(--bad)}
+:root[data-palette^="obsidian"] .ov-todo{border-color:transparent;border-left-color:var(--todo-bar);
+  background:linear-gradient(180deg,var(--todo-top),var(--todo-bot)) padding-box,var(--razor-edge) border-box;
+  box-shadow:var(--razor-lift),0 3px 16px -6px color-mix(in srgb,var(--todo-glow) 40%,transparent)}
+/* The specular streak: a hot 1px line on the top edge, centred, fading out both ways. On a card
+   it sits on the outer edge of the 3px category bar, which reads as the bar catching the light. */
+:root[data-palette^="obsidian"] .mcard::after,:root[data-palette^="obsidian"] .ov-panel::after,:root[data-palette^="obsidian"] .dsect::after{content:"";position:absolute;top:-1px;
+  left:16%;right:16%;height:1px;pointer-events:none;
+  background:linear-gradient(90deg,rgba(255,255,255,0),rgba(255,255,255,.75),rgba(255,255,255,0))}
+:root[data-palette^="obsidian"] .mcard::after{top:-3px}
+
+/* dialogs - same edge, but the ladder's top rung for the shadow */
+:root[data-palette^="obsidian"] dialog{border-color:transparent;background:var(--razor-surface) padding-box,var(--razor-edge) border-box}
+:root[data-palette^="obsidian"] dialog#detail-dialog{background:var(--razor-dialog) padding-box,var(--razor-edge) border-box}
+
+/* keys: plain buttons */
+:root[data-palette^="obsidian"] button.btn:not(.primary):not(.warnfill):not(.badfill){color:var(--body);border-color:transparent;
+  background:var(--razor-key) padding-box,var(--razor-key-edge) border-box;box-shadow:var(--razor-key-lift)}
+:root[data-palette^="obsidian"] button.btn:not(.primary):not(.warnfill):not(.badfill):hover{color:var(--ink);
+  background:var(--razor-key-hover) padding-box,var(--razor-key-edge) border-box}
+:root[data-palette^="obsidian"] button.btn:not(.primary):not(.warnfill):not(.badfill):active{box-shadow:var(--sunk-shadow)}
+/* filled: the accent ramp under a bright lit edge, glowing in its own hue. White text, not the
+   recipe's var(--panel) - a mid blue carries white far better than near-black. */
+:root[data-palette^="obsidian"] button.primary{color:#fff;text-shadow:0 -1px 0 rgba(0,0,0,.25);border-color:transparent;
+  background:var(--razor-fill) padding-box,var(--razor-lit-edge) border-box;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 1px 1px rgba(0,0,0,.6),0 10px 26px -8px var(--razor-glow)}
+:root[data-palette^="obsidian"] button.warnfill{border-color:transparent;
+  background:linear-gradient(var(--cta-ang),var(--cta-a),var(--cta-b)) padding-box,var(--razor-lit-edge) border-box}
+:root[data-palette^="obsidian"] button.badfill{border-color:transparent;
+  background:linear-gradient(170deg,var(--bad2),var(--bad)) padding-box,var(--razor-lit-edge) border-box}
+:root[data-palette^="obsidian"] button.primary:active,:root[data-palette^="obsidian"] button.warnfill:active,:root[data-palette^="obsidian"] button.badfill:active{box-shadow:var(--sunk-shadow)}
+:root[data-palette^="obsidian"] .chip.on,:root[data-palette^="obsidian"] .prio label.on{color:#fff;background:var(--razor-fill)}
+
+/* nav: the selected item is a raised key, not a tinted wash */
+:root[data-palette^="obsidian"] nav button{border:1px solid transparent}
+:root[data-palette^="obsidian"] nav button:hover{background:rgba(255,255,255,.04)}
+:root[data-palette^="obsidian"] nav button.on{color:#fff;box-shadow:0 2px 6px -2px rgba(0,0,0,.7);
+  background:var(--razor-raised) padding-box,
+    linear-gradient(180deg,rgba(255,255,255,.24),rgba(255,255,255,.03) 70%,rgba(0,0,0,.3)) border-box}
+
+/* segmented bar: a sunk track with the chosen segment raised out of it */
+:root[data-palette^="obsidian"] .viewtoggle{padding:2px;gap:2px;border-radius:8px;border-color:transparent;
+  background:var(--razor-well) padding-box,linear-gradient(180deg,rgba(0,0,0,.6),rgba(255,255,255,.10)) border-box;
+  box-shadow:inset 0 1px 3px rgba(0,0,0,.6)}
+:root[data-palette^="obsidian"] .viewtoggle button,:root[data-palette^="obsidian"] .viewtoggle button+button{background:transparent;border:1px solid transparent;
+  border-radius:6px}
+:root[data-palette^="obsidian"] .viewtoggle button.on{color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.6),0 4px 10px -4px rgba(0,0,0,.7);
+  background:var(--razor-raised) padding-box,
+    linear-gradient(180deg,rgba(255,255,255,.34),rgba(255,255,255,.04) 60%,rgba(0,0,0,.4)) border-box}
+
+/* wells. The editor's own fields keep their light --field-bg (see #detail input): an id rule, so
+   it outranks this and only the edge and the inset reach them. */
+:root[data-palette^="obsidian"] input:not([type=radio]):not([type=checkbox]),:root[data-palette^="obsidian"] select,:root[data-palette^="obsidian"] textarea{
+  border-color:rgba(0,0,0,.75);background:var(--razor-well);box-shadow:var(--sunk-shadow)}
+:root[data-palette^="obsidian"] input:not([type=radio]):not([type=checkbox]):focus,:root[data-palette^="obsidian"] select:focus,:root[data-palette^="obsidian"] textarea:focus{
+  border-color:var(--accent);
+  box-shadow:0 0 0 3px var(--razor-ring),0 0 18px -4px var(--razor-glow),var(--sunk-shadow)}
+:root[data-palette^="obsidian"] .toggle{background:var(--razor-well);border-color:rgba(0,0,0,.6);box-shadow:inset 0 2px 4px rgba(0,0,0,.6)}
+:root[data-palette^="obsidian"] .toggle i{background:var(--razor-knob);box-shadow:0 1px 1px rgba(0,0,0,.5)}
+:root[data-palette^="obsidian"] .toggle.on{background:var(--razor-fill);border-color:var(--accent);
+  box-shadow:inset 0 2px 4px rgba(0,0,0,.35),0 0 14px -3px var(--razor-glow)}
+:root[data-palette^="obsidian"] .toggle.on i{background:linear-gradient(180deg,#fff,#d3d8e0)}
+
+/* tag and filter chips: small raised pills */
+:root[data-palette^="obsidian"] .tag:not(.res):not(.action),:root[data-palette^="obsidian"] .chip:not(.on){border:1px solid transparent;
+  background:var(--razor-pill) padding-box,
+    linear-gradient(180deg,rgba(255,255,255,.20),rgba(255,255,255,.03)) border-box;
+  box-shadow:0 1px 2px rgba(0,0,0,.5)}
+
+/* Engraved dividers: the dark line is --line-soft; a 1px catch-light under it is what makes it
+   read as cut into the surface. A border-top divider gets the light as an inset on its own top
+   edge, a border-bottom one as an outset below. */
+:root[data-palette^="obsidian"] .side-foot,:root[data-palette^="obsidian"] .ov-actfoot,:root[data-palette^="obsidian"] .dmeta,:root[data-palette^="obsidian"] .actions,:root[data-palette^="obsidian"] .ov-caldetail{
+  border-top-color:var(--line-soft);box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}
+:root[data-palette^="obsidian"] .daybar,:root[data-palette^="obsidian"] .ov-arow,:root[data-palette^="obsidian"] .ov-actplot{border-bottom-color:var(--line-soft);
+  box-shadow:0 1px 0 rgba(255,255,255,.05)}
+:root[data-palette^="obsidian"] .md hr{border-top-color:var(--line-soft);box-shadow:0 1px 0 rgba(255,255,255,.05)}
+
+/* Embossed headings: lit from above, so the shadow drops straight down by one pixel. */
+:root[data-palette^="obsidian"] h1,:root[data-palette^="obsidian"] h2,:root[data-palette^="obsidian"] h3,:root[data-palette^="obsidian"] .brand{text-shadow:0 1px 0 rgba(0,0,0,.6)}
+
+/* Status light: the connection line becomes a raised pill, and its dot glows in its own colour. */
+:root[data-palette^="obsidian"] .live{display:inline-flex;max-width:100%;height:26px;padding:0 11px;border-radius:999px;
+  color:var(--body);font-weight:500;border:1px solid transparent;box-shadow:0 1px 2px rgba(0,0,0,.5);
+  background:var(--razor-pill) padding-box,
+    linear-gradient(180deg,rgba(255,255,255,.20),rgba(255,255,255,.03)) border-box}
+:root[data-palette^="obsidian"] .dot{box-shadow:0 0 0 3px rgba(61,220,132,.14),0 0 8px rgba(61,220,132,.7)}
+:root[data-palette^="obsidian"] .dot.off{box-shadow:0 0 0 3px rgba(255,128,128,.14),0 0 8px rgba(255,128,128,.7)}
 </style>
 </head>
 <body>
@@ -1741,11 +1895,9 @@ label u{text-decoration:none;color:var(--accent-ink);text-transform:none;letter-
       </button>
       <select id="palette-select" title="Color theme">
         <optgroup label="Vivid">
-          <option value="nebula">Nebula</option>
           <option value="aurora">Aurora</option>
         </optgroup>
         <optgroup label="Light">
-          <option value="paper">Paper</option>
           <option value="slate">Slate</option>
           <option value="lagoon">Lagoon</option>
           <option value="nord">Nord</option>
@@ -1753,12 +1905,12 @@ label u{text-decoration:none;color:var(--accent-ink);text-transform:none;letter-
         </optgroup>
         <optgroup label="Medium">
           <option value="storm">Storm</option>
-          <option value="heather">Heather</option>
+          <option value="obsidian-medium">Obsidian Medium</option>
         </optgroup>
         <optgroup label="Dark">
-          <option value="midnight">Midnight</option>
           <option value="nord-dark">Nord Dark</option>
           <option value="twilight-dark">Twilight Dark</option>
+          <option value="obsidian">Obsidian Razor</option>
         </optgroup>
       </select>
     </div>
@@ -5053,7 +5205,7 @@ async function render(){
   const KEY='loom-palette';let saved=null;try{saved=localStorage.getItem(KEY);}catch(e){}
   const sel=$('#palette-select');
   if(saved&&![...sel.options].some(o=>o.value===saved))saved=null;
-  const initial=saved||(matchMedia('(prefers-color-scheme:dark)').matches?'midnight':'paper');
+  const initial=saved||(matchMedia('(prefers-color-scheme:dark)').matches?'obsidian':'slate');
   document.documentElement.setAttribute('data-palette',initial);
   sel.value=initial;
   sel.addEventListener('change',()=>{
