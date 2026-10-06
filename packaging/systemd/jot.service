@@ -1,4 +1,5 @@
-# jot - standalone write-only jot ingest endpoint. See jot/main.cpp for what it does and why.
+# jot - standalone jot ingest endpoint (plus one shared encrypted clip). See jot/main.cpp for what it
+# does and why.
 #
 # Reachable off-LAN only by reverse proxy from an existing TLS vhost - see
 # packaging/apache/jot-proxy.conf.example, which also lists what has to change HERE first (a
@@ -13,7 +14,7 @@
 # this ever needs the same install/update/rollback treatment loom got.
 
 [Unit]
-Description=jot - write-only jot ingest endpoint
+Description=jot - jot ingest endpoint and shared encrypted clip
 Documentation=https://github.com/azvenigo/Loom
 After=network-online.target
 Wants=network-online.target
@@ -31,6 +32,38 @@ RestartSec=3
 
 StandardOutput=journal
 StandardError=journal
+
+# Sandbox. jot is reachable from the internet (through the Apache proxy), so assume a bug in it or in
+# the vendored HTTP library could one day be exploited, and make that worth as little as possible:
+# it runs as the owning user, which on this box can reach the dev tree, ssh keys and the whole
+# [fast] share. Everything below is tested to leave jot working (jots, clip PUT/GET/DELETE) - see
+# the hardening test described in the zhotkey-encrypted-clipboard-sync jot.
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+PrivateTmp=yes
+PrivateDevices=yes
+# The binary lives under /home (the dev build tree), so /home is replaced by an empty tmpfs with only
+# the binary bound back in read-only: ssh keys and source are not even visible to the process.
+ProtectHome=tmpfs
+BindReadOnlyPaths=/home/alex/dev/git/Loom/build/jot
+# Read-only filesystem except the two places jot writes. The directories must exist before the
+# service starts (a missing ReadWritePaths target fails the unit); jot creates the files inside.
+ProtectSystem=strict
+ReadWritePaths=/mnt/fast/web/jot_log /mnt/fast/web/jot_clip
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
 
 [Install]
 WantedBy=multi-user.target
