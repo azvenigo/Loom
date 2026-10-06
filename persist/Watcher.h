@@ -40,7 +40,7 @@
 // line, once successfully imported, physically cannot be read a second time. That is what makes a
 // deliberately loom_delete'd jot's resurrection (confirmed live: the same two test jots came back
 // after a re-ingest of the file that originally produced them) impossible rather than merely rare.
-// See WatchList::RotateFor for the per-path opt-out, and jotpost/main.cpp for why the source can
+// See WatchList::RotateFor for the per-path opt-out, and jot/main.cpp for why the source can
 // always regenerate a fresh file at the same path with no coordination.
 //
 // GUARDRAILS, IN THE ORDER THEY ARE CHECKED - see MaybeInvokeAgent in the .cpp for the exact logic:

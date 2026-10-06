@@ -357,7 +357,7 @@ namespace JOTJSON
     std::string StatsToJson(const StoreStats& stats, const PersistStats& persist,
                             const std::string& sOrigin, bool bAuthRequired,
                             const TriageStats* pTriage, const AttentionStats* pAttention,
-                            const JotpostStats* pJotpost,
+                            const JotStats* pJot,
                             const ResolverStats* pResolver)
     {
         json out;
@@ -440,12 +440,12 @@ namespace JOTJSON
             out["needs_attention"] = std::move(a);
         }
 
-        if (pJotpost)
+        if (pJot)
         {
             json j;
-            j["reachable"]  = pJotpost->mbReachable;
-            j["checked_at"] = pJotpost->mnCheckedUS;
-            out["jotpost"]  = std::move(j);
+            j["reachable"]  = pJot->mbReachable;
+            j["checked_at"] = pJot->mnCheckedUS;
+            out["jot"]  = std::move(j);
         }
 
         // The offline triage service (persist/TriageClient.h). A SEPARATE block from "triage"

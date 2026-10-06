@@ -15,7 +15,7 @@ Loaded into every Claude Code session in this repo. Keep it short and generic: t
 - `core/` store, query, tags · `persist/` WAL, snapshot, history · `codec/` JSON
 - `http/` REST routes (Crow) · `mcp/` MCP tool surface · `web/Dashboard.h` the dashboard, embedded
   in the binary, so a dashboard edit only shows after a rebuild and restart
-- `jotpost/` the small POST-a-jot sidecar · `packaging/` install/update scripts · `vendor/` deps
+- `jot/` the small POST-a-jot sidecar · `packaging/` install/update scripts · `vendor/` deps
 
 ## Rules
 

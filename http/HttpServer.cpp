@@ -301,7 +301,7 @@ struct HttpServer::Impl
     WatchList&           mWatch;
     Watcher*             mpWatcher = nullptr;
     RunLedger*           mpLedger  = nullptr;
-    JotpostStatus*       mpJotpostStatus = nullptr;
+    JotStatus*       mpJotStatus = nullptr;
     const TriageClient*  mpResolver      = nullptr;
     McpHandler           mMcp;
     SnapshotConfig       mSnapConfig;
@@ -314,11 +314,11 @@ struct HttpServer::Impl
 
     Impl(Ops& ops, JotStore& store, const HttpConfig& config,
          Journal* pJournal, const SnapshotConfig& snapConfig, IpAcl& acl, History* pHistory,
-         WatchList& watch, Watcher* pWatcher, RunLedger* pLedger, JotpostStatus* pJotpostStatus,
+         WatchList& watch, Watcher* pWatcher, RunLedger* pLedger, JotStatus* pJotStatus,
          const TriageClient* pResolver)
         : mOps(ops), mStore(store), mConfig(config), mpJournal(pJournal), mAcl(acl),
           mpHistory(pHistory), mWatch(watch), mpWatcher(pWatcher), mpLedger(pLedger),
-          mpJotpostStatus(pJotpostStatus),
+          mpJotStatus(pJotStatus),
           mpResolver(pResolver),
           mMcp(ops, store, pHistory, pJournal), mSnapConfig(snapConfig),
           msOrigin(ResolveAdvertisedOrigin(config))
@@ -696,15 +696,15 @@ struct HttpServer::Impl
                 if (file.mbPending)
                     ++attention.mnPendingFiles;
 
-            // Reachable() re-probes only once per cache window (persist/JotpostStatus.h) - most
+            // Reachable() re-probes only once per cache window (persist/JotStatus.h) - most
             // calls here are a mutex lock and a stale-check, not a socket.
-            std::optional<JOTJSON::JotpostStats> jotpost;
-            if (mpJotpostStatus)
+            std::optional<JOTJSON::JotStats> jot;
+            if (mpJotStatus)
             {
-                JOTJSON::JotpostStats j;
-                j.mbReachable = mpJotpostStatus->Reachable();
-                j.mnCheckedUS = mpJotpostStatus->CheckedAtUS();
-                jotpost = j;
+                JOTJSON::JotStats j;
+                j.mbReachable = mpJotStatus->Reachable();
+                j.mnCheckedUS = mpJotStatus->CheckedAtUS();
+                jot = j;
             }
 
             // Cheap: a handful of atomic loads, no socket and no lock - see
@@ -717,7 +717,7 @@ struct HttpServer::Impl
             return Ok(JOTJSON::StatsToJson(mOps.Stats(), persist, msOrigin,
                                            !mConfig.msToken.empty(),
                                            triage ? &*triage : nullptr, &attention,
-                                           jotpost ? &*jotpost : nullptr,
+                                           jot ? &*jot : nullptr,
                                            resolver ? &*resolver : nullptr));
         });
 
@@ -1470,9 +1470,9 @@ struct HttpServer::Impl
 HttpServer::HttpServer(Ops& ops, JotStore& store, const HttpConfig& config,
                        Journal* pJournal, const SnapshotConfig& snapConfig, IpAcl& acl,
                        History* pHistory, WatchList& watch, Watcher* pWatcher, RunLedger* pLedger,
-                       JotpostStatus* pJotpostStatus, const TriageClient* pResolver)
+                       JotStatus* pJotStatus, const TriageClient* pResolver)
     : mpImpl(std::make_unique<Impl>(ops, store, config, pJournal, snapConfig, acl, pHistory, watch,
-                                    pWatcher, pLedger, pJotpostStatus, pResolver))
+                                    pWatcher, pLedger, pJotStatus, pResolver))
 {
     mpImpl->Routes();
 }

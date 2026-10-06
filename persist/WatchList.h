@@ -77,7 +77,7 @@ public:
 
     // Whether Watcher should rotate (rename aside) sPath as part of ingesting it, rather than
     // leaving it in place. Defaults true for any configured path with no explicit entry in the
-    // config's "rotate" map - true is right for an inbox-style source like jotpost, where nothing
+    // config's "rotate" map - true is right for an inbox-style source like jot, where nothing
     // else needs the file to keep existing at that path. Pass false for a source something ELSE
     // still needs to read at that path after Loom has ingested it.
     bool RotateFor(const std::string& sPath) const;

@@ -17,7 +17,7 @@
 #include "persist/History.h"
 #include "persist/Importer.h"
 #include "persist/Journal.h"
-#include "persist/JotpostStatus.h"
+#include "persist/JotStatus.h"
 #include "persist/Purge.h"
 #include "persist/RunLedger.h"
 #include "persist/SinkFanout.h"
@@ -259,11 +259,11 @@ int main(int argc, char** argv)
             "  --triage-max-failures=N  consecutive failures before auto-triage pauses itself until\n"
             "                           loom is restarted (default 3). See persist/Watcher.h.\n"
             "\n"
-            "  --jotpost-host=HOST  health-check a jotpost instance (jotpost/main.cpp) at HOST:PORT\n"
-            "                       with a cached TCP connect, surfaced as GET /stats' \"jotpost\"\n"
+            "  --jot-host=HOST  health-check a jot instance (jot/main.cpp) at HOST:PORT\n"
+            "                       with a cached TCP connect, surfaced as GET /stats' \"jot\"\n"
             "                       block and on the dashboard's Health page. Unset (default): no\n"
             "                       check, no block.\n"
-            "  --jotpost-port=N     port for the above (default 7701).\n"
+            "  --jot-port=N     port for the above (default 7701).\n"
             "\n"
             "  --resolver-host=HOST  ask the offline triage service (persist/TriageClient.h) for\n"
             "                        whatever the built-in rules could not settle - summary, kind,\n"
@@ -425,7 +425,7 @@ int main(int argc, char** argv)
 
     // The local due-date resolver, if one is configured. Constructed before the Watcher because
     // the Watcher borrows it; null means "not configured", the same nullable-optional-feature
-    // shape jotpost's status probe uses below. See persist/TriageClient.h.
+    // shape jot's status probe uses below. See persist/TriageClient.h.
     TriageConfig resolverConfig;
     resolverConfig.sHost       = ArgStr(argc, argv, "--resolver-host", "");
     resolverConfig.nPort       = static_cast<uint16_t>(
@@ -487,17 +487,17 @@ int main(int argc, char** argv)
     Watcher watcher(watch, ops, store, triageLedger, watcherConfig, pTriage.get());
     watcher.Start();
 
-    // Unset host = feature off: no probing, and /stats simply omits the "jotpost" block (same
-    // nullable-optional-feature pattern watcher/ledger already use). See persist/JotpostStatus.h.
-    JotpostConfig jotpostConfig;
-    jotpostConfig.sHost = ArgStr(argc, argv, "--jotpost-host", "");
-    jotpostConfig.nPort = static_cast<uint16_t>(std::atoi(ArgStr(argc, argv, "--jotpost-port", "7701")));
-    std::unique_ptr<JotpostStatus> pJotpostStatus;
-    if (!jotpostConfig.sHost.empty())
-        pJotpostStatus = std::make_unique<JotpostStatus>(jotpostConfig);
+    // Unset host = feature off: no probing, and /stats simply omits the "jot" block (same
+    // nullable-optional-feature pattern watcher/ledger already use). See persist/JotStatus.h.
+    JotConfig jotConfig;
+    jotConfig.sHost = ArgStr(argc, argv, "--jot-host", "");
+    jotConfig.nPort = static_cast<uint16_t>(std::atoi(ArgStr(argc, argv, "--jot-port", "7701")));
+    std::unique_ptr<JotStatus> pJotStatus;
+    if (!jotConfig.sHost.empty())
+        pJotStatus = std::make_unique<JotStatus>(jotConfig);
 
     HttpServer server(ops, store, config, bPersist ? &journal : nullptr, snapConfig, acl,
-                      &history, watch, &watcher, &triageLedger, pJotpostStatus.get(),
+                      &history, watch, &watcher, &triageLedger, pJotStatus.get(),
                       pTriage.get());
     gpServer = &server;
     // C5039 ("potentially throwing function passed to an extern C API") is /Wall noise on every
@@ -530,9 +530,9 @@ int main(int argc, char** argv)
                     ? "no --on-new-jots configured, ingest-only"
                     : ("auto-triage via '" + watcherConfig.sOnNewJots + "', capped at $" +
                        std::to_string(watcherConfig.fMaxDailyUSD) + "/24h").c_str());
-    if (pJotpostStatus)
-        std::printf("  health-checking jotpost at %s:%u\n",
-                    jotpostConfig.sHost.c_str(), static_cast<unsigned>(jotpostConfig.nPort));
+    if (pJotStatus)
+        std::printf("  health-checking jot at %s:%u\n",
+                    jotConfig.sHost.c_str(), static_cast<unsigned>(jotConfig.nPort));
     // Worth a line of its own: "the offline service is configured" and "the offline service is
     // actually answering" are different facts, and without this the only symptom of a mistyped
     // host is jots quietly going to `tbd` exactly as they did before - which looks like nothing

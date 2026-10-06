@@ -571,7 +571,7 @@ void Watcher::DeterministicTriage()
 
         patch.mTags = vTags;
         // Signed, so the history says triage did this. Left unset, a patch keeps the jot's editor,
-        // and every triaged jotpost note was logged as the person who wrote it having triaged it.
+        // and every triaged jot note was logged as the person who wrote it having triaged it.
         patch.msEditor = std::string("loom-triage");
         AddResult result;
         mOps.Update(jot.mID, patch, 0, result);   // best-effort; retried next poll if this fails

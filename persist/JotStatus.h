@@ -6,10 +6,10 @@
 #include <string>
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
-// JotpostStatus - answers "is jotpost reachable right now" for GET /stats and the dashboard's
+// JotStatus - answers "is jot reachable right now" for GET /stats and the dashboard's
 // Health page.
 //
-// A RAW TCP CONNECT TO host:port, NOTHING MORE. jotpost (jotpost/main.cpp) has no /health route of
+// A RAW TCP CONNECT TO host:port, NOTHING MORE. jot (jot/main.cpp) has no /health route of
 // its own - its only route is POST /jot - so this does not attempt an HTTP request at all. A
 // successful connect() is exactly the fact being asked for: something is listening on that port.
 // Getting an HTTP response back would prove nothing more, for the cost of writing an HTTP client
@@ -28,21 +28,21 @@
 // implementation for a feature nothing currently deploys on Windows.
 //////////////////////////////////////////////////////////////////////////////////////////////////
 
-struct JotpostConfig
+struct JotConfig
 {
-    std::string sHost;                 // empty = feature off; GET /stats omits the "jotpost" block
+    std::string sHost;                 // empty = feature off; GET /stats omits the "jot" block
     uint16_t    nPort      = 7701;
     int         nTimeoutMS = 800;      // bound on how long a cache-miss can block the caller
     int         nCacheSec  = 15;       // how long a probe result is reused before probing again
 };
 
-class JotpostStatus
+class JotStatus
 {
 public:
-    explicit JotpostStatus(JotpostConfig config) : mConfig(std::move(config)) {}
+    explicit JotStatus(JotConfig config) : mConfig(std::move(config)) {}
 
-    JotpostStatus(const JotpostStatus&)            = delete;
-    JotpostStatus& operator=(const JotpostStatus&) = delete;
+    JotStatus(const JotStatus&)            = delete;
+    JotStatus& operator=(const JotStatus&) = delete;
 
     bool Configured() const { return !mConfig.sHost.empty(); }
 
@@ -58,7 +58,7 @@ public:
 private:
     bool Probe() const;   // the actual connect(); no locking of its own - Reachable() holds it
 
-    JotpostConfig mConfig;
+    JotConfig mConfig;
     std::mutex    mMutex;
     bool          mbReachable = false;
     int64_t       mnCheckedUS = 0;

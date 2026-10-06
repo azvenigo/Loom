@@ -7,7 +7,7 @@ project(Loom CXX)
 # Targets:
 #   loomcore     core + codec + persist + mcp, compiled STRICT (/Wall /WX, -Wall -Wextra -Werror)
 #   loom         the service: HTTP + MCP + dashboard
-#   jotpost      standalone write-only ingest endpoint - see jotpost/main.cpp
+#   jot      standalone write-only ingest endpoint - see jot/main.cpp
 #   loombench    in-process store benchmark, no socket
 #   coretest     210 assertions over the store
 #   persisttest  assertions over WAL/snapshot/replay and the history log
@@ -80,7 +80,7 @@ add_library(loomcore STATIC
     persist/WatchList.cpp
     persist/RunLedger.cpp
     persist/Watcher.cpp
-    persist/JotpostStatus.cpp
+    persist/JotStatus.cpp
     persist/TriageClient.cpp
     mcp/McpHandler.cpp
 
@@ -93,7 +93,7 @@ add_library(loomcore STATIC
     persist/History.h persist/Journal.h persist/Purge.h persist/Snapshot.h persist/Undo.h
     persist/Importer.h persist/WatchList.h
     persist/RunLedger.h persist/Watcher.h
-    persist/JotpostStatus.h
+    persist/JotStatus.h
     persist/TriageClient.h
     persist/DataLock.h persist/SinkFanout.h
     mcp/McpHandler.h
@@ -136,22 +136,22 @@ set_source_files_properties(http/HttpServer.cpp PROPERTIES
     COMPILE_OPTIONS "$<IF:$<CXX_COMPILER_ID:MSVC>,/W3;/WX-,-w>")
 
 #####################################################################################################
-# jotpost - standalone write-only ingest endpoint, sibling to loom rather than part of it
+# jot - standalone write-only ingest endpoint, sibling to loom rather than part of it
 #####################################################################################################
 
-add_executable(jotpost jotpost/main.cpp)
+add_executable(jot jot/main.cpp)
 
-target_include_directories(jotpost PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
+target_include_directories(jot PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/vendor/asio ${CMAKE_CURRENT_SOURCE_DIR}/vendor/crow)
-target_compile_definitions(jotpost PRIVATE ASIO_STANDALONE CROW_DISABLE_STATIC_DIR)
-target_link_libraries(jotpost PRIVATE Threads::Threads)
+target_compile_definitions(jot PRIVATE ASIO_STANDALONE CROW_DISABLE_STATIC_DIR)
+target_link_libraries(jot PRIVATE Threads::Threads)
 
 if(WIN32)
-    target_compile_definitions(jotpost PRIVATE _WIN32_WINNT=0x0A00)
-    target_link_libraries(jotpost PRIVATE ws2_32 mswsock)
+    target_compile_definitions(jot PRIVATE _WIN32_WINNT=0x0A00)
+    target_link_libraries(jot PRIVATE ws2_32 mswsock)
 endif()
 
-set_source_files_properties(jotpost/main.cpp PROPERTIES
+set_source_files_properties(jot/main.cpp PROPERTIES
     COMPILE_OPTIONS "$<IF:$<CXX_COMPILER_ID:MSVC>,/W3;/WX-,-w>")
 
 #####################################################################################################

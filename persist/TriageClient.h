@@ -50,7 +50,7 @@
 // asleep or rebooting, which heals with no human involved - so it re-probes after a backoff rather
 // than staying down until Loom restarts.
 //
-// POSIX ONLY FOR NOW, matching JotpostStatus and Watcher's exec path: a Windows build compiles,
+// POSIX ONLY FOR NOW, matching JotStatus and Watcher's exec path: a Windows build compiles,
 // and Triage() always reports failure there, which falls through to the old behaviour.
 //////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -202,7 +202,7 @@ public:
 
     // Safe to call from the HTTP thread while the poll thread is mid-call - every field is read
     // from an atomic. A snapshot can be internally inconsistent by a few instructions (nCalls
-    // incremented before nApplied catches up), which is the same tolerance JotpostStatus already
+    // incremented before nApplied catches up), which is the same tolerance JotStatus already
     // accepts for a display value.
     ResolverStats Stats() const;
 

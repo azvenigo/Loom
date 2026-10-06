@@ -1,5 +1,5 @@
 // Copyright (c) 2026 Alexander Zvenigorodsky. MIT License. See LICENSE.
-#include "persist/JotpostStatus.h"
+#include "persist/JotStatus.h"
 
 #include <chrono>
 
@@ -21,7 +21,7 @@ namespace
     }
 }
 
-bool JotpostStatus::Reachable()
+bool JotStatus::Reachable()
 {
     std::lock_guard<std::mutex> lock(mMutex);
     const int64_t nNowUS = NowUS();
@@ -34,7 +34,7 @@ bool JotpostStatus::Reachable()
     return mbReachable;
 }
 
-int64_t JotpostStatus::CheckedAtUS() const
+int64_t JotStatus::CheckedAtUS() const
 {
     // Not locked - a display value that could be a few instructions stale is a fine tradeoff
     // against locking for every read, same call Watcher.h makes for its own atomics.
@@ -43,7 +43,7 @@ int64_t JotpostStatus::CheckedAtUS() const
 
 #ifndef _WIN32
 
-bool JotpostStatus::Probe() const
+bool JotStatus::Probe() const
 {
     struct addrinfo hints{};
     hints.ai_family   = AF_UNSPEC;
@@ -92,7 +92,7 @@ bool JotpostStatus::Probe() const
 
 #else
 
-bool JotpostStatus::Probe() const
+bool JotStatus::Probe() const
 {
     return false;
 }
