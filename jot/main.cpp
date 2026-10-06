@@ -57,6 +57,15 @@
 // jot (no control bytes, valid UTF-8, one braced object), which means the client must send its
 // sealed envelope as single-line JSON - base64 for the ciphertext, not raw bytes.
 //
+// Rate limiting, per client address (RateLimiter below), because nothing in front of this does it:
+//   - 10 rejected requests (bad token, or a path/method that is not ours) within 10 minutes block
+//     that address for 15 minutes. While blocked every request, even with the right token, gets the
+//     same silent bare 404 - the block is deliberately invisible to a scanner.
+//   - A caller that does hold the token is allowed 60 requests a minute and 10 clip uploads a
+//     minute; past that it gets an honest 429, since it has already proved who it is.
+// The client address is the LAST X-Forwarded-For entry (the one the Apache proxy appends; earlier
+// entries are whatever the caller chose to send), or the socket address when there is none.
+//
 // Warning level is relaxed for this file (CMakeLists.txt) the same way it is for HttpServer.cpp -
 // crow is vendored and does not survive /Wall /WX.
 //////////////////////////////////////////////////////////////////////////////////////////////////
@@ -65,6 +74,8 @@
 
 #include <cctype>
 #include <cerrno>
+#include <chrono>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <fcntl.h>
@@ -74,6 +85,8 @@
 #include <string>
 #include <string_view>
 #include <unistd.h>
+#include <unordered_map>
+#include <vector>
 
 namespace
 {
@@ -267,6 +280,163 @@ namespace
             return crow::response(500);
         return crow::response(204);
     }
+
+    // The address a request really came from. Behind the Apache proxy the socket address is always
+    // the proxy's, so use the last X-Forwarded-For entry - the one Apache appended - and never an
+    // earlier one, which the caller wrote. Reduced to a short, plain token so it is safe both as a
+    // map key and in a log line.
+    std::string ClientKey(const crow::request& req)
+    {
+        std::string s = req.get_header_value("X-Forwarded-For");
+        const size_t nComma = s.rfind(',');
+        if (nComma != std::string::npos)
+            s.erase(0, nComma + 1);
+
+        std::string sKey;
+        for (const char c : s.empty() ? req.remote_ip_address : s)
+            if (std::isalnum(static_cast<unsigned char>(c)) || c == '.' || c == ':' || c == '-')
+                sKey.push_back(c);
+
+        if (sKey.empty() || sKey.size() > 64)
+            return "unknown";
+        return sKey;
+    }
+
+    class RateLimiter
+    {
+    public:
+        struct Config
+        {
+            int nFailLimit  = 10;    // rejected requests ...
+            int nFailWindowS = 600;  // ... within this many seconds ...
+            int nBlockS     = 900;   // ... block the address for this many
+            int nReqPerMin  = 60;    // authenticated requests per minute
+            int nPutPerMin  = 10;    // authenticated clip uploads per minute
+        };
+
+        explicit RateLimiter(const Config& cfg) : mCfg(cfg) {}
+
+        bool Blocked(const std::string& sKey)
+        {
+            std::lock_guard<std::mutex> lock(mMutex);
+            auto it = mEntries.find(sKey);
+            return it != mEntries.end() && it->second.nBlockedUntil > Now();
+        }
+
+        // A request that was not ours or did not hold the token.
+        void Failed(const std::string& sKey)
+        {
+            std::lock_guard<std::mutex> lock(mMutex);
+            const int64_t nNow = Now();
+            Entry& e = Get(sKey, nNow);
+
+            if (nNow - e.nFailWindowStart >= mCfg.nFailWindowS)
+            {
+                e.nFailWindowStart = nNow;
+                e.nFails = 0;
+            }
+            if (++e.nFails >= mCfg.nFailLimit && e.nBlockedUntil <= nNow)
+            {
+                e.nBlockedUntil = nNow + mCfg.nBlockS;
+                e.nFails = 0;
+                // Once per block, not per request, so a scanner cannot fill the journal.
+                std::fprintf(stderr, "jot: blocking %s for %d s after repeated rejected requests\n",
+                             sKey.c_str(), mCfg.nBlockS);
+            }
+        }
+
+        // Holds the token: forgive earlier typos, and say whether this one is within its rate.
+        bool AllowAuthenticated(const std::string& sKey, bool bIsClipUpload, bool& bUploadLimited)
+        {
+            std::lock_guard<std::mutex> lock(mMutex);
+            const int64_t nNow = Now();
+            Entry& e = Get(sKey, nNow);
+            e.nFails = 0;
+
+            bUploadLimited = false;
+            if (!Count(e.nReq, e.nReqWindowStart, mCfg.nReqPerMin, nNow))
+                return false;
+            if (bIsClipUpload && !Count(e.nPut, e.nPutWindowStart, mCfg.nPutPerMin, nNow))
+            {
+                bUploadLimited = true;
+                return false;
+            }
+            return true;
+        }
+
+    private:
+        struct Entry
+        {
+            int64_t nFailWindowStart = 0;
+            int     nFails = 0;
+            int64_t nBlockedUntil = 0;
+            int64_t nReqWindowStart = 0;
+            int     nReq = 0;
+            int64_t nPutWindowStart = 0;
+            int     nPut = 0;
+            int64_t nLastSeen = 0;
+        };
+
+        // Bounds memory against a flood of distinct addresses. Forgetting an idle entry loses
+        // nothing: its windows would have expired anyway.
+        static constexpr size_t kMaxEntries = 8192;
+
+        static int64_t Now()
+        {
+            return std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count();
+        }
+
+        static bool Count(int& nCount, int64_t& nWindowStart, int nLimit, int64_t nNow)
+        {
+            if (nNow - nWindowStart >= 60)
+            {
+                nWindowStart = nNow;
+                nCount = 0;
+            }
+            return ++nCount <= nLimit;
+        }
+
+        Entry& Get(const std::string& sKey, int64_t nNow)
+        {
+            if (mEntries.size() >= kMaxEntries && mEntries.find(sKey) == mEntries.end())
+                Purge(nNow);
+            Entry& e = mEntries[sKey];
+            e.nLastSeen = nNow;
+            return e;
+        }
+
+        void Purge(int64_t nNow)
+        {
+            for (auto it = mEntries.begin(); it != mEntries.end(); )
+            {
+                const bool bIdle = nNow - it->second.nLastSeen > mCfg.nFailWindowS;
+                if (bIdle && it->second.nBlockedUntil <= nNow)
+                    it = mEntries.erase(it);
+                else
+                    ++it;
+            }
+            // Still full of live entries (an actual flood): drop the unblocked ones rather than
+            // refuse to track anyone new. Blocked addresses stay blocked.
+            if (mEntries.size() >= kMaxEntries)
+                for (auto it = mEntries.begin(); it != mEntries.end(); )
+                    it = it->second.nBlockedUntil <= nNow ? mEntries.erase(it) : std::next(it);
+        }
+
+        Config mCfg;
+        std::mutex mMutex;
+        std::unordered_map<std::string, Entry> mEntries;
+    };
+
+    // Authenticated callers over their rate. Unlike every other refusal this one is honest, because
+    // the caller already holds the token; Retry-After tells a well-behaved client when to come back.
+    crow::response TooMany(const char* szWhat)
+    {
+        std::fprintf(stderr, "jot: rate limited an authenticated caller: %s\n", szWhat);
+        crow::response res(429);
+        res.set_header("Retry-After", "60");
+        return res;
+    }
 }
 
 int main(int argc, char* argv[])
@@ -278,6 +448,7 @@ int main(int argc, char* argv[])
     // not a jot. Empty (--clip-path=) turns the clip routes off.
     std::string sClipPath = "/mnt/fast/web/jot_clip/clip.json";
     std::string sToken;
+    RateLimiter::Config limits;
 
     for (int i = 1; i < argc; ++i)
     {
@@ -291,6 +462,7 @@ int main(int argc, char* argv[])
         else if (const char* p = Value("--path="))  sPath  = p;
         else if (const char* p = Value("--clip-path=")) sClipPath = p;
         else if (const char* p = Value("--token=")) sToken = p;
+        else if (const char* p = Value("--block-seconds=")) limits.nBlockS = std::atoi(p);
         else if (const char* p = Value("--token-file="))
         {
             // Hard failure rather than silently running open - an unreadable token file is exactly
@@ -312,6 +484,8 @@ int main(int argc, char* argv[])
                         "                     also off whenever no token is set)\n"
                         "  --token=SECRET     require Authorization: Bearer SECRET (default: none, open)\n"
                         "  --token-file=PATH  same, read from PATH - keeps the secret out of ps and out of git\n"
+                        "  --block-seconds=N  how long an address is blocked after 10 rejected requests in\n"
+                        "                     10 minutes (default: 900)\n"
                         "\n"
                         "Every rejection answers with a bare 404. Set a token before anything off-LAN\n"
                         "can reach this; run it behind an existing TLS vhost rather than opening a port.\n");
@@ -342,6 +516,7 @@ int main(int argc, char* argv[])
     crow::logger::setLogLevel(crow::LogLevel::Warning);
     crow::SimpleApp app;
     std::mutex mtxClip;
+    RateLimiter limiter(limits);
 
     // No Server: header - crow would otherwise announce "Crow/x.y" on every response, including the
     // 404s that are supposed to look like nothing was ever there.
@@ -352,8 +527,13 @@ int main(int argc, char* argv[])
     // lives here and how to call it. Matching the path and method by hand means there is exactly
     // one code path off this handler that is not a 404.
     CROW_CATCHALL_ROUTE(app)
-    ([sPath, sClipPath, sToken, &mtxClip](const crow::request& req)
+    ([sPath, sClipPath, sToken, &mtxClip, &limiter](const crow::request& req)
     {
+        // A blocked address learns nothing, not even that it is blocked.
+        const std::string sClient = ClientKey(req);
+        if (limiter.Blocked(sClient))
+            return Deny();
+
         // The clip routes exist only with a token: a clip is private data, so it never rides the
         // open-LAN-bind allowance that POST /jot has.
         const bool bClipRoute = req.url == "/jot/clip" && !sClipPath.empty() && !sToken.empty() &&
@@ -361,10 +541,21 @@ int main(int argc, char* argv[])
                                  req.method == crow::HTTPMethod::Delete);
         const bool bJotRoute  = req.url == "/jot" && req.method == crow::HTTPMethod::Post;
         if (!bClipRoute && !bJotRoute)
+        {
+            limiter.Failed(sClient);
             return Deny();
+        }
 
         if (!sToken.empty() && !SecretEquals(req.get_header_value("Authorization"), "Bearer " + sToken))
+        {
+            limiter.Failed(sClient);
             return Deny();
+        }
+
+        bool bUploadLimited = false;
+        const bool bClipUpload = bClipRoute && req.method == crow::HTTPMethod::Put;
+        if (!limiter.AllowAuthenticated(sClient, bClipUpload, bUploadLimited))
+            return TooMany(bUploadLimited ? "too many clip uploads" : "too many requests");
 
         if (bClipRoute)
         {
