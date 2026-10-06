@@ -6,8 +6,8 @@
 // filesystem directly. See the zhotkey-web-post-endpoint-plan jot in Loom for the design
 // discussion this came out of.
 //
-// It also holds ONE shared clip (PUT/GET /jot/clip): an opaque, client-side-encrypted blob that a
-// device writes and other devices read back. The server never sees a key or any plaintext - it
+// It also holds ONE shared clip (PUT/GET/DELETE /jot/clip): an opaque, client-side-encrypted
+// blob that a device writes and other devices read back, check for (?exists), or clear. The server never sees a key or any plaintext - it
 // stores the sealed envelope verbatim, so a compromised host leaks nothing readable. Single slot,
 // last write wins; it is not a history and nothing here ever interprets the contents. Jots stay
 // write-only: nothing ever reads a jot back out over HTTP.
@@ -249,6 +249,24 @@ namespace
         res.set_header("Cache-Control", "no-store");
         return res;
     }
+
+    // GET /jot/clip?exists. Is there a clip at all, without shipping up to 8MB to find out - a
+    // client checks this every time its window opens. 200 (no body) = one is stored, 204 = empty,
+    // the same codes as a plain GET. A query flag rather than HEAD because crow does not hand a
+    // HEAD request to a catchall route.
+    crow::response ClipExists(const std::string& sClipPath)
+    {
+        return ::access(sClipPath.c_str(), F_OK) == 0 ? crow::response(200) : crow::response(204);
+    }
+
+    // DELETE /jot/clip. Idempotent: clearing an already-empty slot is still a success.
+    crow::response ClearClip(const std::string& sClipPath, std::mutex& mtxClip)
+    {
+        std::lock_guard<std::mutex> lock(mtxClip);
+        if (::unlink(sClipPath.c_str()) != 0 && errno != ENOENT)
+            return crow::response(500);
+        return crow::response(204);
+    }
 }
 
 int main(int argc, char* argv[])
@@ -289,7 +307,7 @@ int main(int argc, char* argv[])
                         "  --bind=IP          address to listen on   (default: 0.0.0.0)\n"
                         "  --port=N           port to listen on      (default: 7701)\n"
                         "  --path=FILE        file to append jots to (default: /mnt/fast/web/jot_log/jots.json)\n"
-                        "  --clip-path=FILE   file holding the one shared clip, PUT/GET /jot/clip\n"
+                        "  --clip-path=FILE   file holding the one shared clip, PUT/GET/DELETE /jot/clip\n"
                         "                     (default: /mnt/fast/web/jot_clip/clip.json; empty = off;\n"
                         "                     also off whenever no token is set)\n"
                         "  --token=SECRET     require Authorization: Bearer SECRET (default: none, open)\n"
@@ -339,7 +357,8 @@ int main(int argc, char* argv[])
         // The clip routes exist only with a token: a clip is private data, so it never rides the
         // open-LAN-bind allowance that POST /jot has.
         const bool bClipRoute = req.url == "/jot/clip" && !sClipPath.empty() && !sToken.empty() &&
-                                (req.method == crow::HTTPMethod::Put || req.method == crow::HTTPMethod::Get);
+                                (req.method == crow::HTTPMethod::Put || req.method == crow::HTTPMethod::Get ||
+                                 req.method == crow::HTTPMethod::Delete);
         const bool bJotRoute  = req.url == "/jot" && req.method == crow::HTTPMethod::Post;
         if (!bClipRoute && !bJotRoute)
             return Deny();
@@ -348,8 +367,15 @@ int main(int argc, char* argv[])
             return Deny();
 
         if (bClipRoute)
-            return req.method == crow::HTTPMethod::Get ? ServeClip(sClipPath)
-                                                       : StoreClip(sClipPath, mtxClip, req.body);
+        {
+            switch (req.method)
+            {
+            case crow::HTTPMethod::Get:    return req.url_params.get("exists") != nullptr
+                                                  ? ClipExists(sClipPath) : ServeClip(sClipPath);
+            case crow::HTTPMethod::Delete: return ClearClip(sClipPath, mtxClip);
+            default:                       return StoreClip(sClipPath, mtxClip, req.body);
+            }
+        }
 
         // Past this point the caller holds the token, so a rejection is a real client bug worth
         // seeing in the journal rather than scanner noise.
