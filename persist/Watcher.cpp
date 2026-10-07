@@ -430,6 +430,7 @@ void Watcher::DeterministicTriage()
         // six. It is also why this is worth doing at all - the measured Haiku path spent $0.0407
         // and 29 seconds to answer a question the regex above usually answers for free.
         std::string sServiceSummary;
+        std::string sQuestion;        // what to ask the human, when this ends up tbd
         bool bNeedsInput   = false;
         bool bServiceKnows = false;   // the service told us enough that a human need not look
 
@@ -466,10 +467,28 @@ void Watcher::DeterministicTriage()
                 for (const TagStat& v : vVocab)
                     vVocabNames.push_back(v.msTag);
 
+                // A "you:" line is the dashboard's reply to a needs-input question, appended by
+                // the PATCH that re-queued this jot - so its last edit IS when the reply was made.
+                const bool bReplied = flat.msText.rfind("you: ", 0) == 0 ||
+                                      flat.msText.find("\nyou: ") != std::string::npos;
+                const int64_t nReplyUS = bReplied ? jot.EffectiveUpdatedUS() : 0;
+
                 TriageResult res;
                 if (mpResolver->Triage(jot.mID, flat.msName, flat.msSummary, flat.msText, vTags,
-                                       wants, vVocabNames, {}, res))
+                                       wants, vVocabNames, {}, nReplyUS, res))
                 {
+                    // Why anything was declined - the only record of it, since the jot itself just
+                    // shows a question. stderr is unbuffered, so it lands in the journal at once.
+                    if (!res.vReasonCodes.empty())
+                    {
+                        std::string sCodes;
+                        for (const std::string& c : res.vReasonCodes)
+                            sCodes += (sCodes.empty() ? "" : ", ") + c;
+                        std::fprintf(stderr, "triage %lld: %s%s%s\n",
+                                     static_cast<long long>(jot.mID), sCodes.c_str(),
+                                     res.sReason.empty() ? "" : " - ", res.sReason.c_str());
+                    }
+
                     if (res.bHaveSummary)
                     {
                         sServiceSummary = res.sSummary;
@@ -532,13 +551,23 @@ void Watcher::DeterministicTriage()
                     // A stated recurrence has no tag convention yet, so it is exactly the kind of
                     // thing a person should see rather than something to invent a schema for.
                     if (res.bRecurring && bTaskShaped)
+                    {
                         bNeedsInput = true;
+                        sQuestion   = "does this repeat? how often?";
+                    }
 
                     if (res.bNeedsInput && bTaskShaped)
                     {
                         bNeedsInput = true;
-                        if (flat.msSummary.empty() && sServiceSummary.empty())
-                            sServiceSummary = res.sNeedsSummary;
+                        // The question goes in the details, not the summary - the summary stays
+                        // what the author wrote. sNeedsSummary is the fallback wording.
+                        static const std::string ksPrefix = "NEEDS INPUT: ";
+                        if (!res.sNeedsQuestion.empty())
+                            sQuestion = res.sNeedsQuestion;
+                        else if (res.sNeedsSummary.rfind(ksPrefix, 0) == 0)
+                            sQuestion = res.sNeedsSummary.substr(ksPrefix.size());
+                        else if (!res.sNeedsSummary.empty())
+                            sQuestion = res.sNeedsSummary;
                     }
                 }
             }
@@ -559,15 +588,29 @@ void Watcher::DeterministicTriage()
             if (std::find(vTags.begin(), vTags.end(), "todo") == vTags.end())
                 vTags.push_back("todo");
             vTags.push_back("tbd");
+
+            // The question rides at the end of the details as one line of a conversation; the
+            // dashboard's reply box appends "you: ..." under it and sends the jot back here.
+            if (sQuestion.empty())
+                sQuestion = "not sure what this is - what should happen with it?";
+            std::string sText = flat.msText;
+            while (!sText.empty() && std::isspace(static_cast<unsigned char>(sText.back())))
+                sText.pop_back();
+            patch.msText = sText + "\n\ntriage: needs input \xE2\x86\x92 " + sQuestion;
         }
 
-        if (!sServiceSummary.empty())
-            patch.msSummary = sServiceSummary.size() > 300 ? sServiceSummary.substr(0, 300)
-                                                           : sServiceSummary;
-        else if (bConfident && !sClean.empty())
-            patch.msSummary = sClean.size() > 100 ? sClean.substr(0, 100) : sClean;
-        // else: e.g. a jot that was just "[todo]" with nothing else - nothing to summarize,
-        // leave the summary field untouched.
+        // An existing summary is never replaced: it is what the author wrote, or what an earlier
+        // pass settled on. A jot re-queued with a reply would otherwise get the whole conversation
+        // folded into its summary.
+        // Neither found: e.g. a jot that was just "[todo]" - nothing to summarize, leave it.
+        if (flat.msSummary.empty())
+        {
+            if (!sServiceSummary.empty())
+                patch.msSummary = sServiceSummary.size() > 300 ? sServiceSummary.substr(0, 300)
+                                                               : sServiceSummary;
+            else if ((bConfident || bNeedsInput) && !sClean.empty())
+                patch.msSummary = sClean.size() > 100 ? sClean.substr(0, 100) : sClean;
+        }
 
         patch.mTags = vTags;
         // Signed, so the history says triage did this. Left unset, a patch keeps the jot's editor,

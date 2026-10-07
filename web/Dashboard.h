@@ -868,7 +868,7 @@ main{flex:1;min-height:0;overflow:hidden}
 .prchip{position:relative;display:inline-flex;margin:0}
 .prchip input{position:absolute;inset:0;width:100%;height:100%;opacity:0;margin:0;cursor:pointer}
 .prchip span{font:10.5px var(--mono);text-transform:uppercase;letter-spacing:.07em;font-weight:600;
-  padding:6px 12px;border-radius:6px;border:1px solid var(--line);background:var(--sunk);
+  display:inline-flex;align-items:center;height:26px;box-sizing:border-box;padding:0 12px;border-radius:6px;border:1px solid var(--line);background:var(--sunk);
   color:var(--dim);user-select:none}
 .prchip:hover span{color:var(--ink);border-color:var(--dim)}
 .prchip input:focus-visible+span{outline:2px solid var(--accent);outline-offset:2px}
@@ -925,8 +925,8 @@ main{flex:1;min-height:0;overflow:hidden}
 .dsect input.dueinput{max-width:260px}
 .frow{display:grid;grid-template-columns:1fr 1fr;gap:0 18px}
 @media(max-width:640px){.frow{grid-template-columns:1fr}}
-#detail textarea[data-k=text]{min-height:min(30vh,320px)}
-#detail textarea[data-k=summary]{min-height:92px}
+#detail textarea[data-k=text]{min-height:120px}
+#detail textarea[data-k=summary]{resize:none;overflow:hidden}
 /* Details has two faces: the raw textarea (Edit) and the text rendered as markdown (Read). The
    Read view is prose on the section card, not a well - nothing to type into, so it shouldn't
    look like a field. Sizes stay small: this is a dialog, not a document. */
@@ -963,6 +963,9 @@ main{flex:1;min-height:0;overflow:hidden}
 .md .cb{font-family:var(--sans)}
 .md .mdempty{color:var(--faint);font-style:italic}
 .snbtns{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0 16px}
+.odlabel{font:700 11px var(--mono);letter-spacing:.09em;text-transform:uppercase;color:#fff;
+  background:var(--overdue);border-radius:4px;padding:2px 8px}
+.rpq{font:14px/1.5 var(--sans);color:var(--ink);margin-bottom:9px}
 
 /* ---------- controls ---------- */
 .search{position:relative;margin-bottom:12px}
@@ -1071,7 +1074,8 @@ button.badfill:hover{filter:brightness(1.05) saturate(1.08);border-color:var(--b
 /* Ghost opts back OUT of all of it - it's the "this is not the action you came for" button. */
 button.ghost{border-color:transparent;color:var(--dim);background:none;box-shadow:none}
 button.ghost:hover{color:var(--ink);border-color:var(--line);background:var(--sunk);box-shadow:none}
-button.danger:hover{border-color:var(--bad);color:var(--bad)}
+button.danger{color:var(--bad);border-color:var(--bad)}
+button.danger:hover{background:var(--bad-wash)}
 button.tiny{font-size:12px;padding:4px 9px}
 #notif-btn{display:flex;align-items:center;gap:6px}
 #notif-btn svg{width:13px;height:13px;flex:none}
@@ -1439,7 +1443,8 @@ i.bytes{background:var(--accent)}
    A literal bright red, NOT --bad: --bad is tuned per palette to stay readable as TEXT, which on
    the darker themes lands it several steps toward brown/maroon. This ring carries no text, so it
    wants the loudest red on the screen and nothing about legibility holds it back. */
-.ov-trow.over{outline:2px solid #ff2323;outline-offset:-1px}
+:root{--overdue:#ff2323}
+.ov-trow.over{outline:2px solid var(--overdue);outline-offset:-1px}
 .ov-trow.done .ov-atitle{text-decoration:line-through;text-decoration-color:var(--faint)}
 .ov-todocol.pr-high .ov-trow{border-left-color:var(--bad)}
 .ov-todocol.pr-normal .ov-trow{border-left-color:var(--warn)}
@@ -1488,6 +1493,15 @@ i.bytes{background:var(--accent)}
 .ov-tchip.scope{background:color-mix(in srgb,var(--cat,var(--accent)) 15%,transparent);
   color:var(--cat,var(--accent));text-transform:none;letter-spacing:.02em}
 .ov-tid{margin-left:auto;font:10px var(--mono);color:var(--faint)}
+/* Icon chips: the todo/priority/due/audience facts as glyphs, so the row stays one short line. */
+.ov-ticon{display:inline-flex;align-items:center;justify-content:center;flex:none;
+  width:24px;height:24px;color:var(--dim)}
+.ov-ticon svg{width:20px;height:20px}
+.ov-ticon.todo{color:var(--warn)}
+.ov-ticon.pr-high{color:var(--bad)}
+.ov-ticon.pr-low{color:var(--faint)}
+.ov-ticon.due.over{color:var(--overdue)}
+.ov-ticon.aud{color:var(--accent-ink,var(--accent))}
 
 /* The SUMMARY leads, because that's the sentence a human reads - the slug is a handle, and a
    handle you have to already know doesn't tell you what's waiting on you. Three lines, clamped,
@@ -1509,9 +1523,10 @@ i.bytes{background:var(--accent)}
    magnitude rides along in parentheses since it's the faster of the two to compare. */
 .ov-tdue{font-size:11.5px;color:var(--dim);display:flex;align-items:center;gap:6px}
 .ov-tdue svg{width:12px;height:12px;flex:none;opacity:.75}
-.ov-tdue.over{color:var(--bad);font-weight:600}
+.ov-tdue.over{color:var(--overdue);font-weight:600}
+.ov-tdue.over svg{opacity:1}
 .ov-tdue .rel{color:var(--faint);font-weight:400}
-.ov-tdue.over .rel{color:var(--bad);opacity:.75}
+.ov-tdue.over .rel{color:var(--overdue)}
 
 /* Completing a TODO happens in ONE place: the detail dialog's priority row, at the right end
    (margin-left:auto). The TODO card used to carry a copy of this button; it doesn't any more,
@@ -1520,7 +1535,7 @@ i.bytes{background:var(--accent)}
    Sized to the .prchip radios it now shares a line with, so the row reads as one control group
    rather than a button parked next to some chips. */
 .completebtn{margin-left:auto;display:inline-flex;align-items:center;gap:6px;cursor:pointer;
-  font:11.5px var(--sans);font-weight:600;border-radius:6px;padding:5px 12px;
+  font:11.5px var(--sans);font-weight:600;border-radius:6px;height:26px;box-sizing:border-box;padding:0 12px;
   color:var(--dim);background:var(--sunk);border:1px solid var(--line);box-shadow:none}
 .completebtn:hover{color:var(--ink);border-color:var(--dim)}
 .completebtn svg{width:13px;height:13px;flex:none}
@@ -1674,9 +1689,8 @@ i.bytes{background:var(--accent)}
 .priochip.pr-low{background:var(--sunk);color:var(--faint)}
 .duechip{font:10.5px var(--mono);color:var(--faint);padding:2px 6px;border-radius:4px;
   background:var(--sunk)}
-.duechip.over{background:var(--bad-wash);color:var(--bad);font-weight:600}
-.donechip{font:10px var(--mono);text-transform:uppercase;letter-spacing:.04em;padding:2px 6px;
-  border-radius:4px;background:var(--good-wash);color:var(--good)}
+.duechip.over{background:var(--bad-wash);color:var(--overdue);font-weight:600}
+.tag.tag-done{background:var(--good-wash);color:var(--good)}
 .mcard.done{opacity:.6}
 .mcard.done .title{text-decoration:line-through;text-decoration-color:var(--faint)}
 
@@ -1790,6 +1804,12 @@ label u{text-decoration:none;color:var(--accent-ink);text-transform:none;letter-
   background:var(--razor-card-up) padding-box,var(--razor-edge-hi) border-box}
 :root[data-palette^="obsidian"] .ov-todocol .ov-trow.done{background:var(--sunk)}
 :root[data-palette^="obsidian"] .ov-trow.needs-input{background:var(--bad)}
+/* Obsidian Medium's mid-grey cards hold saturated red text at ~2:1 however bright the red is, so
+   there the overdue stamp and chip flip to white on a red pill; the lone icon gets a lighter red. */
+:root[data-palette="obsidian-medium"]{--overdue:#ff6161}
+:root[data-palette="obsidian-medium"] .ov-tdue.over,:root[data-palette="obsidian-medium"] .duechip.over{
+  background:#d91c1c;color:#fff;border-radius:4px;padding:1px 7px;width:fit-content}
+:root[data-palette="obsidian-medium"] .ov-tdue.over .rel{color:rgba(255,255,255,.85)}
 :root[data-palette^="obsidian"] .ov-todo{border-color:transparent;border-left-color:var(--todo-bar);
   background:linear-gradient(180deg,var(--todo-top),var(--todo-bot)) padding-box,var(--razor-edge) border-box;
   box-shadow:var(--razor-lift),0 3px 16px -6px color-mix(in srgb,var(--todo-glow) 40%,transparent)}
@@ -1926,7 +1946,7 @@ label u{text-decoration:none;color:var(--accent-ink);text-transform:none;letter-
 :root[data-palette^="obsidian"] nav{gap:4px}
 :root[data-palette^="obsidian"] nav button{height:44px;border-radius:9px;gap:12px;font:500 14px var(--sans)}
 :root[data-palette^="obsidian"] .chip{padding:5px 12px;font-size:12.5px}
-:root[data-palette^="obsidian"] .prchip span{padding:8px 14px;border-radius:9px}
+:root[data-palette^="obsidian"] .prchip span,:root[data-palette^="obsidian"] .completebtn{height:30px;padding:0 14px;border-radius:9px}
 
 /* segmented bar and switches at the mockup's size */
 :root[data-palette^="obsidian"] .viewtoggle{padding:4px;gap:4px;border-radius:11px}
@@ -2251,7 +2271,7 @@ const escHtml=s=>(s??'').toString().replace(/[&<>"]/g,c=>
    lastQ do: viewSearch() is torn down and rebuilt on every render() - including the render() that
    just opening a result triggers - so filter state kept local to it would silently reset the
    instant a jot is clicked. */
-let view='dashboard',sel=null,activeTags=new Set(),allTags=[],lastQ='',stats={},
+let view='todos',sel=null,activeTags=new Set(),allTags=[],lastQ='',stats={},
     sortOrder='',sinceWhen='';
 /* Refresh is the only lever this page has for "pull fresh data from the server", and until now it
    cost you whatever search you had going - a harder reset than anyone asking for fresh data meant
@@ -2305,14 +2325,17 @@ const CAL_MONTHS=3;
 let detailExpanded=false,detailOpenedKey=null,detailForceTodo=false,detailEditing=false;
 /* Jot-to-jot navigation inside the open dialog (a wikilink, a Linked card) pushes a browser history
    entry per hop, so the mouse/browser Back button steps back through the jots instead of leaving
-   the page. detailTrail holds the ids to go back to; closing the dialog rewinds whatever entries
+   the page. detailTrail holds {id, linked} to go back to - linked remembers that jot's Linked list
+   was open, so Back from a Linked card lands on that list again; closing the dialog rewinds whatever entries
    it pushed, so a later Back behaves exactly as it did before any of this. detailDirty is set by
    renderDetail, which is where the fields live. */
-let detailTrail=[],trailUnwind=false,detailDirty=()=>false;
+let detailTrail=[],trailUnwind=false,detailDirty=()=>false,detailShowLinked=false;
 function openJot(j){
   if(sel&&sel.id&&j.id!==sel.id&&$('#detail-dialog').open){
-    detailTrail.push(sel.id);history.pushState({loomTrail:detailTrail.length},'');
+    detailTrail.push({id:sel.id,linked:detailShowLinked});
+    history.pushState({loomTrail:detailTrail.length},'');
   }
+  detailShowLinked=false;
   sel=j;render();
 }
 try{detailExpanded=localStorage.getItem('loom-detail-expanded')==='1';}catch(e){}
@@ -2414,7 +2437,25 @@ async function refreshStats(){
   }
 }
 
+/* The TODO card's chip-row glyphs. Same 16-unit grid and stroke as the nav icons. The agent is a
+   robot head - antenna, two eyes - since the person glyph beside it needs an unmistakable opposite. */
+const TODO_ICONS={
+  todo:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">'+
+    '<rect x="2.2" y="2.2" width="11.6" height="11.6" rx="2.6"/><path d="m5.2 8.2 2 2 3.8-4.2"/></svg>',
+  up:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'+
+    '<path d="M8 13.5V3M3.6 7.4 8 3l4.4 4.4"/></svg>',
+  down:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'+
+    '<path d="M8 2.5V13M3.6 8.6 8 13l4.4-4.4"/></svg>',
+  clock:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">'+
+    '<circle cx="8" cy="8" r="6.2"/><path d="M8 4.6V8l2.4 1.6"/></svg>',
+  person:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">'+
+    '<circle cx="8" cy="5.2" r="2.8"/><path d="M2.6 14.2c.6-3 2.8-4.6 5.4-4.6s4.8 1.6 5.4 4.6"/></svg>',
+  agent:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">'+
+    '<rect x="2.6" y="5" width="10.8" height="8.6" rx="2.4"/><path d="M8 5V2.6"/><circle cx="8" cy="2.2" r=".5"/>'+
+    '<path d="M6 8.6v1.2M10 8.6v1.2"/></svg>'
+};
 const NAV_ICONS={
+  todos:TODO_ICONS.todo,
   dashboard:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round">'+
     '<rect x="1.8" y="1.8" width="5" height="5" rx="1.2"/><rect x="9.2" y="1.8" width="5" height="5" rx="1.2"/>'+
     '<rect x="1.8" y="9.2" width="5" height="5" rx="1.2"/><rect x="9.2" y="9.2" width="5" height="5" rx="1.2"/></svg>',
@@ -2431,7 +2472,7 @@ const NAV_ICONS={
   activity:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">'+
     '<path d="M2.2 13.2V9.4M6.1 13.2V5.6M10 13.2V7.8M13.9 13.2V3.2"/></svg>'
 };
-const VIEWS=[['dashboard','Dashboard'],['search','Search'],['tags','Tags'],
+const VIEWS=[['todos','TODOs'],['dashboard','Dashboard'],['search','Search'],['tags','Tags'],
              ['history','History'],['activity','Activity'],['health','Health']];
 /* A bare refresh used to always reopen Dashboard, discarding whatever tab you'd actually been on -
    restore the last one instead of defaulting past it. Checked against VIEWS rather than trusted
@@ -2490,7 +2531,7 @@ function clearQuery(){
    count nothing on screen is refreshing, is worse than no switch. */
 function syncDoneOpt(){
   const o=$('#showdone-opt');
-  if(o)o.hidden=(view!=='dashboard'&&view!=='search');
+  if(o)o.hidden=(view!=='todos'&&view!=='search');
 }
 /* The count belongs to whichever view is active - and "completed" means a different denominator
    in each (all open-work TODOs vs. completed items inside the current search results) - so each
@@ -2849,8 +2890,9 @@ function jotCard(j,maxScore,terms){
   /* Priority/due only surface when they say something a normal card doesn't already imply - a
      `normal` priority chip on every third card would just be more noise to filter past. */
   const prio=priorityOf(j),due=dueOf(j);
+  /* A completed TODO says so once, as #completed, instead of a `done` chip beside a #todo pill. */
   if(done){
-    const tb=el('span','taskbits');tb.append(el('span','donechip','done'));f.append(tb);
+    f.append(el('span','tag tag-done','#completed'));
   }else if((prio&&prio!=='normal')||due){
     const tb=el('span','taskbits');
     if(prio&&prio!=='normal')tb.append(el('span','priochip pr-'+prio,prio));
@@ -2862,7 +2904,7 @@ function jotCard(j,maxScore,terms){
   }
   /* Action tags sort first so a `todo`/`warning`/`error` tag is never lost to the 2-tag clip -
      it's the whole point of flagging it. */
-  const folks=(j.tags||[]).filter(t=>t.indexOf(':')<0&&t!=='done');
+  const folks=(j.tags||[]).filter(t=>t.indexOf(':')<0&&t!=='done'&&!(done&&t==='todo'));
   const shown=folks.slice().sort((a,b)=>(ACTION_TAGS.has(b)?1:0)-(ACTION_TAGS.has(a)?1:0));
   shown.slice(0,2).forEach(x=>f.append(el('span',tagClass(x),'#'+x)));
   const trail=el('span','mtrail');
@@ -3348,6 +3390,215 @@ const OV_ICONS={
       '<path d="M9 1.5 3.5 9h4l-.5 5.5L12.5 7h-4l.5-5.5Z"/></svg>'
 };
 
+/* The TODOs & Reminders panel. Built by its own view (the initial tab) from a wider fetch, so
+   `full` lifts the per-column cap the panel used to need when it shared the Dashboard. */
+function buildTodoPanel(L,recent,full){
+  const allTodos=recent.jots.filter(isTodo);
+  const doneCount=allTodos.filter(isDone).length;
+  const openCount=allTodos.length-doneCount;
+  /* Audience filters BEFORE the done filter and before the counts, so "3 open" under "For me"
+     means three things Alex can act on - not three of the whole board that happen to be his.
+     Unassigned todos show under "All" only: they are work nobody has routed yet, and quietly
+     serving them to whichever tab is open would be the filter answering a question it was not
+     asked. The chips carry counts precisely so an untriaged pile cannot hide - All exceeding
+     the other two combined IS the visible signal that something needs routing. */
+  const audTodos=todoAudience==='all'?allTodos:allTodos.filter(j=>audienceOf(j)===todoAudience);
+  const doneCountAud=audTodos.filter(isDone).length;
+  const openHuman=allTodos.filter(j=>!isDone(j)&&audienceOf(j)==='human').length;
+  const openAgent=allTodos.filter(j=>!isDone(j)&&audienceOf(j)==='agent').length;
+  const todos=hideDoneTodos?audTodos.filter(j=>!isDone(j)):audTodos;
+  const todoP=el('div','ov-panel ov-todo');L.append(todoP);
+  const th=el('div','phead');
+  const badge=el('div','ov-todobadge');badge.innerHTML=OV_ICONS.flag;th.append(badge);
+  const th1=el('div','pheadmain');
+  th1.append(el('div','eyebrow','TODOS & REMINDERS'));
+  /* Always the OPEN count, never the row count - with completed ones showing, a heading that
+     counted what is on screen would announce finished work as outstanding. Scoped to the chosen
+     audience, so the number and the cards under it always describe the same set. */
+  const openShown=audTodos.length-doneCountAud;
+  th1.append(el('h3',null,openShown?openShown+' open':'Nothing outstanding'));
+  /* In the panel head rather than the topbar, unlike "Show completed": that switch is global to
+     every view that lists jots, this one filters exactly one panel and belongs beside it. */
+  const audRow=el('div','audfilter');
+  [['all','All',openCount],['human','For me',openHuman],['agent','For agents',openAgent]]
+    .forEach(function(o){
+      const b=el('button','audchip'+(todoAudience===o[0]?' on':''),o[1]);
+      b.type='button';
+      b.append(el('b',null,String(o[2])));
+      b.onclick=function(){
+        todoAudience=o[0];
+        try{localStorage.setItem('loom-todo-audience',o[0]);}catch(e){}
+        render();
+      };
+      audRow.append(b);
+    });
+  th1.append(audRow);
+  th.append(th1);
+  /* The switch itself lives in the topbar (see #showdone-opt); this hands it the only number it
+     cannot work out for itself. Every complete/reopen ends in render(), and render() rebuilds
+     this panel, so the label stays live without the topbar having to watch anything. */
+  setDoneCount(doneCount);
+  th.append(el('a',null,'Open in Search'));
+  th.lastChild.onclick=function(){view='search';activeTags=new Set(['todo']);drawNav();render();};
+  todoP.append(th);
+  if(!todos.length){
+    /* Three different emptinesses, and saying "Clear." for the middle one would be a lie - the
+       work exists, this tab just isn't where it lives. */
+    todoP.append(el('div','empty',
+      todoAudience!=='all'&&openCount?
+        'Nothing here for '+(todoAudience==='human'?'you':'agents')+'. '+
+          openCount+' open under All.':
+      doneCount&&hideDoneTodos?
+        'Nothing open. '+doneCount+' completed - "Show completed" up by the search box.':
+        'Nothing tagged todo, warning, or error, and nothing due. Clear.'));
+  }else{
+    /* Split by priority rather than one flat list - high-priority work should never be scrolled
+       past to find it. Due date breaks ties within a column, soonest (or most overdue) first;
+       undated items sink to the bottom since there's nothing urgent to say about them yet. */
+    const cols=el('div','ov-todocols');todoP.append(cols);
+    const byPrio={high:[],normal:[],low:[]};
+    todos.forEach(j=>byPrio[priorityOf(j)||'normal'].push(j));
+    ['high','normal','low'].forEach(function(p){
+      const list=byPrio[p].slice().sort(function(a,b){
+        const da=dueOf(a),db=dueOf(b);
+        if(da&&db)return da-db;
+        if(da)return-1;
+        if(db)return 1;
+        return b.id-a.id;
+      });
+      const col=el('div','ov-todocol pr-'+p);cols.append(col);
+      const ch=el('div','ov-todocolhead');
+      ch.append(el('span','ptitle',p));
+      /* No count on an empty column. It rendered a lone right-aligned "0" under the panel
+         header - and on the rightmost column that landed directly beneath the header's own
+         link, where it read as a stray digit belonging to nothing. The body below already
+         says "Nothing here." in words. */
+      if(list.length)ch.append(el('span','pcount',String(list.length)));
+      col.append(ch);
+      const body=el('div','ov-todobody');col.append(body);
+      /* Drag a card from one column to another to reprioritize it - a click-through to the full
+         editor just to flip one select box is friction the panel doesn't need. Reordering within
+         a column stays sort-driven (by due date) rather than draggable, on purpose. */
+      col.addEventListener('dragover',function(e){e.preventDefault();col.classList.add('dragover');});
+      col.addEventListener('dragleave',function(){col.classList.remove('dragover');});
+      col.addEventListener('drop',async function(e){
+        e.preventDefault();col.classList.remove('dragover');
+        const id=e.dataTransfer.getData('text/plain');
+        const j=todos.find(x=>String(x.id)===id);
+        if(!j||(priorityOf(j)||'normal')===p)return;
+        /* Null when it had none - undo restores that, rather than leaving behind the
+           priority:normal the drag would otherwise have invented on the way back. */
+        const prevP=priorityOf(j);
+        try{
+          const updated=await setPriority(j,p);
+          toast('Moved to '+p,'ok',async function(){
+            try{await setPriority(updated,prevP);
+                toast(prevP?'Moved back to '+prevP:'Priority cleared again');render();}
+            catch(err){toast(err.message,'err');}
+          });
+          render();
+        }catch(e){toast(e.message,'err');}
+      });
+      if(!list.length){body.append(el('div','ov-colempty','Nothing here.'));return;}
+      const cap=full?list.length:6;
+      list.slice(0,cap).forEach(function(j){
+        const due=dueOf(j);
+        const cat=catColorOf(j.tags);
+        /* Only reachable while the header switch is showing completed work - but once it is,
+           the row has to say so and its button has to reopen rather than re-complete. */
+        const jdone=isDone(j);
+        // The triage agent flags a jot it couldn't safely finish this way (see
+        // packaging/systemd/loom-triage-prompt.txt) - it needs to be unmissable on the row
+        // itself, not buried in a separate card nobody notices among other todos.
+        const needsInput=(j.tags||[]).includes('tbd')||(j.tags||[]).includes('status:needs-input');
+        const overdue=!!due&&due.getTime()<Date.now()&&!jdone;
+        const r=el('div','ov-trow'+(jdone?' done':'')+(needsInput?' needs-input':'')+
+          (overdue?' over':''));
+        r.style.setProperty('--cat','var('+cat.cssVar+')');
+        r.draggable=true;
+        r.addEventListener('dragstart',function(e){
+          e.dataTransfer.setData('text/plain',String(j.id));
+          e.dataTransfer.effectAllowed='move';
+          r.classList.add('dragging');
+        });
+        r.addEventListener('dragend',function(){r.classList.remove('dragging');});
+
+        /* 1. chips: what it is, as icons - todo, priority, due, audience - then its topic.
+           warning/error stay worded: they're rarer, and an icon for each would be one more
+           glyph to learn for something seen once a month. */
+        const chips=el('div','ov-tchips');
+        const act=(j.tags||[]).find(t=>ACTION_TAGS.has(t));
+        const ic=function(k,cls,title){
+          const s=el('span','ov-ticon '+cls);s.innerHTML=TODO_ICONS[k];s.title=title;
+          chips.append(s);
+        };
+        if(!act||act==='todo')ic('todo','todo','TODO');
+        else chips.append(el('span','ov-tchip todo',act));
+        /* The jot's OWN priority, not the column's - an unset jot sits in the normal column
+           without claiming to be normal. Normal is the default and gets no glyph. */
+        const jp=priorityOf(j);
+        if(jp==='high')ic('up','pr-high','High priority');
+        else if(jp==='low')ic('down','pr-low','Low priority');
+        if(due)ic('clock',overdue?'due over':'due',(overdue?'Overdue · ':'Due · ')+stamp(due.getTime()*1000));
+        const aud=audienceOf(j);
+        if(aud==='human')ic('person','aud','For me');
+        else if(aud==='agent')ic('agent','aud','For agents');
+        if(cat.name&&cat.name!==act)chips.append(el('span','ov-tchip scope',cat.name));
+        chips.append(el('span','ov-tid',j.editor||'user'));
+        r.append(chips);
+
+        /* 2. what it is - the summary, the line written for a human to read. Slug only as a
+           last resort, when there's neither a summary nor any text to quote. */
+        r.append(el('div','ov-atitle',j.summary||j.snippet||j.name||'(untitled)'));
+
+        /* 3. when - absolute stamp, with the relative magnitude trailing it */
+        if(due){
+          const dl=el('div','ov-tdue'+(overdue?' over':''));
+          dl.innerHTML='<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" '+
+            'stroke-width="1.6" stroke-linecap="round"><circle cx="8" cy="8" r="6.2"/>'+
+            '<path d="M8 4.6V8l2.4 1.6"/></svg>';
+          dl.append(document.createTextNode((overdue?'Overdue · ':'Due · ')+stamp(due.getTime()*1000)));
+          dl.append(el('span','rel','('+dueLabel(due).replace(/^(Overdue by|Due in) /,'')+')'));
+          r.append(dl);
+        }
+
+        /* 4. which jot this is - the slug, quiet, at the foot. Only when the summary above
+           isn't already the slug standing in for a missing one. */
+        if(j.name&&(j.summary||j.snippet))r.append(el('div','ov-tslug',j.name));
+
+        r.onclick=async function(){
+          try{sel=await api('/jots/'+j.id);render();}
+          catch(e){toast(e.message,'err');}
+        };
+        body.append(r);
+      });
+      /* The whole card is the target, not a phrase inside it: it already looked like a card you
+         could press everywhere, and only was in one place. The trailing "open Search" went with
+         it - a card that behaves like a button doesn't need to narrate where it goes.
+         tabIndex/Enter/Space mirror the stat cards, the other clickable cards on this view. */
+      if(list.length>cap){
+        const more=el('div','note morecard','+'+(list.length-cap)+' more');
+        const go=function(){view='search';activeTags=new Set(['todo']);drawNav();render();};
+        more.onclick=go;more.tabIndex=0;
+        more.title='Open these in Search';
+        more.onkeydown=function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();go();}};
+        col.append(more);
+      }
+    });
+  }
+
+}
+
+/* ---------- todos ----------
+   Its own tab, and the one a fresh page opens on: open work is what gets checked most. A wider
+   fetch than the Dashboard's newest-200, since this view shows whole columns rather than a top 6. */
+async function viewTodos(target){
+  try{buildTodoPanel(target,await api('/jots?order=newest&limit=2000&brief=1'),true);}
+  catch(e){target.append(el('div','note bad',e.message));}
+  clearInterval(window.__rt);
+  window.__rt=setInterval(function(){if(view==='todos'&&!sel)render();},15000);
+}
+
 /* ---------- dashboard: overview ----------
    One bulk brief=1 fetch (see loom-todo-summary-only-listing) drives both the distribution bars
    and the activity list - a topic-level skim has no business pulling every jot body over the
@@ -3377,25 +3628,7 @@ async function viewDashboard(target){
     const topTags=tags.tags.slice().sort((a,b)=>b.count-a.count);
     const p=health.persistence||{};
 
-    /* ---- todos & reminders ----
-       Sits above the stat cards on purpose - open work is the thing to act on next, everything
-       else below is context for deciding what to do about it. Pulled from the same brief=1 fetch
-       as activity/distribution, so it inherits the same newest-200 cap rather than a second call. */
-    const allTodos=recent.jots.filter(isTodo);
-    const doneCount=allTodos.filter(isDone).length;
-    const openCount=allTodos.length-doneCount;
-    /* Audience filters BEFORE the done filter and before the counts, so "3 open" under "For me"
-       means three things Alex can act on - not three of the whole board that happen to be his.
-       Unassigned todos show under "All" only: they are work nobody has routed yet, and quietly
-       serving them to whichever tab is open would be the filter answering a question it was not
-       asked. The chips carry counts precisely so an untriaged pile cannot hide - All exceeding
-       the other two combined IS the visible signal that something needs routing. */
-    const audTodos=todoAudience==='all'?allTodos:allTodos.filter(j=>audienceOf(j)===todoAudience);
-    const doneCountAud=audTodos.filter(isDone).length;
-    const openHuman=allTodos.filter(j=>!isDone(j)&&audienceOf(j)==='human').length;
-    const openAgent=allTodos.filter(j=>!isDone(j)&&audienceOf(j)==='agent').length;
-    const todos=hideDoneTodos?audTodos.filter(j=>!isDone(j)):audTodos;
-    /* Same brief=1/newest-200 fetch, same reasoning as todos above: cheap enough that a second
+    /* Same brief=1/newest-200 fetch as activity and distribution: cheap enough that a second
        request buys nothing. Caps at 200 like everything else fed by `recent` - a backlog past
        that is already a "go look at Search" problem, not a dashboard-card one. */
     const unprocessed=recent.jots.filter(isUnprocessed);
@@ -3403,174 +3636,6 @@ async function viewDashboard(target){
        they were last ingested - the other half of Needs Attention, alongside the unprocessed jots
        above. No polling here either: /watch stats each configured path fresh on every call. */
     const pendingFiles=(watch.files||[]).filter(f=>f.pending);
-    const todoP=el('div','ov-panel ov-todo');L.append(todoP);
-    const th=el('div','phead');
-    const badge=el('div','ov-todobadge');badge.innerHTML=OV_ICONS.flag;th.append(badge);
-    const th1=el('div','pheadmain');
-    th1.append(el('div','eyebrow','TODOS & REMINDERS'));
-    /* Always the OPEN count, never the row count - with completed ones showing, a heading that
-       counted what is on screen would announce finished work as outstanding. Scoped to the chosen
-       audience, so the number and the cards under it always describe the same set. */
-    const openShown=audTodos.length-doneCountAud;
-    th1.append(el('h3',null,openShown?openShown+' open':'Nothing outstanding'));
-    /* In the panel head rather than the topbar, unlike "Show completed": that switch is global to
-       every view that lists jots, this one filters exactly one panel and belongs beside it. */
-    const audRow=el('div','audfilter');
-    [['all','All',openCount],['human','For me',openHuman],['agent','For agents',openAgent]]
-      .forEach(function(o){
-        const b=el('button','audchip'+(todoAudience===o[0]?' on':''),o[1]);
-        b.type='button';
-        b.append(el('b',null,String(o[2])));
-        b.onclick=function(){
-          todoAudience=o[0];
-          try{localStorage.setItem('loom-todo-audience',o[0]);}catch(e){}
-          render();
-        };
-        audRow.append(b);
-      });
-    th1.append(audRow);
-    th.append(th1);
-    /* The switch itself lives in the topbar (see #showdone-opt); this hands it the only number it
-       cannot work out for itself. Every complete/reopen ends in render(), and render() rebuilds
-       this panel, so the label stays live without the topbar having to watch anything. */
-    setDoneCount(doneCount);
-    th.append(el('a',null,'Open in Search'));
-    th.lastChild.onclick=function(){view='search';activeTags=new Set(['todo']);drawNav();render();};
-    todoP.append(th);
-    if(!todos.length){
-      /* Three different emptinesses, and saying "Clear." for the middle one would be a lie - the
-         work exists, this tab just isn't where it lives. */
-      todoP.append(el('div','empty',
-        todoAudience!=='all'&&openCount?
-          'Nothing here for '+(todoAudience==='human'?'you':'agents')+'. '+
-            openCount+' open under All.':
-        doneCount&&hideDoneTodos?
-          'Nothing open. '+doneCount+' completed - "Show completed" up by the search box.':
-          'Nothing tagged todo, warning, or error, and nothing due. Clear.'));
-    }else{
-      /* Split by priority rather than one flat list - high-priority work should never be scrolled
-         past to find it. Due date breaks ties within a column, soonest (or most overdue) first;
-         undated items sink to the bottom since there's nothing urgent to say about them yet. */
-      const cols=el('div','ov-todocols');todoP.append(cols);
-      const byPrio={high:[],normal:[],low:[]};
-      todos.forEach(j=>byPrio[priorityOf(j)||'normal'].push(j));
-      ['high','normal','low'].forEach(function(p){
-        const list=byPrio[p].slice().sort(function(a,b){
-          const da=dueOf(a),db=dueOf(b);
-          if(da&&db)return da-db;
-          if(da)return-1;
-          if(db)return 1;
-          return b.id-a.id;
-        });
-        const col=el('div','ov-todocol pr-'+p);cols.append(col);
-        const ch=el('div','ov-todocolhead');
-        ch.append(el('span','ptitle',p));
-        /* No count on an empty column. It rendered a lone right-aligned "0" under the panel
-           header - and on the rightmost column that landed directly beneath the header's own
-           link, where it read as a stray digit belonging to nothing. The body below already
-           says "Nothing here." in words. */
-        if(list.length)ch.append(el('span','pcount',String(list.length)));
-        col.append(ch);
-        const body=el('div','ov-todobody');col.append(body);
-        /* Drag a card from one column to another to reprioritize it - a click-through to the full
-           editor just to flip one select box is friction the panel doesn't need. Reordering within
-           a column stays sort-driven (by due date) rather than draggable, on purpose. */
-        col.addEventListener('dragover',function(e){e.preventDefault();col.classList.add('dragover');});
-        col.addEventListener('dragleave',function(){col.classList.remove('dragover');});
-        col.addEventListener('drop',async function(e){
-          e.preventDefault();col.classList.remove('dragover');
-          const id=e.dataTransfer.getData('text/plain');
-          const j=todos.find(x=>String(x.id)===id);
-          if(!j||(priorityOf(j)||'normal')===p)return;
-          /* Null when it had none - undo restores that, rather than leaving behind the
-             priority:normal the drag would otherwise have invented on the way back. */
-          const prevP=priorityOf(j);
-          try{
-            const updated=await setPriority(j,p);
-            toast('Moved to '+p,'ok',async function(){
-              try{await setPriority(updated,prevP);
-                  toast(prevP?'Moved back to '+prevP:'Priority cleared again');render();}
-              catch(err){toast(err.message,'err');}
-            });
-            render();
-          }catch(e){toast(e.message,'err');}
-        });
-        if(!list.length){body.append(el('div','ov-colempty','Nothing here.'));return;}
-        list.slice(0,6).forEach(function(j){
-          const due=dueOf(j);
-          const cat=catColorOf(j.tags);
-          /* Only reachable while the header switch is showing completed work - but once it is,
-             the row has to say so and its button has to reopen rather than re-complete. */
-          const jdone=isDone(j);
-          // The triage agent flags a jot it couldn't safely finish this way (see
-          // packaging/systemd/loom-triage-prompt.txt) - it needs to be unmissable on the row
-          // itself, not buried in a separate card nobody notices among other todos.
-          const needsInput=(j.tags||[]).includes('tbd')||(j.tags||[]).includes('status:needs-input');
-          const overdue=!!due&&due.getTime()<Date.now()&&!jdone;
-          const r=el('div','ov-trow'+(jdone?' done':'')+(needsInput?' needs-input':'')+
-            (overdue?' over':''));
-          r.style.setProperty('--cat','var('+cat.cssVar+')');
-          r.draggable=true;
-          r.addEventListener('dragstart',function(e){
-            e.dataTransfer.setData('text/plain',String(j.id));
-            e.dataTransfer.effectAllowed='move';
-            r.classList.add('dragging');
-          });
-          r.addEventListener('dragend',function(){r.classList.remove('dragging');});
-
-          /* 1. chips: the action tag it carries, its priority, and its topic */
-          const chips=el('div','ov-tchips');
-          const act=(j.tags||[]).find(t=>ACTION_TAGS.has(t));
-          chips.append(el('span','ov-tchip todo',act||'todo'));
-          /* The jot's OWN priority, not the column's - an unset jot sits in the normal column
-             without claiming to be normal, which is what the dialog has always said about it.
-             The column heading above already says which column this is. */
-          const jp=priorityOf(j);
-          if(jp)chips.append(el('span','ov-tchip pr-'+jp,jp));
-          if(cat.name&&cat.name!==act)chips.append(el('span','ov-tchip scope',cat.name));
-          chips.append(el('span','ov-tid',j.editor||'user'));
-          r.append(chips);
-
-          /* 2. what it is - the summary, the line written for a human to read. Slug only as a
-             last resort, when there's neither a summary nor any text to quote. */
-          r.append(el('div','ov-atitle',j.summary||j.snippet||j.name||'(untitled)'));
-
-          /* 3. when - absolute stamp, with the relative magnitude trailing it */
-          if(due){
-            const dl=el('div','ov-tdue'+(overdue?' over':''));
-            dl.innerHTML='<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" '+
-              'stroke-width="1.6" stroke-linecap="round"><circle cx="8" cy="8" r="6.2"/>'+
-              '<path d="M8 4.6V8l2.4 1.6"/></svg>';
-            dl.append(document.createTextNode((overdue?'Overdue · ':'Due · ')+stamp(due.getTime()*1000)));
-            dl.append(el('span','rel','('+dueLabel(due).replace(/^(Overdue by|Due in) /,'')+')'));
-            r.append(dl);
-          }
-
-          /* 4. which jot this is - the slug, quiet, at the foot. Only when the summary above
-             isn't already the slug standing in for a missing one. */
-          if(j.name&&(j.summary||j.snippet))r.append(el('div','ov-tslug',j.name));
-
-          r.onclick=async function(){
-            try{sel=await api('/jots/'+j.id);render();}
-            catch(e){toast(e.message,'err');}
-          };
-          body.append(r);
-        });
-        /* The whole card is the target, not a phrase inside it: it already looked like a card you
-           could press everywhere, and only was in one place. The trailing "open Search" went with
-           it - a card that behaves like a button doesn't need to narrate where it goes.
-           tabIndex/Enter/Space mirror the stat cards, the other clickable cards on this view. */
-        if(list.length>6){
-          const more=el('div','note morecard','+'+(list.length-6)+' more');
-          const go=function(){view='search';activeTags=new Set(['todo']);drawNav();render();};
-          more.onclick=go;more.tabIndex=0;
-          more.title='Open these in Search';
-          more.onkeydown=function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();go();}};
-          col.append(more);
-        }
-      });
-    }
-
     /* ---- activity ----
        Directly under the TODO panel, and above the stat cards, because "what changed" is the other
        half of "what is open" - the two questions asked on arrival. One column, not two: a
@@ -5030,8 +5095,46 @@ function renderDetail(){
 
   /* ---- summary, with the way into everything else in its bottom-right corner ---- */
   const sumSect=sect('summary');
-  field('summary',null,'textarea','the main point of this jot',sumSect);
+  /* One line: a summary is meant to be short. Still a textarea so an older long summary wraps and
+     stays readable instead of scrolling sideways; it grows to fit, and Enter doesn't add lines. */
+  const sumTa=field('summary',null,'textarea',null,sumSect);sumTa.rows=1;
+  const fitSum=function(){sumTa.style.height='auto';sumTa.style.height=sumTa.scrollHeight+2+'px';};
+  sumTa.oninput=fitSum;
+  sumTa.onkeydown=function(e){if(e.key==='Enter'&&!e.ctrlKey&&!e.metaKey)e.preventDefault();};
+  requestAnimationFrame(fitSum);
   const sumFoot=el('div','dsectfoot');sumSect.append(sumFoot);
+
+  /* ---- reply: answer a jot triage flagged as needing input, and hand it back ----
+     Appends "you: <answer>" under triage's "triage: needs input -> <question>" line in the details
+     (the summary is left alone) and swaps the needs-input flag for status:unprocessed, so the
+     next triage run picks it up again with the answer in front of it. */
+  if(!isNew&&(sel.tags||[]).some(t=>t==='tbd'||t==='status:needs-input')){
+    const rpSect=sect('reply to triage');
+    /* The question lives in the details, which are usually collapsed - so the latest one is
+       repeated here, where it's being answered. */
+    const qs=(sel.text||'').match(/^triage: needs input → .*$/gm);
+    const q=qs?qs[qs.length-1].replace(/^triage: needs input → /,''):'';
+    if(q)rpSect.append(el('div','rpq',q));
+    const rp=el('textarea');rp.rows=3;rp.placeholder=q?'Your answer':'Answer triage';
+    rpSect.append(rp);
+    const rpFoot=el('div','dsectfoot');rpSect.append(rpFoot);
+    const rpBtn=el('button','btn tiny primary','Send to triage');rpBtn.type='button';
+    rpBtn.onclick=async function(){
+      const ans=rp.value.trim();
+      if(!ans){rp.focus();return;}
+      const tags=(sel.tags||[]).filter(t=>t!=='tbd'&&t!=='status:needs-input'&&t!=='status:unprocessed');
+      tags.push('status:unprocessed');
+      const text=(sel.text||'').replace(/\s+$/,'')+'\n\nyou: '+ans;
+      try{
+        await api('/jots/'+sel.id+'?expect_updated='+(sel.updated||sel.id),
+          {method:'PATCH',headers:{'Content-Type':'application/json'},
+           body:JSON.stringify({text:text,tags:tags})});
+        toast('Sent back to triage');
+        sel=null;await refreshStats();render();
+      }catch(e){toast(e.status===409?'Conflict - someone else changed this jot. Close and reopen.':e.message,'err');}
+    };
+    rpFoot.append(rpBtn);
+  }
 
   /* ---- details, metadata: revealed together ----
      The toggle exists TWICE - once in the summary box, once in the details box - and only the one
@@ -5055,8 +5158,17 @@ function renderDetail(){
     dview.innerHTML=dta.value.trim()?mdRender(dta.value,sel.pending):
       '<p class="mdempty">No details yet - Edit to add some.</p>';
   };
-  readBtn.onclick=function(){detailEditing=false;applyMode();};
-  editBtn.onclick=function(){detailEditing=true;applyMode();dta.focus();};
+  /* Switching keeps the box's height and carries the scroll position across as a fraction - the
+     rendered and raw text don't line up exactly, but the same part of the jot stays roughly in view.
+     The caret goes to the top with preventScroll, or focus() would jump to the end of the text. */
+  const frac=e=>{const r=e.scrollHeight-e.clientHeight;return r>0?e.scrollTop/r:0;};
+  const setFrac=(e,f)=>{e.scrollTop=f*(e.scrollHeight-e.clientHeight);};
+  readBtn.onclick=function(){if(!detailEditing)return;
+    const f=frac(dta);detailEditing=false;applyMode();setFrac(dview,f);};
+  editBtn.onclick=function(){if(detailEditing)return;
+    const f=frac(dview),h=dview.offsetHeight;detailEditing=true;applyMode();
+    if(h)dta.style.height=Math.max(h,120)+'px';
+    dta.setSelectionRange(0,0);dta.focus({preventScroll:true});setFrac(dta,f);};
   dview.ondblclick=function(e){if(e.target.closest('a')||getSelection().toString())return;
     editBtn.onclick();};
   dview.onclick=async function(e){
@@ -5069,6 +5181,54 @@ function renderDetail(){
   };
   detailDirty=()=>['text','summary','name','editor'].some(k=>f[k]&&f[k].value!==(sel[k]||''));
   const detFoot=el('div','dsectfoot');detSect.append(detFoot);
+
+  /* Due is its own subsection, above metadata: WHEN something is due is a separate decision from
+     what it says and from how much it matters, and pairing it with priority in one row made the
+     two look like halves of a single setting. */
+  if(showTask){
+    const dueSect=sect('schedule');
+    /* OVERDUE rides the legend's right end, and re-checks whenever the due value changes - a snooze
+       or a typed date clears it without reopening the dialog. */
+    const odLeg=dueSect.querySelector('.dlegend');odLeg.classList.add('dmode');
+    const odLab=el('span','odlabel','Overdue');odLeg.append(odLab);
+    const syncOverdue=function(){const v=dueIn.value;
+      odLab.hidden=isDone(sel)||!v||new Date(v).getTime()>=Date.now();};
+    dueSect.append(el('label',null,'due'));
+    dueIn=el('input','dueinput');dueIn.type='datetime-local';
+    /* A click anywhere on the field opens the picker - by default only the tiny calendar icon
+       did, and a click on the text just selected one segment of the date. */
+    dueIn.onclick=function(){try{dueIn.showPicker();}catch(e){}};
+    const dv=tagValue(sel.tags,'due:');
+    dueIn.value=dv?(dv.length>10?dv:dv+'T00:00'):'';
+    dueSect.append(dueIn);
+    dueIn.addEventListener('input',syncOverdue);syncOverdue();
+
+    /* Snooze is just "reschedule due to later" - there's no separate snoozed state to track, so
+       these apply immediately (PATCH the due tag, update the field) rather than staging a value
+       for the next unrelated Save. Only shown for an EXISTING jot with something to reschedule. */
+    if(!isNew){
+      const snBtns=el('div','snbtns');dueSect.append(snBtns);
+      const applyDue=async function(val){
+        try{
+          const r=await setDue(sel,val);
+          sel=r;
+          dueIn.value=val?(val.length>10?val:val+'T00:00'):'';
+          syncOverdue();
+          toast(r.no_change?'Already due then':(val?'Rescheduled':'Due date cleared'));
+        }catch(e){toast(e.message,'err');}
+      };
+      const mkSnBtn=function(label,fn){
+        const b=el('button','btn tiny ghost',label);b.type='button';
+        b.onclick=function(e){e.preventDefault();applyDue(fn());};
+        snBtns.append(b);
+      };
+      mkSnBtn('Snooze 15m',()=>toLocalInputValue(new Date(Date.now()+15*60000)));
+      mkSnBtn('Snooze 1h',()=>toLocalInputValue(new Date(Date.now()+3600000)));
+      mkSnBtn('Snooze to tomorrow',()=>{const d=new Date(Date.now()+86400000);d.setHours(9,0,0,0);
+        return toLocalInputValue(d);});
+      mkSnBtn('Clear due',()=>'');
+    }
+  }
 
   const metaSect=sect('metadata');
   const idRow=frow(metaSect);
@@ -5115,43 +5275,6 @@ function renderDetail(){
     dlg.classList.toggle('wide',detailExpanded);
   };
   applyExpanded();
-
-  /* Due is its own subsection below the fields: WHEN something is due is a separate decision from
-     what it says and from how much it matters, and pairing it with priority in one row made the
-     two look like halves of a single setting. */
-  if(showTask){
-    const dueSect=sect('schedule');
-    dueSect.append(el('label',null,'due'));
-    dueIn=el('input','dueinput');dueIn.type='datetime-local';
-    const dv=tagValue(sel.tags,'due:');
-    dueIn.value=dv?(dv.length>10?dv:dv+'T00:00'):'';
-    dueSect.append(dueIn);
-
-    /* Snooze is just "reschedule due to later" - there's no separate snoozed state to track, so
-       these apply immediately (PATCH the due tag, update the field) rather than staging a value
-       for the next unrelated Save. Only shown for an EXISTING jot with something to reschedule. */
-    if(!isNew){
-      const snBtns=el('div','snbtns');dueSect.append(snBtns);
-      const applyDue=async function(val){
-        try{
-          const r=await setDue(sel,val);
-          sel=r;
-          dueIn.value=val?(val.length>10?val:val+'T00:00'):'';
-          toast(r.no_change?'Already due then':(val?'Rescheduled':'Due date cleared'));
-        }catch(e){toast(e.message,'err');}
-      };
-      const mkSnBtn=function(label,fn){
-        const b=el('button','btn tiny ghost',label);b.type='button';
-        b.onclick=function(e){e.preventDefault();applyDue(fn());};
-        snBtns.append(b);
-      };
-      mkSnBtn('Snooze +1h',()=>toLocalInputValue(new Date(Date.now()+3600000)));
-      mkSnBtn('Snooze to tomorrow',()=>{const d=new Date(Date.now()+86400000);d.setHours(9,0,0,0);
-        return toLocalInputValue(d);});
-      mkSnBtn('Snooze +1 week',()=>toLocalInputValue(new Date(Date.now()+7*86400000)));
-      mkSnBtn('Clear due',()=>'');
-    }
-  }
 
   const act=el('div','actions');
   const save=el('button','btn primary',isNew?'Create':'Save');
@@ -5206,7 +5329,8 @@ function renderDetail(){
   if(!isNew){
     const rel=el('button','btn tiny','Linked');
     let linkedBox=null;
-    rel.onclick=async function(){
+    const showLinked=async function(scroll){
+      detailShowLinked=true;
       try{
         const r=await api('/jots/'+sel.id+'/links?depth=2');
         if(linkedBox)linkedBox.remove();
@@ -5216,9 +5340,13 @@ function renderDetail(){
         const g=el('div','cardgrid');
         r.jots.forEach(j=>g.append(jotCard(j,0,[])));
         linkedBox.append(g);
+        if(scroll)linkedBox.scrollIntoView({block:'start'});
       }catch(e){toast(e.message,'err');}
     };
-    const del=el('button','btn tiny danger','Delete');
+    rel.onclick=function(){showLinked(false);};
+    /* 'back' (set by popstate) also scrolls the list into view, once; a plain re-render doesn't. */
+    if(detailShowLinked)showLinked(detailShowLinked==='back');
+    const del=el('button','btn tiny badfill','Delete');
     del.onclick=async function(){
       if(!confirm('Delete this jot permanently? There is no undo.'))return;
       try{await api('/jots/'+sel.id,{method:'DELETE'});toast('Deleted');
@@ -5270,7 +5398,8 @@ async function render(){
      the nav buttons, and render() is the one call every view change funnels into. */
   syncDoneOpt();
   const D=el('div');
-  if(view==='dashboard')await viewDashboard(D);
+  if(view==='todos')await viewTodos(D);
+  else if(view==='dashboard')await viewDashboard(D);
   else if(view==='search')await viewSearch(D);
   else if(view==='tags')await viewTags(D);
   else if(view==='history')await viewHistory(D);
@@ -5496,7 +5625,7 @@ async function saveWatch(){
     await api('/watch',{method:'PUT',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({paths:watchDraft})});
     $('#watch-dialog').close();
-    if(view==='dashboard')render();
+    if(view==='dashboard'||view==='todos')render();
   }catch(e){
     const box=el('div','aclerr');box.append(el('div',null,e.message));
     $('#watch-err').innerHTML='';$('#watch-err').append(box);
@@ -5579,6 +5708,7 @@ $('#detail-dialog').addEventListener('pointerdown',function(e){detailDownOnBackd
 $('#detail-dialog').addEventListener('click',function(e){if(e.target===this&&detailDownOnBackdrop)this.close();});
 $('#detail-dialog').addEventListener('close',function(){
   if(detailTrail.length){trailUnwind=true;history.go(-detailTrail.length);detailTrail=[];}
+  detailShowLinked=false;
   if(sel){sel=null;render();}
 });
 /* Back while a trail exists reopens the previous jot. popstate can't be cancelled, so declining
@@ -5589,8 +5719,8 @@ window.addEventListener('popstate',async function(){
   if(detailDirty()&&!confirm('Discard unsaved changes and go back?')){
     history.pushState({loomTrail:detailTrail.length},'');return;
   }
-  const id=detailTrail.pop();
-  try{sel=await api('/jots/'+id);render();}
+  const prev=detailTrail.pop();
+  try{sel=await api('/jots/'+prev.id);detailShowLinked=prev.linked&&'back';render();}
   catch(e){toast(e.status===404?'That jot is gone':e.message,'err');}
 });
 $('#agent-copy').addEventListener('click',function(){copyText(agentPrompt(),$('#agent-copy'));});

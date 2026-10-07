@@ -46,5 +46,10 @@ status:needs-input (kept until a human resolves it) is what stops this same jot 
 re-sent to you, and re-billed, on every future run. The dashboard renders any todo carrying it with
 a red background, on the jot itself, so this is the whole mechanism - nothing else to create.
 
+A jot you flagged earlier can come back: the human answers from the dashboard, which appends a
+"you: ..." line to its text and swaps status:needs-input back to status:unprocessed. Treat that
+line as the answer to your NEEDS INPUT question: resolve the jot, replace the "NEEDS INPUT:" summary
+with a real one, and drop the context/prompt paragraph you added.
+
 Do not create, upsert or delete anything else. Do not touch triage-alert-failure or
 triage-alert-budget - those belong to the process that invoked you, not to you.

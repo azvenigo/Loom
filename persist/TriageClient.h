@@ -132,6 +132,8 @@ struct TriageResult
 
     std::string sStatus;                   // "ok" | "ambiguous" | "deferred" | ...
     std::string sReason;                   // prose. Never branched on.
+    std::vector<std::string> vReasonCodes; // "due:past_time", "due:no_time", ... one per declined
+                                           // capability; empty means nothing was declined. Logged.
     int         nRetryAfterSec = 0;        // set when sStatus == "deferred"
 };
 
@@ -196,6 +198,8 @@ public:
                 const TriageWants& wants,
                 const std::vector<std::string>& vVocabulary,
                 const std::vector<TriageCandidate>& vCandidates,
+                int64_t nReplyUS,          // when the human last replied to a needs-input
+                                           // question, 0 if never - sent as reply_local
                 TriageResult& out);
 
     bool IsBreakerOpen() const;

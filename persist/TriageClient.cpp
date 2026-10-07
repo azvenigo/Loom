@@ -170,6 +170,7 @@ void TriageClient::VerifyDue(TriageResult& result, const std::string& sDueLocal,
     if (!ParseDueTag(result.sDueTag, nDueUS, tmDue))
     {
         result.bHaveDue = false;
+        result.vReasonCodes.push_back("due:loom_rejected");
         result.sReason  = "service returned an unparseable due value: " + result.sDueTag;
         return;
     }
@@ -190,6 +191,7 @@ void TriageClient::VerifyDue(TriageResult& result, const std::string& sDueLocal,
             nH != tmDue.tm_hour        || nMi != tmDue.tm_min)
         {
             result.bHaveDue = false;
+            result.vReasonCodes.push_back("due:loom_rejected");
             result.sReason  = "service's due_tag (" + result.sDueTag + ") disagrees with its own "
                               "due_local (" + sDueLocal + ")";
             return;
@@ -203,6 +205,7 @@ void TriageClient::VerifyDue(TriageResult& result, const std::string& sDueLocal,
     if (nDueUS < nRefUS - kYearUS || nDueUS > nRefUS + 5 * kYearUS)
     {
         result.bHaveDue = false;
+        result.vReasonCodes.push_back("due:loom_rejected");
         result.sReason  = "service returned " + result.sDueTag + ", implausibly far from the jot's "
                           "own timestamp";
     }
@@ -216,6 +219,7 @@ bool TriageClient::Triage(int64_t nJotID,
                           const TriageWants& wants,
                           const std::vector<std::string>& vVocabulary,
                           const std::vector<TriageCandidate>& vCandidates,
+                          int64_t nReplyUS,
                           TriageResult& out)
 {
     out = TriageResult{};
@@ -248,6 +252,9 @@ bool TriageClient::Triage(int64_t nJotID,
     // The jot's own id IS its ingestion timestamp, so this is when the jot was WRITTEN - not when
     // zserver happens to answer. See the header.
     body["now_local"] = FormatIsoLocal(nJotID);
+    // A bare "8pm" in a reply means 8pm on the day of the reply, not the day the jot was written.
+    if (nReplyUS != 0)
+        body["reply_local"] = FormatIsoLocal(nReplyUS);
 
     if (!vCandidates.empty())
     {
@@ -300,6 +307,11 @@ bool TriageClient::Triage(int64_t nJotID,
 
     out.sStatus = StrOr(parsed, "status");
     out.sReason = StrOr(parsed, "reason");
+    const auto itCodes = parsed.find("reason_codes");
+    if (itCodes != parsed.end() && itCodes->is_array())
+        for (const json& c : *itCodes)
+            if (c.is_string())
+                out.vReasonCodes.push_back(c.get<std::string>());
     if (out.sStatus == "deferred")
         out.nRetryAfterSec = parsed.value("retry_after_sec", 0);
 
