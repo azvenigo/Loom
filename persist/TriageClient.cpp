@@ -237,6 +237,7 @@ bool TriageClient::Triage(int64_t nJotID,
     if (wants.bPriority) want.push_back("priority");
     if (wants.bDue)      want.push_back("due");
     if (wants.bDedupe)   want.push_back("dedupe");
+    if (wants.bAudience) want.push_back("audience");
     if (want.empty())
         return false;   // nothing to ask - do not spend a round trip saying so
 
@@ -364,6 +365,16 @@ bool TriageClient::Triage(int64_t nJotID,
         out.sPriority     = StrOr(*p, "value");
         out.bHavePriority = !out.sPriority.empty();
     }
+    if (const json* p = Sub("audience"))
+    {
+        // Only the two tags Loom knows. Anything else the service might one day say is a decline.
+        const std::string sValue = StrOr(*p, "value");
+        if (sValue == "for:human" || sValue == "for:agent")
+        {
+            out.sAudience     = sValue;
+            out.bHaveAudience = true;
+        }
+    }
     if (const json* p = Sub("due"))
     {
         out.sDueTag     = StrOr(*p, "value");
@@ -391,7 +402,7 @@ bool TriageClient::Triage(int64_t nJotID,
     }
 
     if (out.bHaveSummary || out.bHaveKind || out.bHaveTopics || out.bHavePriority ||
-        out.bHaveDue || out.bHaveDuplicate || out.bNeedsInput)
+        out.bHaveAudience || out.bHaveDue || out.bHaveDuplicate || out.bNeedsInput)
         mnApplied.fetch_add(1);
     else
         mnDeclined.fetch_add(1);

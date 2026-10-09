@@ -446,6 +446,8 @@ void Watcher::DeterministicTriage()
                 }) != vTags.end();
             const bool bHasPriority = std::find_if(vTags.begin(), vTags.end(),
                 [](const std::string& t) { return t.rfind("priority:", 0) == 0; }) != vTags.end();
+            const bool bHasAudience = std::find_if(vTags.begin(), vTags.end(),
+                [](const std::string& t) { return t.rfind("for:", 0) == 0; }) != vTags.end();
 
             TriageWants wants;
             // A short jot's own text already IS its summary, for free - only ask about the long
@@ -457,10 +459,14 @@ void Watcher::DeterministicTriage()
             wants.bTopics   = !bHasTopic;
             wants.bPriority = (bTodo || !bConfident) && !bHasPriority;
             wants.bDue      = !bHaveDue && (bTodo || !bConfident);
+            // Who a todo is for. Asked in the same round trip as `classify` and applied only if
+            // the jot turns out task-shaped; the service itself skips it for journal/fact. An
+            // existing for: tag is never overridden - a human or an earlier pass already decided.
+            wants.bAudience = (bTodo || !bConfident) && !bHasAudience;
             // Dedupe is deliberately NOT requested here - see the note at the end of this block.
 
             if (wants.bSummary || wants.bClassify || wants.bTopics || wants.bPriority ||
-                wants.bDue)
+                wants.bDue || wants.bAudience)
             {
                 std::vector<std::string> vVocabNames;
                 vVocabNames.reserve(vVocab.size());
@@ -528,6 +534,13 @@ void Watcher::DeterministicTriage()
                         vTags.push_back(res.sDueTag);
                         bHaveDue = true;
                     }
+
+                    // Audience is a plain tag, so it lands in history and is undoable. Applied only
+                    // to something that is a task, and never over an existing for: tag; null from
+                    // the service leaves the jot unassigned, which is the old behaviour.
+                    if (res.bHaveAudience && !bHasAudience &&
+                        (res.bHaveKind ? (res.sKind == "task") : bTodo))
+                        vTags.push_back(res.sAudience);
 
                     // NEEDS-INPUT ONLY ESCALATES A TASK, and that qualifier is load-bearing.
                     //

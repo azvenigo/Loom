@@ -97,6 +97,7 @@ struct TriageWants
     bool bPriority = false;
     bool bDue      = false;
     bool bDedupe   = false;
+    bool bAudience = false;
 };
 
 // Every field is independently optional; the bHave* flags say which the service actually answered.
@@ -116,8 +117,12 @@ struct TriageResult
     bool bHavePriority = false;
     std::string sPriority;                 // "priority:high" | "priority:normal" | "priority:low"
 
+    bool bHaveAudience = false;
+    std::string sAudience;                 // "for:human" | "for:agent"; absent = the service was
+                                           // not sure, which is a normal answer and never an error
+
     bool bHaveDue = false;
-    std::string sDueTag;                   // "due:2026-09-08t15:00", already in Loom's tag form
+    std::string sDueTag;                  // "due:2026-09-08t15:00", already in Loom's tag form
     bool bRecurring = false;               // text genuinely stated recurrence - Loom has no
                                            // convention for this yet, so it surfaces for a human
 
