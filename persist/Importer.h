@@ -39,6 +39,13 @@
 //
 // Trailing whitespace in "entry" is preserved, not trimmed. These are somebody's notes; the
 // importer's job is to move them, not to tidy them.
+//
+// AN OPTIONAL THIRD FIELD, "loc":{"lat":..,"lon":..,"acc":..}, comes from the phone capture page
+// (jot/CapturePage.h). It becomes the jot's last line - "location: 47.61012,-122.34211 (±15 m)" -
+// rather than a field or a tag: searchable and visible everywhere with no change to what a jot is,
+// and no tag minted per coordinate (tag ids are never reused). Triage strips it back off with
+// WithoutLocationLine before judging or summarizing the text. Naming the spot (place:home) is
+// triage's job - see persist/Places.h.
 //////////////////////////////////////////////////////////////////////////////////////////////////
 
 struct ImportStats
@@ -60,4 +67,15 @@ namespace IMPORT
 
     // Exposed for testing: "2026-04-02 22:59:22" as LOCAL time -> microseconds since epoch UTC.
     bool ParseLocalTimestamp(const std::string& sTS, int64_t& outUS);
+
+    // The location line the importer appends, and the way back off. Only a LAST line in exactly
+    // this form is removed, so a jot that merely mentions "location:" in its body keeps it.
+    inline constexpr const char* ksLocationLead = "\n\nlocation: ";
+    inline std::string WithoutLocationLine(const std::string& sText)
+    {
+        const size_t nAt = sText.rfind(ksLocationLead);
+        if (nAt == std::string::npos || sText.find('\n', nAt + 2) != std::string::npos)
+            return sText;
+        return sText.substr(0, nAt);
+    }
 }

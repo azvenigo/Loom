@@ -47,10 +47,11 @@ PrivateDevices=yes
 # the binary bound back in read-only: ssh keys and source are not even visible to the process.
 ProtectHome=tmpfs
 BindReadOnlyPaths=/home/alex/dev/git/Loom/build/jot
-# Read-only filesystem except the two places jot writes. The directories must exist before the
-# service starts (a missing ReadWritePaths target fails the unit); jot creates the files inside.
+# Read-only filesystem except the places jot writes. The directories must exist before the service
+# starts (a missing ReadWritePaths target fails the unit); jot creates the files inside. jot_notify
+# is shared with notify/jotnotify.py (reminders); without it jot runs with reminders off.
 ProtectSystem=strict
-ReadWritePaths=/mnt/fast/web/jot_log /mnt/fast/web/jot_clip
+ReadWritePaths=/mnt/fast/web/jot_log /mnt/fast/web/jot_clip /mnt/fast/web/jot_notify
 ProtectKernelTunables=yes
 ProtectKernelModules=yes
 ProtectKernelLogs=yes

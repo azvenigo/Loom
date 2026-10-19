@@ -91,7 +91,7 @@ add_library(loomcore STATIC
     core/TagRegistry.h core/Tokenizer.h
     codec/JotJson.h
     persist/History.h persist/Journal.h persist/Purge.h persist/Snapshot.h persist/Undo.h
-    persist/Importer.h persist/WatchList.h
+    persist/Importer.h persist/Places.h persist/WatchList.h
     persist/RunLedger.h persist/Watcher.h
     persist/JotStatus.h
     persist/TriageClient.h
@@ -120,7 +120,7 @@ set_source_files_properties(
 # loom - the service
 #####################################################################################################
 
-add_executable(loom main.cpp http/HttpServer.cpp http/HttpServer.h web/Dashboard.h)
+add_executable(loom main.cpp http/HttpServer.cpp http/HttpServer.h web/Dashboard.h web/MobilePage.h)
 target_link_libraries(loom PRIVATE loomcore)
 
 target_include_directories(loom PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/vendor/asio ${CMAKE_CURRENT_SOURCE_DIR}/vendor/crow)
@@ -139,7 +139,7 @@ set_source_files_properties(http/HttpServer.cpp PROPERTIES
 # jot - standalone write-only ingest endpoint, sibling to loom rather than part of it
 #####################################################################################################
 
-add_executable(jot jot/main.cpp)
+add_executable(jot jot/main.cpp jot/CapturePage.h jot/CaptureAssets.h)
 
 target_include_directories(jot PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/vendor/asio ${CMAKE_CURRENT_SOURCE_DIR}/vendor/crow)

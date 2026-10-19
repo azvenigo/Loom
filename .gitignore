@@ -12,3 +12,4 @@ docs/PLAN.md
 
 # Private machine-specific Claude notes
 CLAUDE.local.md
+__pycache__/

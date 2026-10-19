@@ -25,8 +25,10 @@
 #include "persist/Journal.h"
 #include "vendor/json.hpp"
 #include "persist/Snapshot.h"
+#include "persist/Places.h"
 
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
@@ -618,6 +620,41 @@ namespace
             Check(vDay.size() == 7, "a range older than memory is read back from the segments");
         }
     }
+
+    void TestPlaces()
+    {
+        Section("places");
+        const std::string sList = "# notes: 1,2\nHome: 47.61012,-122.34211 150 m\nWork: 47.62000,-122.35000\n"
+                                  "Bad: 95,10\nlocation is not a place";
+        const std::vector<PLACES::Place> v = PLACES::Parse(sList);
+        Check(v.size() == 2 && v[0].msName == "Home" && v[1].mdRadiusM == 150.0,
+              "the list parses, notes and bad lines skipped");
+        Check(PLACES::Slug("Mom's Place!") == "mom-s-place" && PLACES::Slug("  ").empty(),
+              "names slug the same way the page does");
+
+        double dLat = 0.0, dLon = 0.0;
+        Check(PLACES::LocationOf("milk\n\nlocation: 47.61050,-122.34200 (\xC2\xB1" "12 m)", dLat, dLon) &&
+              std::fabs(dLat - 47.6105) < 1e-9, "the location line is read back");
+        Check(!PLACES::LocationOf("location: 47.6,-122.3", dLat, dLon), "only the importer's last line counts");
+
+        const PLACES::Place* pAt = PLACES::At(v, 47.61050, -122.34200);   // about 43 m from Home
+        Check(pAt && pAt->msName == "Home", "a jot inside a circle is at that place");
+        Check(!PLACES::At(v, 47.70, -122.34), "and one far away is at none");
+
+        PLACES::Place moved;
+        moved.msName = "home";
+        moved.mdLat  = 47.5;
+        moved.mdLon  = -122.2;
+        const std::string sMoved = PLACES::WithPlace(sList, moved);
+        const std::vector<PLACES::Place> v2 = PLACES::Parse(sMoved);
+        Check(v2.size() == 2 && v2[0].mdLat == 47.5 && sMoved.rfind("# notes", 0) == 0,
+              "saving a name again moves it and keeps the notes");
+        PLACES::Place gym;
+        gym.msName = "Gym";
+        gym.mdLat  = 1.0;
+        gym.mdLon  = 2.0;
+        Check(PLACES::Parse(PLACES::WithPlace("", gym)).size() == 1, "a first place starts the list");
+    }
 }
 
 
@@ -634,6 +671,7 @@ int main(int argc, char** argv)
     TestNoPersistIsSilent();
     TestHistorySegments();
     TestHistoryActivity();
+    TestPlaces();
 
     std::error_code ec;
     std::filesystem::remove_all(gsDir, ec);

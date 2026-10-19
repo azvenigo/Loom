@@ -16,6 +16,7 @@
 #include "persist/Purge.h"
 #include "persist/Undo.h"
 #include "web/Dashboard.h"
+#include "web/MobilePage.h"
 #include "web/FontAssets.h"
 #include "web/IconAssets.h"
 
@@ -609,6 +610,24 @@ struct HttpServer::Impl
         {
             crow::response res(200, std::string(LoomDashboardHtml()));
             res.set_header("Content-Type", "text/html; charset=utf-8");
+            return res;
+        });
+
+        // The phone page and its manifest - see web/MobilePage.h. Same origin as the API, for the
+        // same reason as the dashboard.
+        CROW_ROUTE(mApp, "/m").methods(crow::HTTPMethod::Get)
+        ([]()
+        {
+            crow::response res(200, std::string(LoomMobileHtml()));
+            res.set_header("Content-Type", "text/html; charset=utf-8");
+            return res;
+        });
+
+        CROW_ROUTE(mApp, "/m/manifest.webmanifest").methods(crow::HTTPMethod::Get)
+        ([]()
+        {
+            crow::response res(200, std::string(LoomMobileManifest()));
+            res.set_header("Content-Type", "application/manifest+json");
             return res;
         });
 

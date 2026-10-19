@@ -1,0 +1,53 @@
+# jotnotify - one pass of phone reminders for Loom todos. Started every minute by jotnotify.timer.
+# See notify/jotnotify.py.
+#
+# Setup, once, as the owning user:
+#   python3 -m venv ~/.local/share/jotnotify/venv
+#   ~/.local/share/jotnotify/venv/bin/pip install -r notify/requirements.lock
+#   ~/.local/share/jotnotify/venv/bin/python notify/jotnotify.py --init-key
+# then edit the paths, --loom and --page-url below, copy both units to /etc/systemd/system and
+# `systemctl enable --now jotnotify.timer`. jot.service must be given the same --notify-dir in its
+# ReadWritePaths.
+
+[Unit]
+Description=jotnotify - phone reminders for Loom todos
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=alex
+Group=alex
+ExecStart=/home/alex/.local/share/jotnotify/venv/bin/python /home/alex/dev/git/Loom/notify/jotnotify.py \
+    --loom=http://127.0.0.1:7700 \
+    --page-url=https://www.example.com/jot/m \
+    --notify-dir=/mnt/fast/web/jot_notify \
+    --state-dir=/home/alex/.local/state/jotnotify \
+    --key=/home/alex/.config/loom/vapid_private.pem \
+    --token-file=/etc/loom/jot.token
+TimeoutStartSec=50
+
+# Sandbox. No inbound port at all; it talks to Loom and to Apple's push service only. /home is an
+# empty tmpfs with just the script, its virtualenv, its key (read-only) and its state dir put back.
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectHome=tmpfs
+BindReadOnlyPaths=/home/alex/dev/git/Loom/notify /home/alex/.local/share/jotnotify/venv /home/alex/.config/loom/vapid_private.pem
+BindPaths=/home/alex/.local/state/jotnotify
+ProtectSystem=strict
+ReadWritePaths=/mnt/fast/web/jot_notify
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native

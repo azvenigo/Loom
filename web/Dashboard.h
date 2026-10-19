@@ -2628,6 +2628,9 @@ function mdInline(s,pend){
       (pend.has(slug)?' title="Unresolved - no jot has this slug yet"':'')+'>'+
       (label||slug)+'</a>');
   });
+  /* The phone's location line (persist/Importer.cpp: "location: lat,lon (±m)") opens a map. */
+  s=s.replace(/^(location: )(-?\d{1,2}\.\d+),(-?\d{1,3}\.\d+)/,(m,lead,lat,lon)=>
+    lead+stash('<a href="https://maps.apple.com/?ll='+lat+','+lon+'&amp;q=Jot" target="_blank" rel="noopener">'+lat+','+lon+'</a>'));
   s=s.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,(m,t,u)=>
     stash('<a href="'+u+'" target="_blank" rel="noopener">'+t+'</a>'));
   s=s.replace(/(^|[\s(])(https?:\/\/[^\s<]*[^\s<.,;:!?)'])/g,(m,pre,u)=>

@@ -91,11 +91,36 @@ namespace IMPORT
                 return;
             }
 
-            const std::string sEntry = j["entry"].get<std::string>();
+            std::string sEntry = j["entry"].get<std::string>();
             if (sEntry.empty())
             {
                 ++outStats.mnMalformed;
                 return;
+            }
+
+            // Optional location, see Importer.h. A bad one is dropped, not fatal: the jot itself is
+            // still good. Five decimals is about a metre - the most a phone fix can honestly claim.
+            const auto locIt = j.find("loc");
+            if (locIt != j.end() && locIt->is_object())
+            {
+                const json& loc = *locIt;
+                const auto lat = loc.find("lat"), lon = loc.find("lon"), acc = loc.find("acc");
+                if (lat != loc.end() && lat->is_number() && lon != loc.end() && lon->is_number())
+                {
+                    const double dLat = lat->get<double>(), dLon = lon->get<double>();
+                    if (dLat >= -90.0 && dLat <= 90.0 && dLon >= -180.0 && dLon <= 180.0)
+                    {
+                        char szLine[128];
+                        if (acc != loc.end() && acc->is_number() && acc->get<double>() >= 0.0 &&
+                            acc->get<double>() < 1e6)
+                            std::snprintf(szLine, sizeof(szLine), "%.5f,%.5f (\xC2\xB1%.0f m)",
+                                          dLat, dLon, acc->get<double>());
+                        else
+                            std::snprintf(szLine, sizeof(szLine), "%.5f,%.5f", dLat, dLon);
+                        sEntry += ksLocationLead;
+                        sEntry += szLine;
+                    }
+                }
             }
 
             // Walk forward off any id already taken. The log has second resolution, so two entries

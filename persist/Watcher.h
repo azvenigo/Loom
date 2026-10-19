@@ -149,11 +149,15 @@ private:
     // to a human. Only what THAT also declines becomes a `tbd` card. See TriageClient.h.
     void DeterministicTriage();
 
-    // Guarantees every `tbd` jot is `todo` + `priority:high`, in code rather than trusting a single
-    // call site to always remember both - a tbd card that isn't even a todo is invisible on the
-    // dashboard, which defeats the entire point of the tag. Cheap (an in-process query plus,
-    // usually, zero patches) so it just runs every poll.
+    // Guarantees every `tbd` jot is a `todo` with a priority - `priority:high` unless it already has
+    // one, which is kept - in code rather than trusting a single call site to always remember - a
+    // tbd card that isn't even a todo is invisible on the dashboard, which defeats the entire point
+    // of the tag. Cheap (an in-process query plus, usually, zero patches) so it just runs every poll.
     void EnsureNeedsInputVisible();
+
+    // When the known-places jot changes, brings every jot with a location to the right place:
+    // tag - see persist/Places.h. Costs one lookup on a poll where the list has not changed.
+    void SyncPlaceTags();
 
     // What actually decides whether to call the model: an in-process, cost-free query for
     // status:unprocessed minus status:needs-input (the latter tag means "already flagged for a
@@ -191,4 +195,5 @@ private:
     std::deque<int64_t>  mRunTimesLastHour;
     bool                 mbFailureAlertActive = false;
     bool                 mbBudgetAlertActive  = false;
+    int64_t              mnPlacesSeenUS       = 0;   // the known-places stamp SyncPlaceTags last applied
 };

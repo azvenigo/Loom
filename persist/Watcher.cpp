@@ -4,6 +4,7 @@
 #include "core/LoomTime.h"
 #include "core/Query.h"
 #include "persist/Importer.h"
+#include "persist/Places.h"
 
 #include "vendor/json.hpp"
 
@@ -345,6 +346,7 @@ void Watcher::PollOnce()
 {
     IngestPending();
     DeterministicTriage();
+    SyncPlaceTags();
     MaybeInvokeAgent();   // dormant with no --on-new-jots, and typically finds nothing left to do
                           // either way now - DeterministicTriage resolves every status:unprocessed
                           // jot one way or another (processed, or tagged tbd) before this runs.
@@ -374,22 +376,77 @@ void Watcher::DeterministicTriage()
     if (mpResolver)
         mpResolver->BeginPoll();
 
+    // Named places, read once per poll - see persist/Places.h.
+    std::vector<PLACES::Place> vPlaces;
+    {
+        Jot list;
+        if (!mOps.GetByName(PLACES::ksJotName, list))
+            vPlaces = PLACES::Parse(list.msText);
+    }
+
     for (const Jot& jot : results.mJots)
     {
         const FlatJot flat = Flatten(jot, names);
-
-        std::string sClean;
-        const std::vector<std::string> vBrackets = ExtractBrackets(flat.msText, sClean);
+        // The phone's location line (Importer.h) is metadata, not something the author said: it must
+        // not end up in a summary, count toward "short enough to be its own summary", or be handed
+        // to the triage service as content.
+        const std::string sBody = IMPORT::WithoutLocationLine(flat.msText);
+        double dLat = 0.0, dLon = 0.0;
+        const bool bLocated = PLACES::LocationOf(flat.msText, dLat, dLon);
 
         std::vector<std::string> vTags;
         for (const std::string& t : flat.mTags)
             if (t != "status:unprocessed")
                 vTags.push_back(t);
 
+        // "[set-place:Work]" and nothing else, sent with a location: the phone naming the spot it is
+        // at. It goes into the list, and the jot stays as the record of it, tagged with the place.
+        static const std::regex reSetPlace(R"(^\s*\[\s*set-place:\s*([^\]]{1,40}?)\s*\]\s*$)",
+                                           std::regex::icase);
+        std::smatch mSet;
+        if (bLocated && std::regex_match(sBody, mSet, reSetPlace) && !PLACES::Slug(mSet[1].str()).empty())
+        {
+            PLACES::Place p;
+            p.msName = mSet[1].str();
+            p.mdLat  = dLat;
+            p.mdLon  = dLon;
+
+            Jot list;
+            const bool bHadList = !mOps.GetByName(PLACES::ksJotName, list);
+            JotInput in;
+            in.msName   = std::string(PLACES::ksJotName);
+            in.msText   = PLACES::WithPlace(bHadList ? list.msText : std::string(), p);
+            in.msEditor = std::string("loom-triage");
+            if (!bHadList)
+            {
+                in.msSummary = std::string("Named places for jots sent with a location");
+                in.mTags     = std::vector<std::string>{ "type:reference" };
+            }
+            AddResult listResult;
+            if (mOps.Upsert(in, bHadList ? list.EffectiveUpdatedUS() : 0, listResult))
+                continue;   // left unprocessed, so the next poll tries again
+            vPlaces = PLACES::Parse(*in.msText);
+
+            const std::string sTag = std::string(PLACES::ksTagPrefix) + PLACES::Slug(p.msName);
+            if (std::find(vTags.begin(), vTags.end(), sTag) == vTags.end())
+                vTags.push_back(sTag);
+            JotInput patch;
+            patch.mTags    = vTags;
+            patch.msEditor = std::string("loom-triage");
+            if (flat.msSummary.empty())
+                patch.msSummary = "Named this spot " + p.msName;
+            AddResult result;
+            mOps.Update(jot.mID, patch, 0, result);
+            continue;
+        }
+
+        std::string sClean;
+        const std::vector<std::string> vBrackets = ExtractBrackets(sBody, sClean);
+
         // Confident means: either the jot told us its own structure ([todo], [tag]), or it is
         // short enough that its own text needs no interpretation to serve as a summary. Long,
         // unstructured prose is the case this cannot safely guess at - see the tbd branch below.
-        const bool bConfident = !vBrackets.empty() || flat.msText.size() <= 150;
+        const bool bConfident = !vBrackets.empty() || sBody.size() <= 150;
 
         bool bTodo = false;
         for (const std::string& sRaw : vBrackets)
@@ -413,7 +470,7 @@ void Watcher::DeterministicTriage()
         bool    bHaveDue  = std::find_if(vTags.begin(), vTags.end(),
                                 [](const std::string& t) { return t.rfind("due:", 0) == 0; })
                             != vTags.end();
-        if (bTodo && ParseRelativeOffset(flat.msText, nOffsetUS))
+        if (bTodo && ParseRelativeOffset(sBody, nOffsetUS))
         {
             vTags.erase(std::remove_if(vTags.begin(), vTags.end(),
                         [](const std::string& t) { return t.rfind("due:", 0) == 0; }),
@@ -480,7 +537,7 @@ void Watcher::DeterministicTriage()
                 const int64_t nReplyUS = bReplied ? jot.EffectiveUpdatedUS() : 0;
 
                 TriageResult res;
-                if (mpResolver->Triage(jot.mID, flat.msName, flat.msSummary, flat.msText, vTags,
+                if (mpResolver->Triage(jot.mID, flat.msName, flat.msSummary, sBody, vTags,
                                        wants, vVocabNames, {}, nReplyUS, res))
                 {
                     // Why anything was declined - the only record of it, since the jot itself just
@@ -625,6 +682,16 @@ void Watcher::DeterministicTriage()
                 patch.msSummary = sClean.size() > 100 ? sClean.substr(0, 100) : sClean;
         }
 
+        // Sent from a named place. Added last, after the triage service has been asked, so a place
+        // tag never counts as the jot already having a topic.
+        if (bLocated)
+            if (const PLACES::Place* pAt = PLACES::At(vPlaces, dLat, dLon))
+            {
+                const std::string sTag = std::string(PLACES::ksTagPrefix) + PLACES::Slug(pAt->msName);
+                if (std::find(vTags.begin(), vTags.end(), sTag) == vTags.end())
+                    vTags.push_back(sTag);
+            }
+
         patch.mTags = vTags;
         // Signed, so the history says triage did this. Left unset, a patch keeps the jot's editor,
         // and every triaged jot note was logged as the person who wrote it having triaged it.
@@ -632,6 +699,52 @@ void Watcher::DeterministicTriage()
         AddResult result;
         mOps.Update(jot.mID, patch, 0, result);   // best-effort; retried next poll if this fails
     }
+}
+
+void Watcher::SyncPlaceTags()
+{
+    Jot list;
+    const bool bHaveList = !mOps.GetByName(PLACES::ksJotName, list);
+    const int64_t nStamp = bHaveList ? list.EffectiveUpdatedUS() : -1;
+    if (nStamp == mnPlacesSeenUS)
+        return;
+    const std::vector<PLACES::Place> vPlaces = bHaveList ? PLACES::Parse(list.msText)
+                                                         : std::vector<PLACES::Place>();
+
+    // Only when the list has changed (and once at startup), so walking every jot is affordable.
+    std::vector<FlatJot> vAll;
+    mStore.FlattenAll(vAll);
+    bool bAllWritten = true;
+    for (const FlatJot& flat : vAll)
+    {
+        double dLat = 0.0, dLon = 0.0;
+        if (!PLACES::LocationOf(flat.msText, dLat, dLon))
+            continue;
+        if (std::find(flat.mTags.begin(), flat.mTags.end(), "status:unprocessed") != flat.mTags.end())
+            continue;   // triage tags it
+
+        // On a jot with a location the place tag follows the list: one, or none.
+        const PLACES::Place* pAt = PLACES::At(vPlaces, dLat, dLon);
+        const std::string sWant = pAt ? std::string(PLACES::ksTagPrefix) + PLACES::Slug(pAt->msName)
+                                      : std::string();
+        std::vector<std::string> vTags, vHad;
+        for (const std::string& t : flat.mTags)
+            (t.rfind(PLACES::ksTagPrefix, 0) == 0 ? vHad : vTags).push_back(t);
+        if (sWant.empty() ? vHad.empty() : (vHad.size() == 1 && vHad[0] == sWant))
+            continue;
+        if (!sWant.empty())
+            vTags.push_back(sWant);
+
+        JotInput patch;
+        patch.mTags    = vTags;
+        patch.msEditor = std::string("loom-places");
+        AddResult result;
+        const int64_t nExpect = flat.mnUpdatedUS != 0 ? flat.mnUpdatedUS : flat.mID;
+        if (mOps.Update(flat.mID, patch, nExpect, result))
+            bAllWritten = false;   // edited meanwhile - the whole pass runs again next poll
+    }
+    if (bAllWritten)
+        mnPlacesSeenUS = nStamp;
 }
 
 void Watcher::EnsureNeedsInputVisible()
@@ -652,20 +765,20 @@ void Watcher::EnsureNeedsInputVisible()
         const FlatJot flat = Flatten(jot, names);
         const bool bHasTodo = std::find(flat.mTags.begin(), flat.mTags.end(), "todo")
                              != flat.mTags.end();
-        const bool bHasHighPriority = std::find(flat.mTags.begin(), flat.mTags.end(), "priority:high")
-                                      != flat.mTags.end();
-        if (bHasTodo && bHasHighPriority)
+        // A priority that is already there is KEPT. It used to be replaced with high, which threw
+        // away a "[priority:low]" the author had written on the jot themselves, just because
+        // triage then had a question about its due date. Being todo is what makes a tbd card
+        // visible; high is only the default for a jot nobody has prioritised.
+        const bool bHasPriority = std::find_if(flat.mTags.begin(), flat.mTags.end(),
+            [](const std::string& t) { return t.rfind("priority:", 0) == 0; }) != flat.mTags.end();
+        if (bHasTodo && bHasPriority)
             continue;
 
         std::vector<std::string> vTags = flat.mTags;
-        // Drop any other priority rather than have two priority: tags fight over which one the
-        // dashboard reads - a needs-input jot is high priority, full stop.
-        vTags.erase(std::remove_if(vTags.begin(), vTags.end(),
-                    [](const std::string& t) { return t.rfind("priority:", 0) == 0; }),
-                   vTags.end());
         if (!bHasTodo)
             vTags.push_back("todo");
-        vTags.push_back("priority:high");
+        if (!bHasPriority)
+            vTags.push_back("priority:high");
 
         JotInput patch;
         patch.mTags = vTags;

@@ -19,6 +19,13 @@
 // this layer's one job is to be a safe front door: never corrupt the file, never run anything,
 // never read a jot back.
 //
+// GET /jot/m?k=TOKEN serves a phone page for writing jots (jot/CapturePage.h). It posts to /jot
+// like any other client. With no token configured the route does not exist.
+//
+// Reminders (see HandleNotify) add three routes over files in --notify-dir, shared with
+// notify/jotnotify.py. The one thing readable there is the notifier's upcoming-todo list - summaries
+// and due times, never a jot's text - so jot still never reads a jot back out of anywhere.
+//
 // Validation, all byte-level, no parsing:
 //   - size capped (default 16KB) - also the DoS guard; crow rejects an oversized body itself, this
 //     just makes the limit explicit and ours to change
@@ -71,6 +78,7 @@
 //////////////////////////////////////////////////////////////////////////////////////////////////
 
 #include "vendor/crow/crow.h"
+#include "jot/CapturePage.h"
 
 #include <cctype>
 #include <cerrno>
@@ -248,11 +256,12 @@ namespace
         return ReplaceFile(sClipPath, sBody) ? crow::response(204) : crow::response(500);
     }
 
-    // GET /jot/clip. 204 (not 404) when nothing has been stored yet: the caller already proved it
-    // holds the token, and 404 is reserved for "rejected", so a client can tell the two apart.
-    crow::response ServeClip(const std::string& sClipPath)
+    // GET /jot/clip and GET /jot/upcoming. 204 (not 404) when nothing has been stored yet: the caller
+    // already proved it holds the token, and 404 is reserved for "rejected", so a client can tell the
+    // two apart.
+    crow::response ServeJsonFile(const std::string& sFilePath)
     {
-        std::ifstream in(sClipPath, std::ios::binary);
+        std::ifstream in(sFilePath, std::ios::binary);
         if (!in)
             return crow::response(204);
 
@@ -270,6 +279,74 @@ namespace
     crow::response ClipExists(const std::string& sClipPath)
     {
         return ::access(sClipPath.c_str(), F_OK) == 0 ? crow::response(200) : crow::response(204);
+    }
+
+    constexpr size_t kMaxSubscriptionBytes = 4 * 1024;
+    constexpr size_t kMaxActionBytes       = 1024;
+
+    // The byte-level checks every body here gets, against a per-route size cap. Null means fine.
+    const char* BodyProblem(const std::string& sBody, size_t nCap)
+    {
+        if (sBody.size() > nCap)      return "body over the size cap";
+        if (HasIllegalBytes(sBody))   return "control bytes or invalid UTF-8 in body";
+        if (!LooksLikeJsonObject(sBody)) return "body is not a braced JSON object";
+        return nullptr;
+    }
+
+    // The reminder routes. notify/jotnotify.py owns what these three files mean; jot only moves
+    // bytes between the phone and them. It parses none of it and never talks to Loom, so a hole in
+    // this process still cannot reach the store - it can at worst leave a bad line for the notifier,
+    // which validates every field itself (including that a subscription points at Apple's push
+    // service and nowhere else).
+    //   GET    /jot/upcoming  the notifier's list of open todos with a due date (summaries only)
+    //   PUT    /jot/push      this phone's push subscription, one slot, last write wins
+    //   DELETE /jot/push      turn reminders off
+    //   POST   /jot/remind    {"id":N,"action":"snooze"|"mute"|"unmute",...}, one line appended
+    crow::response HandleNotify(const crow::request& req, const std::string& sDir, std::mutex& mtx)
+    {
+        if (req.url == "/jot/upcoming")
+            return ServeJsonFile(sDir + "/upcoming.json");
+
+        if (req.url == "/jot/push")
+        {
+            const std::string sSub = sDir + "/subscription.json";
+            std::lock_guard<std::mutex> lock(mtx);
+            if (req.method == crow::HTTPMethod::Delete)
+            {
+                if (::unlink(sSub.c_str()) != 0 && errno != ENOENT)
+                    return crow::response(500);
+                return crow::response(204);
+            }
+            if (const char* szProblem = BodyProblem(req.body, kMaxSubscriptionBytes))
+                return DenyLogged(szProblem);
+            return ReplaceFile(sSub, req.body) ? crow::response(204) : crow::response(500);
+        }
+
+        if (const char* szProblem = BodyProblem(req.body, kMaxActionBytes))
+            return DenyLogged(szProblem);
+        return AppendLine(sDir + "/actions.jsonl", req.body) ? crow::response(204) : crow::response(500);
+    }
+
+    // GET /jot/m?k=TOKEN - the phone capture page (jot/CapturePage.h). Not cached, since the URL
+    // carries the token; no Referer, so the URL is not passed on to anything else.
+    // GET /jot/a/graphite.jpg?k=TOKEN - the page's texture. The bytes never change for a given name,
+    // so the phone may keep them; "private" keeps any shared cache from holding a token-gated file.
+    crow::response ServeGraphite()
+    {
+        crow::response res(200, JotGraphiteJpg());
+        res.set_header("Content-Type", "image/jpeg");
+        res.set_header("Cache-Control", "private, max-age=2592000");
+        return res;
+    }
+
+    crow::response ServeCapturePage(const std::string& sToken)
+    {
+        crow::response res(200, JotCapturePage(sToken));
+        res.set_header("Content-Type", "text/html; charset=utf-8");
+        res.set_header("Cache-Control", "no-store");
+        res.set_header("Referrer-Policy", "no-referrer");
+        res.set_header("X-Robots-Tag", "noindex");
+        return res;
     }
 
     // DELETE /jot/clip. Idempotent: clearing an already-empty slot is still a success.
@@ -447,6 +524,8 @@ int main(int argc, char* argv[])
     // Deliberately NOT under the jot_log directory: Loom's WatchList ingests that, and a clip is
     // not a jot. Empty (--clip-path=) turns the clip routes off.
     std::string sClipPath = "/mnt/fast/web/jot_clip/clip.json";
+    // Shared with notify/jotnotify.py. Also not under jot_log, for the same reason as the clip.
+    std::string sNotifyDir = "/mnt/fast/web/jot_notify";
     std::string sToken;
     RateLimiter::Config limits;
 
@@ -461,6 +540,7 @@ int main(int argc, char* argv[])
         else if (const char* p = Value("--port="))  nPort  = static_cast<uint16_t>(std::atoi(p));
         else if (const char* p = Value("--path="))  sPath  = p;
         else if (const char* p = Value("--clip-path=")) sClipPath = p;
+        else if (const char* p = Value("--notify-dir=")) sNotifyDir = p;
         else if (const char* p = Value("--token=")) sToken = p;
         else if (const char* p = Value("--block-seconds=")) limits.nBlockS = std::atoi(p);
         else if (const char* p = Value("--token-file="))
@@ -482,7 +562,10 @@ int main(int argc, char* argv[])
                         "  --clip-path=FILE   file holding the one shared clip, PUT/GET/DELETE /jot/clip\n"
                         "                     (default: /mnt/fast/web/jot_clip/clip.json; empty = off;\n"
                         "                     also off whenever no token is set)\n"
-                        "  --token=SECRET     require Authorization: Bearer SECRET (default: none, open)\n"
+                        "  --notify-dir=DIR   files shared with the reminder notifier: /jot/upcoming,\n"
+                        "                     /jot/push, /jot/remind (default: /mnt/fast/web/jot_notify;\n"
+                        "                     empty = off; also off whenever no token is set)\n"
+                        "  --token=SECRET    require Authorization: Bearer SECRET (default: none, open)\n"
                         "  --token-file=PATH  same, read from PATH - keeps the secret out of ps and out of git\n"
                         "  --block-seconds=N  how long an address is blocked after 10 rejected requests in\n"
                         "                     10 minutes (default: 900)\n"
@@ -513,9 +596,22 @@ int main(int argc, char* argv[])
         }
     }
 
+    if (!sNotifyDir.empty() && !sToken.empty())
+    {
+        // NOT fatal, unlike the jot and clip paths: reminders are an extra, and a sandbox that has not
+        // been given this directory yet (ReadWritePaths in jot.service) must not take ingest down.
+        std::filesystem::create_directories(sNotifyDir, ec);
+        if (ec || ::access(sNotifyDir.c_str(), W_OK) != 0)
+        {
+            std::fprintf(stderr, "jot: reminders off - %s is missing or not writable\n", sNotifyDir.c_str());
+            sNotifyDir.clear();
+        }
+    }
+
     crow::logger::setLogLevel(crow::LogLevel::Warning);
     crow::SimpleApp app;
     std::mutex mtxClip;
+    std::mutex mtxNotify;
     RateLimiter limiter(limits);
 
     // No Server: header - crow would otherwise announce "Crow/x.y" on every response, including the
@@ -527,7 +623,7 @@ int main(int argc, char* argv[])
     // lives here and how to call it. Matching the path and method by hand means there is exactly
     // one code path off this handler that is not a 404.
     CROW_CATCHALL_ROUTE(app)
-    ([sPath, sClipPath, sToken, &mtxClip, &limiter](const crow::request& req)
+    ([sPath, sClipPath, sNotifyDir, sToken, &mtxClip, &mtxNotify, &limiter](const crow::request& req)
     {
         // A blocked address learns nothing, not even that it is blocked.
         const std::string sClient = ClientKey(req);
@@ -540,13 +636,29 @@ int main(int argc, char* argv[])
                                 (req.method == crow::HTTPMethod::Put || req.method == crow::HTTPMethod::Get ||
                                  req.method == crow::HTTPMethod::Delete);
         const bool bJotRoute  = req.url == "/jot" && req.method == crow::HTTPMethod::Post;
-        if (!bClipRoute && !bJotRoute)
+        // The capture page, like the clip, exists only with a token. A page navigation cannot carry
+        // an Authorization header, so its token comes as ?k= instead, checked the same way.
+        const bool bPageRoute = req.url == "/jot/m" && req.method == crow::HTTPMethod::Get && !sToken.empty();
+        // Its texture, gated the same way: a CSS url() cannot send a header either.
+        const bool bAssetRoute = req.url == "/jot/a/graphite.jpg" && req.method == crow::HTTPMethod::Get &&
+                                 !sToken.empty();
+        // Reminders, token-only like the clip: the upcoming list is private data.
+        const bool bNotifyRoute = !sNotifyDir.empty() && !sToken.empty() &&
+            ((req.url == "/jot/upcoming" && req.method == crow::HTTPMethod::Get) ||
+             (req.url == "/jot/push" && (req.method == crow::HTTPMethod::Put ||
+                                         req.method == crow::HTTPMethod::Delete)) ||
+             (req.url == "/jot/remind" && req.method == crow::HTTPMethod::Post));
+        if (!bClipRoute && !bJotRoute && !bPageRoute && !bAssetRoute && !bNotifyRoute)
         {
             limiter.Failed(sClient);
             return Deny();
         }
 
-        if (!sToken.empty() && !SecretEquals(req.get_header_value("Authorization"), "Bearer " + sToken))
+        const bool bKeyInUrl = bPageRoute || bAssetRoute;
+        const char* szKey = bKeyInUrl ? req.url_params.get("k") : nullptr;
+        const std::string sPresented = bKeyInUrl ? (szKey ? "Bearer " + std::string(szKey) : std::string())
+                                                 : req.get_header_value("Authorization");
+        if (!sToken.empty() && !SecretEquals(sPresented, "Bearer " + sToken))
         {
             limiter.Failed(sClient);
             return Deny();
@@ -557,12 +669,21 @@ int main(int argc, char* argv[])
         if (!limiter.AllowAuthenticated(sClient, bClipUpload, bUploadLimited))
             return TooMany(bUploadLimited ? "too many clip uploads" : "too many requests");
 
+        if (bPageRoute)
+            return ServeCapturePage(sToken);
+
+        if (bAssetRoute)
+            return ServeGraphite();
+
+        if (bNotifyRoute)
+            return HandleNotify(req, sNotifyDir, mtxNotify);
+
         if (bClipRoute)
         {
             switch (req.method)
             {
             case crow::HTTPMethod::Get:    return req.url_params.get("exists") != nullptr
-                                                  ? ClipExists(sClipPath) : ServeClip(sClipPath);
+                                                  ? ClipExists(sClipPath) : ServeJsonFile(sClipPath);
             case crow::HTTPMethod::Delete: return ClearClip(sClipPath, mtxClip);
             default:                       return StoreClip(sClipPath, mtxClip, req.body);
             }
@@ -590,6 +711,9 @@ int main(int argc, char* argv[])
     std::printf("jot clip: %s\n", sClipPath.empty() ? "off (--clip-path is empty)"
                                   : sToken.empty()  ? "off (needs a token)"
                                                     : sClipPath.c_str());
+    std::printf("jot reminders: %s\n", sNotifyDir.empty() ? "off (--notify-dir is empty)"
+                                       : sToken.empty()   ? "off (needs a token)"
+                                                          : sNotifyDir.c_str());
     std::fflush(stdout);   // journald gets a pipe, so this line would otherwise sit in the buffer
     app.bindaddr(sBind).port(nPort).run();
     // Crow returns from run() on a failed bind as well as on a clean stop; only is_bound() tells

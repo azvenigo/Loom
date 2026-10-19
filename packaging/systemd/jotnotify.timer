@@ -1,0 +1,13 @@
+# Runs jotnotify.service at the top of every minute. Reminders are minute-granular; the notifier
+# keeps a 2-minute grace so a late tick still sends rather than skipping.
+
+[Unit]
+Description=jotnotify every minute
+
+[Timer]
+OnCalendar=*-*-* *:*:00
+AccuracySec=5s
+Persistent=false
+
+[Install]
+WantedBy=timers.target
