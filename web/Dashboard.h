@@ -2744,10 +2744,11 @@ function priorityOf(j){
 }
 /* Whether a jot gets the TODO treatment at all (priority/due fields, the panel, notifications) -
    gated so opening an ordinary jot never shows task controls it has no use for. A completed jot
-   still counts, so its dialog keeps showing priority/due plus the reopen button. */
+   still counts, so its dialog keeps showing priority/due plus the reopen button. A bare
+   priority:/due: does NOT count: removing `todo` has to be enough to make a jot plain again, and
+   every other consumer (REST, MCP, jotnotify) already keys on the tag alone. */
 function isTodo(j){
-  return isDone(j)||(j.tags||[]).some(t=>ACTION_TAGS.has(t))||
-    !!tagValue(j.tags,'due:')||!!tagValue(j.tags,'priority:');
+  return isDone(j)||(j.tags||[]).some(t=>ACTION_TAGS.has(t));
 }
 /* Who a todo is FOR, which is not who WROTE it - `source:` already records the machine a jot came
    from, and the two answer different questions: a jot written by an agent on azzorin can still be
@@ -5086,6 +5087,25 @@ function renderDetail(){
           await refreshStats();render();
         }catch(e){toast(e.message,'err');}
       }));
+      /* The way back from "Make this a TODO": strips todo and the task-only tags, so the jot is a
+         plain note again. Only offered when `todo` is the sole action tag - a bug/warning jot stays
+         task-ish whatever this does. */
+      const tags0=sel.tags||[];
+      if(tags0.includes('todo')&&!tags0.some(t=>t!=='todo'&&ACTION_TAGS.has(t))){
+        const nt=el('button','btn tiny ghost','Not a TODO');nt.type='button';
+        nt.title='Turn this back into a plain jot (drops todo, priority, due, audience)';
+        nt.onclick=async function(){
+          const tags=tags0.filter(t=>t!=='todo'&&t!=='status:done'&&!/^(priority|due|for):/.test(t));
+          try{
+            sel=await api('/jots/'+sel.id+'?expect_updated='+(sel.updated||sel.id),
+              {method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({tags})});
+            detailForceTodo=false;
+            toast('No longer a TODO','ok');
+            await refreshStats();render();renderDetail();
+          }catch(e){toast(e.status===409?'Conflict - someone else changed this jot. Close and reopen.':e.message,'err');}
+        };
+        prRow.append(nt);
+      }
     }
   }else{
     /* Not a ghost: it's the only control between the header and the first card, so on the
@@ -5293,8 +5313,11 @@ function renderDetail(){
        and re-adding `todo` to a jot whose owner had just deleted it from the tags box would make
        un-todoing one impossible from here. */
     if(detailForceTodo&&!tags.some(t=>ACTION_TAGS.has(t)))tags.push('todo');
-    if(pr&&pr.value)tags.push('priority:'+pr.value);
-    if(dueIn&&dueIn.value)tags.push('due:'+dueIn.value);
+    /* Priority/due ride only on a jot that is still a task - deleting `todo` from the tags box
+       and saving makes it a plain jot, not one carrying orphaned task tags. */
+    const stillTask=isDone({tags})||tags.some(t=>ACTION_TAGS.has(t));
+    if(stillTask&&pr&&pr.value)tags.push('priority:'+pr.value);
+    if(stillTask&&dueIn&&dueIn.value)tags.push('due:'+dueIn.value);
     const body={text:f.text.value,name:f.name.value,summary:f.summary.value,
       editor:f.editor.value,
       tags:tags,
